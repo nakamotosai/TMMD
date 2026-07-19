@@ -1,0 +1,16 @@
+# Node / Tauri
+node_modules/
+dist/
+ui-dist/
+src-tauri/target/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets / env
+.env
+.env.*

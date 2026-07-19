@@ -1,0 +1,19 @@
+{
+  "name": "sai-md-reader",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sai MD Reader — local-first Markdown desktop (Tauri 2)",
+  "type": "module",
+  "scripts": {
+    "sync-ui": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/sync-ui.ps1",
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

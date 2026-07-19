@@ -1,0 +1,78 @@
+{
+  "project": "sai-md-reader",
+  "product_version_current": "1.0",
+  "product_version_next": "1.1",
+  "updated": "2026-07-19",
+  "rules": [
+    "Only flip passes false→true after real verification",
+    "Do not delete items to clear debt",
+    "Default one open feature per session",
+    "1.0 = local desktop reader; 1.1 = SSH fixed roots only; no embedded terminal in 1.0/1.1"
+  ],
+  "features": [
+    {
+      "id": "F001",
+      "title": "Tauri 2 脚手架 + ui-dist 同步本体",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": true,
+      "how": "npm run sync-ui 后 ui-dist/index.html 存在；tauri.conf frontendDist=../ui-dist"
+    },
+    {
+      "id": "F002",
+      "title": "本机 FS IPC + path cage + roots.json",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": true,
+      "how": "lib.rs 含 pick_folder/list_md_tree/read_text/load_roots/save_roots；sanitize_rel+cage_join；capabilities allow-*"
+    },
+    {
+      "id": "F003",
+      "title": "前端 desktop 桥（无浏览器再授权）",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": true,
+      "how": "本体 desktop-bridge.js + desktopPath；pwa 桌面跳 SW；invoke 通路"
+    },
+    {
+      "id": "F004",
+      "title": "侧栏滚动保持 + mtime/文件优先排序",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": true,
+      "how": "main.js 条件 paintSidebar + 保 scroll；Rust mtime + sort 文件先；version 标记 t0.1；cargo build 绿"
+    },
+    {
+      "id": "F005",
+      "title": "生产根迁移到 MD阅读器tauri + long-kit",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": false,
+      "how": "PROJECT/feature_list/progress 非空；sync-ui Dest 指向新根；旧路径 MOVED；cargo check 新路径通过"
+    },
+    {
+      "id": "F006",
+      "title": "双 private 远端 origin+github",
+      "milestone": "M1",
+      "product_version": "1.0",
+      "passes": false,
+      "how": "git ls-remote origin HEAD 与 github HEAD 均成功；gh isPrivate=true"
+    },
+    {
+      "id": "F010",
+      "title": "1.1 SSH 固定根只读（vps-jp / vps-us）",
+      "milestone": "M2",
+      "product_version": "1.1",
+      "passes": false,
+      "how": "仅 allowlist 主机；远程树只读 list/read；无任意 URL；无交互 shell IPC；密钥不进仓"
+    },
+    {
+      "id": "F020",
+      "title": "1.2 外挂系统终端打开库根（可选）",
+      "milestone": "M3",
+      "product_version": "1.2+",
+      "passes": false,
+      "how": "菜单调起 wt/系统终端 cwd=当前库；无应用内 pty；与 magi VETO 一致"
+    }
+  ]
+}

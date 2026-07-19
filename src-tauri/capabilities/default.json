@@ -1,0 +1,19 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "default",
+  "description": "Default capabilities for Sai MD Reader main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:window:default",
+    "core:app:default",
+    "core:path:default",
+    "allow-desktop-info",
+    "allow-pick-folder",
+    "allow-list-md-tree",
+    "allow-read-text",
+    "allow-load-roots",
+    "allow-save-roots"
+  ]
+}
