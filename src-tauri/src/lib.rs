@@ -376,6 +376,119 @@ fn save_roots(app: tauri::AppHandle, roots: Vec<RootMeta>) -> Result<(), String>
     fs::write(&p, raw).map_err(|e| e.to_string())
 }
 
+/// Load registered roots without dropping vanished paths mid-check (caller filters).
+fn read_roots_list(app: &tauri::AppHandle) -> Result<Vec<RootMeta>, String> {
+    let p = roots_path(app)?;
+    if !p.exists() {
+        return Ok(vec![]);
+    }
+    let raw = fs::read_to_string(&p).map_err(|e| e.to_string())?;
+    serde_json::from_str(&raw).map_err(|e| e.to_string())
+}
+
+/// cwd must equal a registered vault root (absolute dir). Shell is full-power; cage only gates *which* folder we open.
+fn ensure_registered_root(app: &tauri::AppHandle, root: &str) -> Result<PathBuf, String> {
+    let root_pb = PathBuf::from(root);
+    if !root_pb.is_dir() {
+        return Err(format!("不是目录: {root}"));
+    }
+    let root_can = root_pb
+        .canonicalize()
+        .map_err(|e| format!("canonicalize root: {e}"))?;
+    let roots = read_roots_list(app)?;
+    if roots.is_empty() {
+        return Err("还没有登记库：请先「打开文件夹」".into());
+    }
+    let ok = roots.iter().any(|r| {
+        Path::new(&r.path)
+            .canonicalize()
+            .map(|p| cage_key(&p) == cage_key(&root_can))
+            .unwrap_or(false)
+    });
+    if !ok {
+        return Err("只能在已登记的库根打开终端（防任意路径提权）".into());
+    }
+    Ok(root_can)
+}
+
+/// Windows: prefer Windows Terminal; fallback PowerShell. External process — not embedded PTY.
+#[cfg(windows)]
+fn spawn_external_terminal(cwd: &Path, run_claude: bool) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    use std::process::Command;
+    const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+
+    let cwd_s = cwd.to_string_lossy().into_owned();
+    // Escape for PowerShell single-quoted strings: ' -> ''
+    let cwd_ps = cwd_s.replace('\'', "''");
+
+    // 1) Windows Terminal: wt -d <cwd> [-- claude]
+    let mut wt = Command::new("wt.exe");
+    wt.arg("-d").arg(&cwd_s);
+    if run_claude {
+        wt.arg("--").arg("claude");
+    }
+    wt.creation_flags(CREATE_NEW_CONSOLE);
+    match wt.spawn() {
+        Ok(_) => return Ok(()),
+        Err(e) => {
+            eprintln!("[open_in_terminal] wt failed: {e}; fallback powershell");
+        }
+    }
+
+    // 2) PowerShell visible window
+    let ps_cmd = if run_claude {
+        format!("Set-Location -LiteralPath '{cwd_ps}'; claude")
+    } else {
+        format!("Set-Location -LiteralPath '{cwd_ps}'")
+    };
+    let mut ps = Command::new("powershell.exe");
+    ps.args([
+        "-NoExit",
+        "-NoLogo",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        &ps_cmd,
+    ]);
+    ps.creation_flags(CREATE_NEW_CONSOLE);
+    ps.spawn()
+        .map_err(|e| format!("无法启动终端: {e}"))?;
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn spawn_external_terminal(cwd: &Path, run_claude: bool) -> Result<(), String> {
+    use std::process::Command;
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into());
+    if run_claude {
+        Command::new(&shell)
+            .arg("-lc")
+            .arg(format!("cd '{}' && exec claude", cwd.display()))
+            .current_dir(cwd)
+            .spawn()
+            .map_err(|e| format!("无法启动终端: {e}"))?;
+    } else {
+        Command::new(&shell)
+            .current_dir(cwd)
+            .spawn()
+            .map_err(|e| format!("无法启动终端: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Open external system terminal at a registered library root. Optionally start `claude` CLI.
+/// Does **not** embed a PTY in the WebView (Workstation 2.0 MVP = external only).
+#[tauri::command]
+fn open_in_terminal(
+    app: tauri::AppHandle,
+    root: String,
+    run_claude: bool,
+) -> Result<(), String> {
+    let cwd = ensure_registered_root(&app, &root)?;
+    spawn_external_terminal(&cwd, run_claude)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -385,7 +498,8 @@ pub fn run() {
             list_md_tree,
             read_text,
             load_roots,
-            save_roots
+            save_roots,
+            open_in_terminal
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai MD Reader");

@@ -1,13 +1,15 @@
 {
   "project": "sai-md-reader",
-  "product_version_current": "1.0",
-  "product_version_next": "1.1",
+  "product_name": "Sai Workbench",
+  "product_version_current": "2.0-mvp",
+  "product_version_next": "2.1",
   "updated": "2026-07-19",
   "rules": [
     "Only flip passes false→true after real verification",
     "Do not delete items to clear debt",
     "Default one open feature per session",
-    "1.0 = local desktop reader; 1.1 = SSH fixed roots only; no embedded terminal in 1.0/1.1"
+    "2.0 MVP = external terminal only; no same-WebView PTY; path-cage kept for read path",
+    "1.1 SSH deferred until workstation MVP feels OK"
   ],
   "features": [
     {
@@ -16,7 +18,7 @@
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "npm run sync-ui 后 ui-dist/index.html 存在；tauri.conf frontendDist=../ui-dist"
+      "how": "npm run sync-ui 后 ui-dist/index.html 存在"
     },
     {
       "id": "F002",
@@ -24,15 +26,15 @@
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "lib.rs 含 pick_folder/list_md_tree/read_text/load_roots/save_roots；sanitize_rel+cage_join；capabilities allow-*"
+      "how": "lib.rs pick/list/read/roots；sanitize_rel+cage_join"
     },
     {
       "id": "F003",
-      "title": "前端 desktop 桥（无浏览器再授权）",
+      "title": "前端 desktop 桥",
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "本体 desktop-bridge.js + desktopPath；pwa 桌面跳 SW；invoke 通路"
+      "how": "desktop-bridge.js + desktopPath"
     },
     {
       "id": "F004",
@@ -40,7 +42,7 @@
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "main.js 条件 paintSidebar + 保 scroll；Rust mtime + sort 文件先；version 标记 t0.1；cargo build 绿"
+      "how": "条件 paintSidebar + Rust mtime sort"
     },
     {
       "id": "F005",
@@ -48,7 +50,7 @@
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "PROJECT/feature_list/progress 非空；sync-ui Dest 指向新根；旧路径 MOVED；cargo check 新路径通过"
+      "how": "long-kit 非空；sync-ui 新根；cargo check 中文路径"
     },
     {
       "id": "F006",
@@ -56,7 +58,7 @@
       "milestone": "M1",
       "product_version": "1.0",
       "passes": true,
-      "how": "git ls-remote origin HEAD 与 github HEAD 均成功；gh isPrivate=true"
+      "how": "ls-remote 双侧 + isPrivate"
     },
     {
       "id": "F010",
@@ -64,15 +66,31 @@
       "milestone": "M2",
       "product_version": "1.1",
       "passes": false,
-      "how": "仅 allowlist 主机；远程树只读 list/read；无任意 URL；无交互 shell IPC；密钥不进仓"
+      "how": "延后；仅 allowlist 只读；无交互 shell"
     },
     {
       "id": "F020",
-      "title": "1.2 外挂系统终端打开库根（可选）",
+      "title": "1.2 外挂系统终端（历史占位）",
       "milestone": "M3",
       "product_version": "1.2+",
       "passes": false,
-      "how": "菜单调起 wt/系统终端 cwd=当前库；无应用内 pty；与 magi VETO 一致"
+      "how": "由 F100 取代；勿删行"
+    },
+    {
+      "id": "F100",
+      "title": "2.0 MVP：当前库一键外部终端 + 启动 Claude Code",
+      "milestone": "M4",
+      "product_version": "2.0",
+      "passes": true,
+      "how": "open_in_terminal：cwd=已登记库根；wt 优先否则 PowerShell；run_claude 可启 claude；侧栏「终端」「Claude」；MD 面无 PTY；cargo build 绿 + ui-dist 含按钮（用户 UAT 再确认手感）"
+    },
+    {
+      "id": "F110",
+      "title": "2.1 独立窗口内嵌终端（B 架构，可选）",
+      "milestone": "M5",
+      "product_version": "2.1",
+      "passes": false,
+      "how": "第二窗/独立 capability + xterm+pty；主 MD 窗仍无 shell；与 F100 外挂并存"
     }
   ]
 }

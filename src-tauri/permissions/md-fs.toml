@@ -27,3 +27,8 @@ commands.allow = ["load_roots"]
 identifier = "allow-save-roots"
 description = "Allow save_roots to app config"
 commands.allow = ["save_roots"]
+
+[[permission]]
+identifier = "allow-open-in-terminal"
+description = "Allow open_in_terminal: external system shell at a registered vault root only (no embedded PTY)"
+commands.allow = ["open_in_terminal"]

@@ -9,6 +9,7 @@ fn main() {
                 "read_text",
                 "load_roots",
                 "save_roots",
+                "open_in_terminal",
             ]),
         ),
     )

@@ -14,6 +14,7 @@
     "allow-list-md-tree",
     "allow-read-text",
     "allow-load-roots",
-    "allow-save-roots"
+    "allow-save-roots",
+    "allow-open-in-terminal"
   ]
 }

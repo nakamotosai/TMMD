@@ -1,22 +1,23 @@
-# PROJECT · Sai MD Reader（桌面 Tauri）
+# PROJECT · Sai Workbench（原 Sai MD Reader 桌面）
 
 | 字段 | 内容 |
 |---|---|
 | 分型 | code |
 | 根路径 | `C:\Users\sai\MD阅读器\MD阅读器tauri` |
-| 放置理由 | **用户当轮点名绝对路径优先**（multi-root §判定顺序 1）；与 `MD阅读器本体` 同树并列，非 `C:\Users\sai\claude` 临时区 |
+| 放置理由 | **用户当轮点名绝对路径优先**；与 `MD阅读器本体` 同树并列 |
 | 状态 | active |
-| 当前里程碑 | **M1 = 产品 1.0 本机阅读器**（已交付代码）；下一里程碑 **M2 = 1.1 SSH 固定根** |
+| 当前里程碑 | **M4 = 2.0 Workstation MVP**（外部终端 + Claude）；1.0 阅读器能力保留 |
 | 更新 | 2026-07-19 |
 
 ## 目标（一句话）
 
-轻量本机优先的 Markdown 多根阅读器（桌面免浏览器再授权）；后续用固定 VPS 根扩展只读远程，不做成云笔记/IDE。
+个人 **vibe coding 一站式工作台**：左侧多根 MD 库 + 在**当前库根**打开系统终端 / 启动 **Claude Code CLI**；本机优先，不为公网做远程 shell。
 
 ## 非目标（不做）
 
 - MD 默认上云 / 任意用户 URL 远程盘
-- 1.0 / 1.1 内嵌完整终端（xterm+pty）或 shell IPC
+- **同 WebView 内嵌 xterm+pty**（与 MD 渲染共 capability = RCE 面）— 真内嵌须独立窗+独立 capability（F110）
+- 公网任意人可用的远程 shell 产品
 - Electron 重壳、插件市场、图谱/第二大脑
 - 用 `C:\Users\sai\claude\…` 当生产根
 
@@ -24,9 +25,17 @@
 
 | 版本 | 内容 | 状态 |
 |---|---|---|
-| **1.0** | 本机 FS IPC + path cage + UI 同步本体 + 侧栏滚动保持 + mtime/文件优先排序 + 够新 poll | **当前（代码已齐；手测 UAT 用户侧）** |
-| **1.1** | SSH/固定根只读挂载 **vps-jp + vps-us**（allowlist）；无交互 shell | 规划 · 未开工 |
-| **1.2+** | 可选：外挂「在此库打开系统终端」；内嵌终端默认不做 | 延后 |
+| **1.0** | 本机 FS 读库 + path cage + 侧栏/够新 | **已交付**（阅读器基座） |
+| **1.1** | SSH 固定根只读 vps-jp/us | **延后**（工作台 MVP 后） |
+| **2.0 MVP** | 当前库一键**外部**终端 + 可选启动 `claude`；cwd=已登记库根 | **进行中 · F100** |
+| **2.1+** | 可选：独立窗口内嵌终端（B 架构）；不与 MD 面合权 | 规划 · F110 |
+
+## 架构（安全）
+
+| 通道 | 能力 | 隔离 |
+|---|---|---|
+| 读库 | pick/list/read/roots · path-cage | 主 WebView |
+| 终端 | `open_in_terminal` 仅 spawn **外部** wt/PowerShell | 不在 WebView 内持 PTY；cwd 必须已在 roots.json |
 
 ## 命令
 
@@ -37,13 +46,7 @@
 | 开发 | `npm run dev` |
 | 检查 | `cd src-tauri; cargo check` |
 | 构建 | `npm run build` |
-| 冒烟 | 启动 exe → 选库 → 打开 md → 侧栏滚动不回顶 → 外部改 md 后刷新/等待 poll 见新内容 |
-
-## 风险 / 约束
-
-- 中文路径：`frontendDist` 用相对 `../ui-dist`；本体与桌面根均在 `MD阅读器\` 下，cargo 中文路径需本机验证
-- 安全：path cage；1.1 仅固定主机只读；禁止任意远程 URL
-- 双仓：桌面壳本根 + 本体 UI 根；改 UI 在本体 → sync-ui
+| 冒烟 2.0 | 打开库 → 点「终端」→ 系统终端 cwd=库根；点「Claude」→ 同窗启动 claude |
 
 ## 链接
 
@@ -52,8 +55,6 @@
 - milestones：`./milestones.md`
 - 本体 UI：`C:\Users\sai\MD阅读器\MD阅读器本体`
 - SPECS：`F:\知识库\SPECS\md-reader-tauri-desktop-20260719\`
-- 公网：https://md.saaaai.com/
-- Gitea origin（private）：`ssh://git@vps-jp-gitea/sai/sai-md-reader.git`
-- GitHub github（private）：`https://github.com/nakamotosai/sai-md-reader.git`
-- 双远端脚本：`~/.claude/skills/long-project/scripts/ensure-dual-remotes.ps1`
-- portfolio 建议下一句：`Sai MD Reader 桌面 · 根 C:\Users\sai\MD阅读器\MD阅读器tauri · 1.0 本机 / 1.1 SSH 规划 · active`
+- Gitea origin：`ssh://git@vps-jp-gitea/sai/sai-md-reader.git`
+- GitHub github：`https://github.com/nakamotosai/sai-md-reader.git`
+- portfolio 建议下一句：`Sai Workbench · MD阅读器tauri · 2.0 MVP 外部终端+Claude · active`
