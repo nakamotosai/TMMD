@@ -10,12 +10,15 @@
   - 版本写死：**1.0=本机阅读器（当前）**；**1.1=SSH 固定根 vps-jp/us**；终端 = magi **VETO 内嵌**，最早 1.2 外挂系统终端
   - `scripts/sync-ui.ps1` Dest 改新根；README 版本线与命令路径更新
   - 旧根写 `MOVED.md` 跳转
-- **feature_id**：F005（进行中→本会话收口）、F006（双远端）
-- **passes 变更**：F001–F004 保持 true（T0/t0.1 已有核验）；F005/F006 本会话核验后翻 true
-- **next**（唯一）：**F010 规划前的用户手测 1.0**（选知识库、侧栏滚动、外部改 md 够新）；下一开发会话再开 **F010 = 1.1 SSH 只读固定根**（勿塞终端）
-- **blockers**：用户侧 UAT 未书面确认；中文路径下完整 `cargo build` 以本机会话结果为准
+  - 中文路径 `cargo check` 绿；`npm install` 绿
+  - git init + pathspec commit `28eb423`；GitHub private `nakamotosai/sai-md-reader` 已推；Gitea `sai/sai-md-reader` 已建并推（origin=github HEAD 同 hash）
+  - F005 / F006 → **passes true**
+- **feature_id**：F005、F006
+- **passes 变更**：F005 false→true；F006 false→true
+- **next**（唯一）：用户手测 **1.0**（知识库侧栏滚动不回顶、最新文可见、外部改 md 够新）；下一开发会话再开 **F010 = 1.1 SSH 只读固定根**（勿塞终端）
+- **blockers**：无代码阻塞；UAT 待用户
 - **终端结论（magi 2026-07-19）**：1.0/1.1 **禁止**内嵌终端标签；需要便利 → 1.2+ 外挂 Windows Terminal；与「简单阅读器」+ path-cage 安全模型冲突
-- **portfolio 建议下一句**（不代写台账）：`Sai MD Reader 桌面 · C:\Users\sai\MD阅读器\MD阅读器tauri · 1.0 本机 / 1.1 SSH · active`
+- **portfolio 建议下一句**（不代写台账）：`Sai MD Reader 桌面 · C:\Users\sai\MD阅读器\MD阅读器tauri · 1.0 本机 / 1.1 SSH · active · 双 private 已推`
 - **放置**：用户点名路径优先，非 F 盘默认；非 claude 临时区
 
 ## 2026-07-19 · 此前（旧根）T0 / t0.1

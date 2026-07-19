@@ -47,7 +47,7 @@
       "title": "生产根迁移到 MD阅读器tauri + long-kit",
       "milestone": "M1",
       "product_version": "1.0",
-      "passes": false,
+      "passes": true,
       "how": "PROJECT/feature_list/progress 非空；sync-ui Dest 指向新根；旧路径 MOVED；cargo check 新路径通过"
     },
     {
@@ -55,7 +55,7 @@
       "title": "双 private 远端 origin+github",
       "milestone": "M1",
       "product_version": "1.0",
-      "passes": false,
+      "passes": true,
       "how": "git ls-remote origin HEAD 与 github HEAD 均成功；gh isPrivate=true"
     },
     {
