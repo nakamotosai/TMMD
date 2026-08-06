@@ -1,0 +1,89 @@
+[[permission]]
+identifier = "allow-desktop-info"
+description = "Allow desktop_info command"
+commands.allow = ["desktop_info"]
+
+[[permission]]
+identifier = "allow-pick-folder"
+description = "Allow pick_folder native dialog"
+commands.allow = ["pick_folder"]
+
+[[permission]]
+identifier = "allow-list-md-tree"
+description = "Allow list_md_tree under registered root"
+commands.allow = ["list_md_tree"]
+
+[[permission]]
+identifier = "allow-read-text"
+description = "Allow read_text under path cage"
+commands.allow = ["read_text"]
+
+[[permission]]
+identifier = "allow-write-text"
+description = "Allow write_text under path cage"
+commands.allow = ["write_text"]
+
+[[permission]]
+identifier = "allow-save-path"
+description = "Allow save_path single-file write"
+commands.allow = ["save_path"]
+
+[[permission]]
+identifier = "allow-load-roots"
+description = "Allow load_roots from app config"
+commands.allow = ["load_roots"]
+
+[[permission]]
+identifier = "allow-save-roots"
+description = "Allow save_roots to app config"
+commands.allow = ["save_roots"]
+
+[[permission]]
+identifier = "allow-pty-spawn"
+description = "Allow spawning embedded PTY session"
+commands.allow = ["pty_spawn"]
+
+[[permission]]
+identifier = "allow-pty-write"
+description = "Allow writing to embedded PTY"
+commands.allow = ["pty_write"]
+
+[[permission]]
+identifier = "allow-pty-resize"
+description = "Allow resizing embedded PTY"
+commands.allow = ["pty_resize"]
+
+[[permission]]
+identifier = "allow-pty-kill"
+description = "Allow killing embedded PTY session"
+commands.allow = ["pty_kill"]
+
+[[permission]]
+identifier = "allow-app-show"
+description = "Allow app_show (show + focus main window)"
+commands.allow = ["app_show"]
+
+[[permission]]
+identifier = "allow-app-hide"
+description = "Allow app_hide (hide main window to tray)"
+commands.allow = ["app_hide"]
+
+[[permission]]
+identifier = "allow-app-quit"
+description = "Allow app_quit (exit process)"
+commands.allow = ["app_quit"]
+
+[[permission]]
+identifier = "allow-app-restart"
+description = "Allow app_restart (respawn exe + exit)"
+commands.allow = ["app_restart"]
+
+[[permission]]
+identifier = "allow-app-minimize"
+description = "Allow app_minimize (titlebar chrome)"
+commands.allow = ["app_minimize"]
+
+[[permission]]
+identifier = "allow-app-toggle-maximize"
+description = "Allow app_toggle_maximize (titlebar chrome)"
+commands.allow = ["app_toggle_maximize"]

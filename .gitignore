@@ -1,0 +1,24 @@
+# Node / Tauri
+node_modules/
+dist/
+ui-dist/
+src-tauri/target/
+src-tauri/target-build-verify/
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Secrets / env
+.env
+.env.*
+
+# Internal project docs (not part of public release)
+progress.md
+PROJECT.md
+feature_list.json
+milestones.md
+scripts/

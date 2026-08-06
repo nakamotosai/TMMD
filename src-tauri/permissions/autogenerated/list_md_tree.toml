@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-list-md-tree"
+description = "Enables the list_md_tree command without any pre-configured scope."
+commands.allow = ["list_md_tree"]
+
+[[permission]]
+identifier = "deny-list-md-tree"
+description = "Denies the list_md_tree command without any pre-configured scope."
+commands.deny = ["list_md_tree"]

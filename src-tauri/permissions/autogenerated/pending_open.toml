@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pending-open"
+description = "Enables the pending_open command without any pre-configured scope."
+commands.allow = ["pending_open"]
+
+[[permission]]
+identifier = "deny-pending-open"
+description = "Denies the pending_open command without any pre-configured scope."
+commands.deny = ["pending_open"]
