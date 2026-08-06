@@ -1,4 +1,5 @@
 /* Sai Reader · 轻量本地 Markdown 阅读器（Tauri 2）
+ * v1.2.0：正文本地图片/视频/音频渲染（asset 协议 convertFileSrc + 相对路径基于 md 目录解析）
  * v1.1.0：SVG 线性图标 / 工具栏分组+响应式溢出 / 历史与收藏合并 /
  *         主题降级防 dark palette 残留 / 路径规范化 / spawn 不覆盖已有 root
  */
@@ -59,6 +60,76 @@ const S = {
 /* ==================== 渲染 ==================== */
 marked.setOptions({ gfm: true, breaks: true, headerIds: true, headerPrefix: 'srh-' });
 
+// —— 本地多媒体（图片/视频/音频）asset 协议解析 ——
+// WebView2 禁 file://；markdown 里的相对/绝对本地路径必须转成 tauri asset:// URL 才能加载。
+let CURRENT_ABS = null; // 当前渲染 md 的绝对路径，marked.parse 同步执行期间有效
+
+function isRemoteMedia(href) {
+  return /^(https?:|data:|blob:|asset:)/i.test(href);
+}
+
+// 规整本地路径为 Windows 绝对路径（保留盘符/UNC，折叠 ./.. 段）
+function normLocalMediaPath(p) {
+  let s = String(p).trim().replace(/^file:\/\//i, '');
+  const isUnc = /^\\\\/.test(s);
+  const wasAbs = /^[a-zA-Z]:[\\/]/.test(s) || s.startsWith('/');
+  const out = [];
+  for (const seg of s.split(/[\\/]+/)) {
+    if (!seg || seg === '.') continue;
+    if (seg === '..') out.pop();
+    else out.push(seg);
+  }
+  return (isUnc ? '\\\\' : '') + out.join('\\');
+}
+
+// href → 可加载 src：远程/已转原样；本地相对基于当前 md 目录解析成绝对再转 asset
+function mediaSrc(href) {
+  if (!href || isRemoteMedia(href)) return href;
+  const tauri = window.__TAURI__ && window.__TAURI__.core;
+  if (!tauri || !tauri.convertFileSrc) return href; // 非 Tauri 环境降级原样
+  let abs;
+  if (/^[a-zA-Z]:[\\/]/.test(href) || /^\\\\/.test(href) || href.startsWith('/')) {
+    abs = normLocalMediaPath(href);
+  } else if (CURRENT_ABS) {
+    const m = CURRENT_ABS.match(/[\\/][^\\/]*$/);
+    if (!m) return href; // 无目录上下文（如拖拽纯文件名）
+    abs = normLocalMediaPath(CURRENT_ABS.slice(0, m.index) + '\\' + href);
+  } else {
+    return href;
+  }
+  return tauri.convertFileSrc(abs);
+}
+
+marked.use({
+  renderer: {
+    image({ href, title, text }) {
+      const src = mediaSrc(href);
+      const q = (x) => String(x || '').replace(/"/g, '&quot;');
+      return `<img src="${src}" alt="${q(text)}"${title ? ` title="${q(title)}"` : ''} loading="lazy">`;
+    },
+  },
+});
+
+// 渲染后补转 md 内 HTML 直插的多媒体（img/video/audio/source）——幂等，已转的 asset:// 原样
+function fixMediaSrc(root) {
+  $qa('img, video[src], audio[src], source[src]', root).forEach((el) => {
+    const s = el.getAttribute('src');
+    if (s) el.setAttribute('src', mediaSrc(s));
+  });
+}
+
+// 本地图片加载失败（路径错/文件缺失）→ 降级显示文件名占位，不挂破图
+function wireImgFallback(root) {
+  $qa('img', root).forEach((img) => {
+    img.addEventListener('error', () => {
+      const f = (img.getAttribute('alt') || img.getAttribute('src') || 'image').replace(/^.*[\\/]/, '');
+      img.classList.add('srh-img-err');
+      img.alt = '图片加载失败：' + f;
+      img.removeAttribute('src');
+    }, { once: true });
+  });
+}
+
 function sanitize(root) {
   $qa('script', root).forEach((n) => n.remove());
   const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
@@ -97,20 +168,25 @@ function renderMarkdown(md, absParam) {
   const inner = $id('readerInner');
   const body = document.createElement('div');
   body.className = 'markdown-body';
+  CURRENT_ABS = absParam || null;
   body.innerHTML = marked.parse(md);
+  CURRENT_ABS = null;
   sanitize(body);
   highlightCode(body);
   renderMath(body);
+  fixMediaSrc(body);
+  wireImgFallback(body);
   S.toc = buildToc(body);
   inner.innerHTML = '';
   inner.appendChild(body);
   const name = absParam ? absParam.split(/[\\/]/).pop() : '';
   document.title = name ? name + ' · Sai Reader' : 'Sai Reader';
   const top = Number(LS.raw('sr_scr_' + absParam) || 0);
+  const rd = $id('reader');
+  rd.scrollTop = 0; // 容器复用：先清旧文件滚动残留，防切换 md 后新文件停在底部
   if (absParam && top > 0) {
     // 恢复上次阅读位置；值超出正文可滚高度 = 内容结构已变或值已陈旧毒化，
     // 归零从头读，避免首屏直接落在文末稀疏区（2026-08-05 用户"首屏黑"根因）
-    const rd = $id('reader');
     const max = rd.scrollHeight - rd.clientHeight;
     if (top > max) {
       LS.del('sr_scr_' + absParam);

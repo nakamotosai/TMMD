@@ -287,7 +287,12 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: var(--bg2); }
 .markdown-body a { color: var(--blue); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
-.markdown-body img { max-width: 100%; border-radius: var(--radius); }
+.markdown-body img { max-width: 100%; border-radius: var(--radius); display: block; margin: 1.2em auto; }
+.markdown-body img.srh-img-err {
+  min-height: 2.4em; border: 1px dashed var(--border); color: var(--muted);
+  font-size: .9em; display: flex; align-items: center; justify-content: center; padding: .6em 1em;
+}
+.markdown-body video, .markdown-body audio { max-width: 100%; display: block; margin: 1.2em auto; border-radius: var(--radius); }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
 .markdown-body table { border-collapse: collapse; margin: 1em 0; width: auto; }
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 12px; }
