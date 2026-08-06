@@ -1,3 +1,11 @@
+<div align="center">
+
+**🌐 Made by [Sai](https://saaaai.com) · [saaaai.com](https://saaaai.com)** — AI workflow · one homepage
+
+**[English](README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md)**
+
+</div>
+
 # Sai Reader
 
 ![Sai Reader hero — local-first Markdown reader for Windows](assets/readme/hero.svg)
