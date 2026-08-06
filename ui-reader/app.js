@@ -1,4 +1,5 @@
 /* Sai Reader · 轻量本地 Markdown 阅读器（Tauri 2）
+ * v1.2.1：窗口拖动修复——WebView2 不认 CSS -webkit-app-region，改 mousedown → startDragging()（capabilities 加 allow-start-dragging）
  * v1.2.0：正文本地图片/视频/音频渲染（asset 协议 convertFileSrc + 相对路径基于 md 目录解析）
  * v1.1.0：SVG 线性图标 / 工具栏分组+响应式溢出 / 历史与收藏合并 /
  *         主题降级防 dark palette 残留 / 路径规范化 / spawn 不覆盖已有 root
@@ -643,6 +644,22 @@ function applySideCollapsed(c) {
     btn.title = c ? '显示侧栏' : '隐藏侧栏';
   }
 }
+/* ==================== 窗口拖动 ==================== */
+// WebView2 不认 CSS -webkit-app-region: drag（computed 生效但系统忽略，2026-08-06 实证），
+// 必须 mousedown 同步调 startDragging()（Tauri 2 官方机制；capabilities 需 core:window:allow-start-dragging）。
+// 交互区（按钮/链接/输入/窗口控制）跳过保留点击；actions 间隙可拖 = 顶栏大片空白都能拖窗口。
+function bindWindowDrag() {
+  const tb = document.querySelector('.topbar');
+  if (!tb || !window.__TAURI__ || !window.__TAURI__.window) return;
+  const win = window.__TAURI__.window.getCurrentWindow();
+  tb.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest('button, a, input, select, textarea, .win-ctrl')) return;
+    e.preventDefault();
+    win.startDragging().catch(() => {});
+  });
+}
+
 let resizeDragging = false;
 function bindSideResizer() {
   const resizer = $id('sideResizer');
@@ -788,6 +805,7 @@ function wire() {
   bindDragDrop();
   installDragEnterNative();
   bindWinCtrl();
+  bindWindowDrag();
   bindSideResizer();
   bindSettings();
   // resize 结束后重排工具栏溢出（纯 layoutToolbar，不做 opacity 合成层 hack——
