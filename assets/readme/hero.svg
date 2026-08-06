@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 260" width="100%" role="img" aria-label="Sai Reader hero — local-first Markdown reader for Windows">
+<style>
+text{font-family:system-ui,"Segoe UI",sans-serif}
+.mono{font-family:Consolas,monospace}
+</style>
+<rect width="1200" height="260" fill="#fbf1c7"/>
+<text x="1088" y="214" font-size="132" fill="#e6d5ae" opacity=".55">#</text>
+<g>
+<rect x="28" y="22" width="560" height="216" rx="10" fill="#1d2021"/>
+<rect x="28" y="22" width="560" height="34" rx="10" fill="#282828"/>
+<rect x="28" y="46" width="560" height="10" fill="#282828"/>
+<circle cx="48" cy="39" r="5" fill="#83a598"/>
+<circle cx="66" cy="39" r="5" fill="#fabd2f"/>
+<circle cx="84" cy="39" r="5" fill="#fe8019"/>
+<rect x="36" y="64" width="150" height="166" fill="#282828"/>
+<path d="M44 82 L52 88 L44 94 Z" fill="#a89984"/>
+<text x="60" y="92" font-size="18" fill="#fabd2f">docs</text>
+<path d="M64 104 L72 110 L64 116 Z" fill="#7c6f64"/>
+<text x="80" y="114" font-size="18" fill="#fabd2f">guide</text>
+<text class="mono" x="100" y="136" font-size="18" fill="#a89984">intro.md</text>
+<text class="mono" x="100" y="158" font-size="18" fill="#a89984">install.md</text>
+<text class="mono" x="100" y="180" font-size="18" fill="#fe8019">api.md</text>
+<text class="mono" x="60" y="202" font-size="18" fill="#a89984">config.md</text>
+<rect x="194" y="64" width="378" height="166" rx="4" fill="#fbf1c7"/>
+<text class="mono" x="202" y="88" font-size="18" fill="#7c6f64">notes/intro.md</text>
+<text x="202" y="114" font-size="20" font-weight="700" fill="#3c3836">Local-first reading</text>
+<rect x="202" y="126" width="300" height="6" rx="3" fill="#d5c4a1"/>
+<rect x="202" y="138" width="262" height="6" rx="3" fill="#d5c4a1"/>
+<rect x="202" y="150" width="284" height="6" rx="3" fill="#d5c4a1"/>
+<rect x="202" y="158" width="362" height="60" rx="4" fill="#1d2021"/>
+<text class="mono" x="212" y="180" font-size="18" fill="#a89984"># local-first</text>
+<text class="mono" x="212" y="204" font-size="18" fill="#ebdbb2"><tspan fill="#fe8019">$ </tspan>npm run dev</text>
+</g>
+<text x="660" y="108" font-size="64" font-weight="700" fill="#3c3836">Sai Reader</text>
+<rect x="660" y="122" width="196" height="4" rx="2" fill="#fe8019"/>
+<text x="660" y="152" font-size="20" fill="#7c6f64">Local-first Markdown reader for Windows</text>
+<text x="660" y="178" font-size="20" fill="#7c6f64"><tspan fill="#fe8019">· </tspan>Tauri 2 (Rust + WebView2)</text>
+<g font-size="18">
+<rect x="660" y="200" width="112" height="30" rx="15" fill="#f2e5bc" stroke="#d5c4a1"/>
+<text x="674" y="220" fill="#3c3836">Local-first</text>
+<rect x="784" y="200" width="132" height="30" rx="15" fill="#f2e5bc" stroke="#d5c4a1"/>
+<text x="798" y="220" fill="#3c3836">No telemetry</text>
+<rect x="928" y="200" width="148" height="30" rx="15" fill="#f2e5bc" stroke="#d5c4a1"/>
+<text x="942" y="220" fill="#3c3836">Path-cage safe</text>
+</g>
+</svg>
