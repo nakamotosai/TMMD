@@ -71,6 +71,16 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 
 [MIT](LICENSE) © 2026 nakamotosai
 
+## 状态与进度（进度主文件 · 2026-08-08 补节）
+
+> 追踪规则：`skill://sai-long-project` + `skill://sai-closeout`；长流水见 `progress.md`；项目本卡 vps `~/project-portfolio/projects.md`。
+
+- **状态**：暂时完结（2026-08-06 暂收口）
+- **最新**：v1.2.1 已发（拖动/性能已修·GH Release·主页开源已上·reviewer 8/8）
+- **残差**：①第一屏黑/编辑遮挡 ②版本号 ③透明度 ④背景色 go ⑤工具栏两模式 ⑥覆盖+版号自动
+- **唯一 next**：等用户反馈后复核残差
+- **双仓**：GitHub（SSOT）+ Gitea（备份）同 HEAD `d3a9705`
+
 ---
 
 镜像：[GitHub](https://github.com/nakamotosai/sai-md-reader) · Gitea（自托管）

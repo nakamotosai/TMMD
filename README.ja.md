@@ -71,6 +71,16 @@ npm run build     # リリースビルド → NSIS/MSI インストーラが src
 
 [MIT](LICENSE) © 2026 nakamotosai
 
+## ステータス・進捗（進捗管理ファイル · 2026-08-08 追記）
+
+> 追跡ルール：`skill://sai-long-project` + `skill://sai-closeout`；詳細は `progress.md`；プロジェクト台帳 vps `~/project-portfolio/projects.md`。
+
+- **ステータス**：一時完了（2026-08-06 一時収口）
+- **最新**：v1.2.1 リリース済み（ドラッグ・パフォーマンス修正・GH Release・トップページOSS欄掲載・レビュアー 8/8）
+- **未解決残差**：①初画面の黒/編集の食い込み ②バージョン番号 ③透明度 ④背景色 go ⑤ツールバー二方式 ⑥上書き＋版番号自動発行
+- **唯一 next**：ユーザーフィードバック後に残差レビュー
+- **ミラー**：GitHub（SSOT）+ Gitea（セルフホスト）同 HEAD `d3a9705`
+
 ---
 
 ミラー：[GitHub](https://github.com/nakamotosai/sai-md-reader) · Gitea（セルフホスト）
