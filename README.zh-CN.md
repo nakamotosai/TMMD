@@ -79,7 +79,7 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 - **最新**：v1.2.1 已发（拖动/性能已修·GH Release·主页开源已上·reviewer 8/8）
 - **残差**：①第一屏黑/编辑遮挡 ②版本号 ③透明度 ④背景色 go ⑤工具栏两模式 ⑥覆盖+版号自动
 - **唯一 next**：等用户反馈后复核残差
-- **双仓**：GitHub（SSOT）+ Gitea（备份）同 HEAD `d3a9705`
+- **双仓**：GitHub（SSOT）+ Gitea（备份）双端同 HEAD（核 `git ls-remote`）
 
 ---
 

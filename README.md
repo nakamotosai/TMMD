@@ -79,7 +79,7 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 - **Latest**: v1.2.1 published (drag/perf fixed, GH Release shipped, homepage open-source listed, reviewer 8/8)
 - **Open residuals**: ① first-screen black/编辑遮挡 ② version number ③ transparency ④ background color `go` ⑤ toolbar two modes ⑥ overlay + version auto-publish
 - **Next**: review residuals after user feedback
-- **Mirrors**: GitHub (SSOT) + Gitea (self-hosted) same HEAD `d3a9705`
+- **Mirrors**: GitHub (SSOT) + Gitea (self-hosted), dual-repo same HEAD (verify with `git ls-remote`)
 
 ---
 
