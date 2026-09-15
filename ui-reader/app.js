@@ -51,6 +51,7 @@ const S = {
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
+  glass: LS.get('sr_glass', { on: true, chrome: 80, reader: 92, pop: 85 }),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -952,6 +953,26 @@ function applySettings() {
   // 主题图标 sun/moon 切换
   const tf = $q('#btnTheme use'); if (tf) tf.setAttribute('href', S.theme === 'dark' ? '#i-moon' : '#i-sun');
 }
+/* W3 玻璃质感：把 S.glass 落到 --glass-* 三路上。opaque=true 强制全不透明
+ *（开机首帧用，避开透明窗冷启动合成坑）；平时走存储值，即时生效。 */
+function applyGlass(opaque) {
+  if (!S.glass || typeof S.glass !== 'object') S.glass = {};
+  const on = opaque ? false : S.glass.on !== false;
+  const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
+  const chrome = num(S.glass.chrome, 80, 40, 100);
+  const reader = num(S.glass.reader, 92, 60, 100);
+  const pop = num(S.glass.pop, 85, 40, 100);
+  const root = document.documentElement.style;
+  root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
+  root.setProperty('--glass-reader', (on ? reader : 100) + '%');
+  root.setProperty('--glass-pop', (on ? pop : 100) + '%');
+  // 面板控件回显（面板关闭时节点仍在，?. 守无）
+  $id('setGlassOn')?.classList.toggle('active', on);
+  $id('setGlassOff')?.classList.toggle('active', !on);
+  const gc = $id('setGlassChrome'); if (gc) { gc.value = chrome; $id('valGlassChrome').textContent = chrome + '%'; }
+  const gr = $id('setGlassReader'); if (gr) { gr.value = reader; $id('valGlassReader').textContent = reader + '%'; }
+  const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
+}
 function renderPaletteSwatches() {
   const box = $id('paletteSwatches');
   if (!box) return;
@@ -970,7 +991,7 @@ function bindSettings() {
   $id('btnSettings')?.addEventListener('click', () => {
     const p = $id('settingsPanel');
     p.hidden = !p.hidden;
-    if (!p.hidden) { applySettings(); renderPaletteSwatches(); }
+    if (!p.hidden) { applySettings(); renderPaletteSwatches(); applyGlass(false); }
   });
   $id('btnSettingsClose')?.addEventListener('click', () => { $id('settingsPanel').hidden = true; });
   $id('setH1Size')?.addEventListener('input', (e) => { S.h1Size = +e.target.value; $id('valH1Size').textContent = S.h1Size.toFixed(2) + 'em'; LS.set('sr_h1', S.h1Size); applySettings(); });
@@ -983,6 +1004,13 @@ function bindSettings() {
   const aiEp = $id('setAiEndpoint'); if (aiEp) { aiEp.value = S.aiEndpoint; aiEp.addEventListener('change', () => { S.aiEndpoint = aiEp.value.trim(); LS.str('sr_ai_endpoint', S.aiEndpoint); }); }
   const aiKey = $id('setAiKey'); if (aiKey) { aiKey.value = S.aiKey; aiKey.addEventListener('change', () => { S.aiKey = aiKey.value.trim(); LS.str('sr_ai_key', S.aiKey); }); }
   const aiModel = $id('setAiModel'); if (aiModel) { aiModel.value = S.aiModel; aiModel.addEventListener('change', () => { S.aiModel = aiModel.value.trim(); LS.str('sr_ai_model', S.aiModel); }); }
+  // 玻璃质感：开关 + 三路不透明度，拖动即时生效并持久化
+  const glassOn = () => { if (!S.glass || typeof S.glass !== 'object') S.glass = {}; return S.glass; };
+  $id('setGlassOn')?.addEventListener('click', () => { glassOn().on = true; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassOff')?.addEventListener('click', () => { glassOn().on = false; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
 }
 
 /* ==================== 启动 ==================== */
@@ -1088,6 +1116,9 @@ async function boot() {
   applySideCollapsed(S.sideCollapsed);
   applyToolbarMode();
   wire();
+  // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值
+  applyGlass(true);
+  setTimeout(() => applyGlass(false), 450);
   // 字体加载会改变按钮宽度，加载完成后重排溢出
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);
