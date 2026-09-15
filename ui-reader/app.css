@@ -38,6 +38,9 @@
   --surface-chrome: color-mix(in srgb, var(--bg2) var(--glass-chrome), transparent);
   --surface-reader: color-mix(in srgb, var(--bg) var(--glass-reader), transparent);
   --surface-pop: color-mix(in srgb, var(--bg2) var(--glass-pop), transparent);
+  /* W8 文字整体透明度：只作用正文与侧栏内容容器（顶栏控件不受影响，保证按钮可读）。
+   * 取值 0–1 小数，由 app.js 按百分比写入；默认 1。 */
+  --text-opa: 1;
 }
 
 /* 配色预设（dark） */
@@ -386,6 +389,19 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 
 /* 设置面板 AI 文本输入 */
 .settings-sub { color: var(--fg-faint); font-size: 12px; letter-spacing: .06em; border-top: 1px solid var(--border); padding-top: 12px; }
+.set-color {
+  width: 46px; height: 26px; padding: 1px 3px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+}
+/* W8 材质下拉：跟随主题底字，内容层不透明 */
+.set-select {
+  flex: 1; min-width: 0; padding: 5px 8px; font-size: 12px; cursor: pointer;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.set-select:focus { outline: none; border-color: var(--accent); }
+/* W8 文字整体透明度落点：正文区 + 侧栏内容（编辑态 textarea 不在内，保持清晰可写） */
+.reader-inner, #sideBody { opacity: var(--text-opa); }
 .set-text {
   flex: 1; min-width: 0; padding: 5px 8px; font-size: 12px;
   background: var(--bg); color: var(--fg);

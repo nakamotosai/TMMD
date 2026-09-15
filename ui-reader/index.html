@@ -46,6 +46,7 @@
       <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
       <symbol id="i-map" viewBox="0 0 24 24"><path d="M6 3v18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/><circle cx="6" cy="5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="19" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 5H21M9.5 12h7M9.5 19h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
       <symbol id="i-card" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M7 9h10M7 12.5h7M7 16h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M17.8 7.2l.6-1.2.6 1.2 1.2.6-1.2.6-.6 1.2-.6-1.2-1.2-.6z" fill="currentColor"/></symbol>
+      <symbol id="i-glass" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 10h16" stroke="currentColor" stroke-width="1.4" opacity=".7"/><circle cx="15.5" cy="16" r="2.4" fill="currentColor" opacity=".85"/></symbol>
     </defs>
   </svg>
 
@@ -59,6 +60,7 @@
       <button id="tbDoc" class="tb-btn" data-drawer="menuDoc" data-overflow="1" title="文档"><svg class="ic"><use href="#i-star"/></svg><span class="tb-label">文档</span><svg class="ic tb-caret"><use href="#i-caret"/></svg></button>
       <button id="btnTheme" class="tb-btn" data-overflow="1" title="切换深浅主题"><svg class="ic"><use href="#i-moon"/></svg><span class="tb-label">主题</span></button>
       <button id="btnSettings" class="tb-btn" data-overflow="1" title="显示设置"><svg class="ic"><use href="#i-settings"/></svg><span class="tb-label">设置</span></button>
+      <button id="btnGlass" class="tb-btn" data-overflow="1" title="玻璃质感（透明度/背景色）"><svg class="ic"><use href="#i-glass"/></svg><span class="tb-label">玻璃</span></button>
       <button id="tbMore" class="tb-btn" data-drawer="menuMore" title="更多功能" hidden><svg class="ic"><use href="#i-more"/></svg><span class="tb-label">更多</span><svg class="ic tb-caret"><use href="#i-caret"/></svg></button>
     </nav>
     <nav class="win-ctrl">
@@ -140,32 +142,6 @@
         <input type="range" id="setSideWidth" min="160" max="480" step="10" />
         <span class="settings-val" id="valSideWidth">260px</span>
       </div>
-      <div class="settings-row settings-sub">玻璃质感（亚克力底，关则全不透明）</div>
-      <div class="settings-row">
-        <label>玻璃效果</label>
-        <button id="setGlassOn" class="theme-btn active">开</button>
-        <button id="setGlassOff" class="theme-btn">关</button>
-      </div>
-      <div class="settings-row">
-        <label>整窗底色</label>
-        <input type="range" id="setGlassBase" min="25" max="100" step="1" />
-        <span class="settings-val" id="valGlassBase">30%</span>
-      </div>
-      <div class="settings-row">
-        <label>顶栏侧栏</label>
-        <input type="range" id="setGlassChrome" min="35" max="100" step="1" />
-        <span class="settings-val" id="valGlassChrome">40%</span>
-      </div>
-      <div class="settings-row">
-        <label>正文</label>
-        <input type="range" id="setGlassReader" min="50" max="100" step="1" />
-        <span class="settings-val" id="valGlassReader">55%</span>
-      </div>
-      <div class="settings-row">
-        <label>浮层</label>
-        <input type="range" id="setGlassPop" min="35" max="100" step="1" />
-        <span class="settings-val" id="valGlassPop">45%</span>
-      </div>
       <div class="settings-row settings-sub">AI 导读卡（章节卡片用小模型生成，缓存在本机）</div>
       <div class="settings-row">
         <label>网关地址</label>
@@ -178,6 +154,60 @@
       <div class="settings-row">
         <label>模型</label>
         <input type="text" id="setAiModel" class="set-text" placeholder="minimaxai/minimax-m3" />
+      </div>
+    </div>
+  </div>
+
+  <!-- 玻璃质感独立面板（工具栏「玻璃」按钮直达；四路下限 1%，背景色直驱亚克力 tint） -->
+  <div id="glassPanel" class="settings-panel" hidden>
+    <div class="settings-header">
+      <span>玻璃质感</span>
+      <button id="btnGlassClose" class="settings-close" aria-label="关闭玻璃面板">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-row">
+        <label>玻璃效果</label>
+        <button id="setGlassOn" class="theme-btn active">开</button>
+        <button id="setGlassOff" class="theme-btn">关</button>
+      </div>
+      <div class="settings-row">
+        <label>材质</label>
+        <select id="setGlassMaterial" class="set-select">
+          <option value="none">无</option>
+          <option value="mica">Mica（低开销）</option>
+          <option value="aero">Aero（玻璃）</option>
+          <option value="acrylic" selected>Acrylic（高开销）</option>
+        </select>
+      </div>
+      <div class="settings-row">
+        <label>整窗底色</label>
+        <input type="range" id="setGlassBase" min="1" max="100" step="1" />
+        <span class="settings-val" id="valGlassBase">12%</span>
+      </div>
+      <div class="settings-row">
+        <label>顶栏侧栏</label>
+        <input type="range" id="setGlassChrome" min="1" max="100" step="1" />
+        <span class="settings-val" id="valGlassChrome">25%</span>
+      </div>
+      <div class="settings-row">
+        <label>正文</label>
+        <input type="range" id="setGlassReader" min="1" max="100" step="1" />
+        <span class="settings-val" id="valGlassReader">35%</span>
+      </div>
+      <div class="settings-row">
+        <label>浮层</label>
+        <input type="range" id="setGlassPop" min="1" max="100" step="1" />
+        <span class="settings-val" id="valGlassPop">30%</span>
+      </div>
+      <div class="settings-row">
+        <label>文字</label>
+        <input type="range" id="setGlassText" min="10" max="100" step="1" />
+        <span class="settings-val" id="valGlassText">100%</span>
+      </div>
+      <div class="settings-row">
+        <label>背景色</label>
+        <input type="color" id="setGlassTint" class="set-color" value="#26282e" />
+        <span class="settings-val" id="valGlassTint">#26282e</span>
       </div>
     </div>
   </div>

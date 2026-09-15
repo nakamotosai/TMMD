@@ -297,6 +297,12 @@
           "markdownDescription": "Allow save_roots to app config"
         },
         {
+          "description": "Allow set_glass_material (W8 玻璃材质下拉：none/mica/aero/acrylic + tint)",
+          "type": "string",
+          "const": "allow-set-glass-material",
+          "markdownDescription": "Allow set_glass_material (W8 玻璃材质下拉：none/mica/aero/acrylic + tint)"
+        },
+        {
           "description": "Allow write_text under path cage",
           "type": "string",
           "const": "allow-write-text",

@@ -87,3 +87,8 @@ commands.allow = ["app_minimize"]
 identifier = "allow-app-toggle-maximize"
 description = "Allow app_toggle_maximize (titlebar chrome)"
 commands.allow = ["app_toggle_maximize"]
+
+[[permission]]
+identifier = "allow-set-glass-material"
+description = "Allow set_glass_material (W8 玻璃材质下拉：none/mica/aero/acrylic + tint)"
+commands.allow = ["set_glass_material"]

@@ -51,9 +51,9 @@ const S = {
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
-  // W7 玻璃默认值（Pebrel 路线，真屏 30/40/55/45 定稿）：底 30 / 铬 40 / 正文 55 / 浮层 45。
-  // 旧存档（仅 chrome/reader/pop、无 base）直接丢弃，用新默认（W7 迁移一次）。
-  glass: (() => { const d = { on: true, base: 30, chrome: 40, reader: 55, pop: 45 }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'base' in g) ? g : d; })(),
+  // W8 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
+  // 旧存档（无 material 键）直接丢弃，用新默认（W8 迁移一次）。
+  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic' }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'material' in g) ? g : d; })(),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -955,23 +955,25 @@ function applySettings() {
   // 主题图标 sun/moon 切换
   const tf = $q('#btnTheme use'); if (tf) tf.setAttribute('href', S.theme === 'dark' ? '#i-moon' : '#i-sun');
 }
-/* W3 玻璃质感：把 S.glass 落到 --glass-* 三路上。opaque=true 强制全不透明
- *（开机首帧用，避开透明窗冷启动合成坑）；平时走存储值，即时生效。 */
+/* W8 玻璃质感：把 S.glass 落到 --glass-* 四路 + --text-opa。opaque=true 强制全不透明
+ *（开机首帧用，避开透明窗冷启动合成坑）；平时走存储值，即时生效。
+ * 下限：四路表面 1%（Pebrel 路线，黑底也要看得见），文字 10%（1% 字就没了，守 10）。 */
 function applyGlass(opaque) {
   if (!S.glass || typeof S.glass !== 'object') S.glass = {};
   const on = opaque ? false : S.glass.on !== false;
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
-  // W6 默认走 Pebrel 路线，真屏 30/40/55/45 定稿。
-  // 底色是见壁纸的总开关——它 100% 时上层再透也只透出实色底（W5 教训）。
-  const base = num(S.glass.base, 30, 25, 100);
-  const chrome = num(S.glass.chrome, 40, 35, 100);
-  const reader = num(S.glass.reader, 55, 50, 100);
-  const pop = num(S.glass.pop, 45, 35, 100);
+  const base = num(S.glass.base, 12, 1, 100);
+  const chrome = num(S.glass.chrome, 25, 1, 100);
+  const reader = num(S.glass.reader, 35, 1, 100);
+  const pop = num(S.glass.pop, 30, 1, 100);
+  const text = num(S.glass.text, 100, 10, 100);
+  const tint = (typeof S.glass.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tint)) ? S.glass.tint : '#26282e';
   const root = document.documentElement.style;
   root.setProperty('--glass-base', (on ? base : 100) + '%');
   root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
   root.setProperty('--glass-reader', (on ? reader : 100) + '%');
   root.setProperty('--glass-pop', (on ? pop : 100) + '%');
+  root.setProperty('--text-opa', String(on ? text / 100 : 1));
   // 面板控件回显（面板关闭时节点仍在，?. 守无）
   $id('setGlassOn')?.classList.toggle('active', on);
   $id('setGlassOff')?.classList.toggle('active', !on);
@@ -979,6 +981,23 @@ function applyGlass(opaque) {
   const gc = $id('setGlassChrome'); if (gc) { gc.value = chrome; $id('valGlassChrome').textContent = chrome + '%'; }
   const gr = $id('setGlassReader'); if (gr) { gr.value = reader; $id('valGlassReader').textContent = reader + '%'; }
   const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
+  const gt = $id('setGlassText'); if (gt) { gt.value = text; $id('valGlassText').textContent = text + '%'; }
+  const ti = $id('setGlassTint'); if (ti) { ti.value = tint; const tv = $id('valGlassTint'); if (tv) tv.textContent = tint; }
+  const mm = $id('setGlassMaterial'); if (mm) mm.value = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic');
+}
+/* W8 材质 + 底色直驱后端：material（none/mica/aero/acrylic）+ tint。非 Tauri 环境（invoke 为空）静默跳过。
+ * 焦点变化时重放一次：失焦导致材质丢失的 machine 上可自愈；正常机器上是无操作幂等调用。 */
+async function applyGlassMaterial() {
+  if (!invoke) return;
+  const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
+  const material = (typeof g.material === 'string' ? g.material : 'acrylic');
+  const tint = (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) ? g.tint : '#26282e';
+  const n = parseInt(tint.slice(1), 16);
+  try {
+    await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha: 100 });
+  } catch (e) {
+    toast('玻璃材质应用失败：' + ((e && e.message) || e));
+  }
 }
 function renderPaletteSwatches() {
   const box = $id('paletteSwatches');
@@ -1019,6 +1038,20 @@ function bindSettings() {
   $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
+  // W8 文字整体透明度 + 背景色（底色直驱亚克力 tint）
+  $id('setGlassText')?.addEventListener('input', (e) => { glassOn().text = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassTint')?.addEventListener('input', (e) => { glassOn().tint = e.target.value; LS.set('sr_glass', S.glass); const tv = $id('valGlassTint'); if (tv) tv.textContent = e.target.value; applyGlassMaterial(); });
+  // W8 材质下拉 + 失焦自愈：焦点变化就重放材质（失焦丢材质的机器上自愈，其余机器幂等无操作）
+  $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', S.glass); applyGlassMaterial(); });
+  // W8 玻璃独立面板：工具栏按钮直达，开时自动收起设置面板；Esc 关闭
+  $id('btnGlass')?.addEventListener('click', () => {
+    const gp = $id('glassPanel'); if (!gp) return;
+    const sp = $id('settingsPanel'); if (sp) sp.hidden = true;
+    gp.hidden = !gp.hidden;
+    if (!gp.hidden) applyGlass(false);
+  });
+  $id('btnGlassClose')?.addEventListener('click', () => { $id('glassPanel').hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const gp = $id('glassPanel'); if (gp && !gp.hidden) gp.hidden = true; } });
 }
 
 /* ==================== 启动 ==================== */
@@ -1100,6 +1133,12 @@ function wire() {
   bindWindowDrag();
   bindSideResizer();
   bindSettings();
+  // W8 失焦自愈：窗口焦点变化就重放材质+tint。Pebrel 失焦只变阴影、本体透明度不变；
+  // 个别机器失焦会丢 backdrop 材质，重放即恢复，其余机器上是幂等无操作。非 Tauri 环境跳过。
+  try {
+    const cw = (__tauri && __tauri.window && typeof __tauri.window.getCurrentWindow === 'function') ? __tauri.window.getCurrentWindow() : null;
+    if (cw && typeof cw.onFocusChanged === 'function') cw.onFocusChanged(() => { applyGlassMaterial(); }).catch(() => {});
+  } catch { /* 非 Tauri 环境 */ }
   // resize 结束后重排工具栏溢出（纯 layoutToolbar，不做 opacity 合成层 hack——
   // 透明窗时代该 hack 轻触合成层强制刷新；实色窗（transparent:false）下它反而
   // 触发 WebView2 合成层损坏：正文/按钮大面积不绘制，只剩旧帧残影，2026-08-05 实证）
@@ -1124,9 +1163,9 @@ async function boot() {
   applySideCollapsed(S.sideCollapsed);
   applyToolbarMode();
   wire();
-  // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值
+  // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
   applyGlass(true);
-  setTimeout(() => applyGlass(false), 450);
+  setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);
   // 字体加载会改变按钮宽度，加载完成后重排溢出
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);

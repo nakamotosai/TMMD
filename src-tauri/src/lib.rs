@@ -491,7 +491,8 @@ pub fn run() {
             save_path,
             load_roots,
             save_roots,
-            pending_open
+            pending_open,
+            set_glass_material
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai Reader");
@@ -504,4 +505,45 @@ struct StartupPending(std::sync::Mutex<Option<String>>);
 #[tauri::command]
 fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, String> {
     Ok(state.0.lock().unwrap().take())
+}
+
+/// W8 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
+/// material: none（清效果，纯透明直透）/ mica（低开销）/ aero（经典 blur-behind 玻璃）/ acrylic（高开销，r/g/b/alpha 为 tint）。
+/// Mica Alt 缺席：window-vibrancy 0.8 未提供该 API（见 progress W8），如需后续升级库再补。
+/// 失败返回 Err 由前端 toast，绝不 panic。
+#[tauri::command]
+fn set_glass_material(
+    app: tauri::AppHandle,
+    material: String,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: u8,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use window_vibrancy::{
+            apply_acrylic, apply_blur, apply_mica, clear_acrylic, clear_blur, clear_mica,
+        };
+        let win = app
+            .get_webview_window("main")
+            .ok_or_else(|| "找不到主窗口".to_string())?;
+        match material.as_str() {
+            "none" => {
+                let _ = clear_blur(&win);
+                let _ = clear_acrylic(&win);
+                let _ = clear_mica(&win);
+                Ok(())
+            }
+            "mica" => apply_mica(&win, None).map_err(|e| format!("Mica 应用失败: {e}")),
+            "aero" => apply_blur(&win, None).map_err(|e| format!("Aero 应用失败: {e}")),
+            _ => apply_acrylic(&win, Some((r, g, b, alpha)))
+                .map_err(|e| format!("亚克力应用失败: {e}")),
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, material, r, g, b, alpha);
+        Err("玻璃材质仅 Windows 支持".to_string())
+    }
 }
