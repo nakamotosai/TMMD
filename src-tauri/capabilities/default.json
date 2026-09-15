@@ -14,6 +14,7 @@
     "core:window:allow-show",
     "core:window:allow-set-position",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-effects",
     "core:app:default",
     "core:path:default",
     "allow-desktop-info",

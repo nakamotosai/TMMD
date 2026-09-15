@@ -467,8 +467,15 @@ pub fn run() {
             // 冷启动（首个进程）：argv[1] 可能带着 .md 路径，先存起来等前端就绪再取
             let first = std::env::args().nth(1);
             *app.state::<StartupPending>().0.lock().unwrap() = first;
-            // v1.1.3：不透明实色窗。透明窗 + WebView2 在冷启动首屏有已知合成 bug
-            // （首屏黑、往下滚才重绘，progress 历史记录），恢复实色窗最稳。
+            // W1 玻璃后端材质：透明窗 + 亚克力底（tint 沿用 v0.3.2 实测值）。
+            // CSS 仍全实色，视觉零变化，分层留到 W2；旧坑（透明窗首屏黑/合成层，
+            // progress v1.1.3/v1.1.1）由 W4 双通道验收覆盖。材质失败只记忽略，不崩窗口。
+            if let Some(win) = app.get_webview_window("main") {
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = window_vibrancy::apply_acrylic(&win, Some((18, 18, 18, 125)));
+                }
+            }
             Ok(())
         })
         .manage(StartupPending::default())
