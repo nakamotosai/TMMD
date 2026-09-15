@@ -2,6 +2,7 @@
  * 视觉规范：DESIGN.md（Maple Mono NF CN / 正文 16px / 隐形滚动条 / Gruvbox 实色）
  * v1.1.0：统一 SVG 线性图标 / 工具栏分组+响应式溢出 / 实色背景层（修滚动色变）
  *        历史与收藏合并 / 侧栏折叠按钮置左 / 主题降级 / 配色一致
+ * W2 玻璃分层：只加变量和表面切换，不改布局（见 :root --glass-* / --surface-*）。
  */
 
 :root {
@@ -26,6 +27,17 @@
   --h1-size: 1.75em;
   --body-size: 16px;
   --code-size: 14px;
+  /* W2 玻璃分层：四路不透明度（默认 100% = 与实色一致，零视觉变化）。
+   * 透明度由 W3 设置面板写入 --glass-*（百分比）；表面只换 background，不碰布局。
+   * 内容层（按钮 hover / 代码块 / 卡片 / 引用）故意保持不透明，保证透底后仍可读。 */
+  --glass-base: 100%;
+  --glass-chrome: 100%;
+  --glass-reader: 100%;
+  --glass-pop: 100%;
+  --surface-base: color-mix(in srgb, var(--bg) var(--glass-base), transparent);
+  --surface-chrome: color-mix(in srgb, var(--bg2) var(--glass-chrome), transparent);
+  --surface-reader: color-mix(in srgb, var(--bg) var(--glass-reader), transparent);
+  --surface-pop: color-mix(in srgb, var(--bg2) var(--glass-pop), transparent);
 }
 
 /* 配色预设（dark） */
@@ -81,10 +93,11 @@
 
 html, body { height: 100%; margin: 0; }
 
-/* v1.1.3 实色窗：html/body/layout/reader 全实色 --bg，消除透明窗 WebView2 首屏合成 bug */
-html { background: var(--bg); }
+/* W2：html/body 走 --surface-base（默认 100% 不透明 = 原实色 --bg）。
+ * v1.1.3 实色窗结论仍有效：透明效果只敢在 W4 双通道验收后放行。 */
+html { background: var(--surface-base); }
 body {
-  background: var(--bg); color: var(--fg);
+  background: var(--surface-base); color: var(--fg);
   font-family: var(--sans); font-size: var(--body-size);
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -93,6 +106,7 @@ body {
 .ic { width: 16px; height: 16px; display: inline-block; vertical-align: -3px; flex-shrink: 0; }
 .ic.sm { width: 13px; height: 13px; vertical-align: -2px; }
 
+/* 按钮/菜单内容层：保持不透明（可读性），不进玻璃表面 */
 button {
   display: inline-flex; align-items: center; gap: 5px;
   background: var(--bg2); color: var(--fg); border: 1px solid var(--border);
@@ -115,7 +129,7 @@ button:disabled { opacity: .45; cursor: default; }
    2026-08-06 实证），统一由 app.js bindWindowDrag 在 mousedown 调 startDragging() 实现 */
 .topbar {
   height: 38px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
-  padding: 0 10px; background: var(--bg2); border-bottom: 1px solid var(--border);
+  padding: 0 10px; background: var(--surface-chrome); border-bottom: 1px solid var(--border);
   user-select: none;
 }
 .topbar .actions {
@@ -138,11 +152,11 @@ body.tb-text .tb-btn .ic { display: none; }
 .win-close:hover { background: var(--red); color: #1d2021; }
 
 /* ===== layout ===== */
-.layout { flex: 1; display: flex; min-height: 0; overflow: hidden; background: var(--bg); }
+.layout { flex: 1; display: flex; min-height: 0; overflow: hidden; background: var(--surface-base); }
 
 .side {
   width: var(--side-w); flex-shrink: 0; display: flex; flex-direction: column;
-  background: var(--bg2); border-right: 1px solid var(--border); min-width: 0; overflow: hidden;
+  background: var(--surface-chrome); border-right: 1px solid var(--border); min-width: 0; overflow: hidden;
 }
 .side.collapsed { width: 0 !important; border-right: none; }
 .side-head { padding: 6px 10px; min-height: 32px; display: flex; align-items: center; gap: 6px; }
@@ -177,10 +191,10 @@ body.tb-text .tb-btn .ic { display: none; }
 .side.collapsed + .side-resizer { display: none; }
 
 /* ===== reader ===== */
-/* 实色背景：滚动容器纯实色 --bg，彻底消除首屏黑/色变（v1.1.3）。 */
+/* W2：滚动容器走 --surface-reader（默认 100% 不透明 = 原实色 --bg，滚动色变修复结论不变）。 */
 .reader {
   flex: 1; min-width: 0; height: 100%; overflow: auto;
-  background: var(--bg);
+  background: var(--surface-reader);
   position: relative;
 }
 .reader-inner { max-width: 880px; margin: 0 auto; padding: 34px 42px 60px; }
@@ -191,7 +205,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .editor {
   position: absolute; inset: 0; width: 100%; height: 100%;
   display: block; margin: 0; padding: 24px 42px 60px;
-  background: var(--bg); color: var(--fg);
+  background: var(--surface-reader); color: var(--fg);
   border: none; outline: none; resize: none;
   font-family: var(--mono); font-size: 14px; line-height: 1.7;
   white-space: pre; overflow: auto; z-index: 1; caret-color: var(--accent);
@@ -204,7 +218,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 /* ===== 下拉抽屉（文件/编辑/视图/文档/更多） ===== */
 .drawer {
   position: fixed; z-index: 300; min-width: 230px; max-width: 360px;
-  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0,0,0,.4); padding: 4px; overflow: hidden;
 }
 .menu-item {
@@ -239,7 +253,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 /* ===== 设置面板 ===== */
 .settings-panel {
   position: fixed; top: 42px; right: 12px; z-index: 400; width: 320px;
-  background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0,0,0,.4); overflow: hidden;
 }
 .settings-header {
@@ -264,6 +278,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .swatch.active { border-color: var(--accent); transform: scale(1.12); }
 
 /* ===== toast ===== */
+/* toast 是瞬时内容浮层：保持 --bg3 不透明可读，不进玻璃表面 */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
   z-index: 500; padding: 8px 18px; background: var(--bg3); color: var(--fg);
