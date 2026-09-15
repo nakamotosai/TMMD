@@ -470,10 +470,11 @@ pub fn run() {
             // W1 玻璃后端材质：透明窗 + 亚克力底（tint 沿用 v0.3.2 实测值）。
             // CSS 仍全实色，视觉零变化，分层留到 W2；旧坑（透明窗首屏黑/合成层，
             // progress v1.1.3/v1.1.1）由 W4 双通道验收覆盖。材质失败只记忽略，不崩窗口。
+            // 玻璃后端材质：透明窗 + 亚克力底（acrylic=Ok 已实证，见 progress W5）。
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {
-                    let _ = window_vibrancy::apply_acrylic(&win, Some((18, 18, 18, 125)));
+                    let _ = window_vibrancy::apply_acrylic(&win, Some((20, 20, 22, 100)));
                 }
             }
             Ok(())

@@ -95,11 +95,14 @@ html, body { height: 100%; margin: 0; }
 
 /* W2：html/body 走 --surface-base（默认 100% 不透明 = 原实色 --bg）。
  * v1.1.3 实色窗结论仍有效：透明效果只敢在 W4 双通道验收后放行。 */
-html { background: var(--surface-base); }
+/* W6：Pebrel 式圆角卡片——透明窗下圆角裁出亚克力，1px 边框收边。
+ * 注意：原生拖拽/缩放命中仍是矩形，四角透明区只影响观感。 */
+html { background: var(--surface-base); border-radius: 14px; overflow: hidden; }
 body {
   background: var(--surface-base); color: var(--fg);
   font-family: var(--sans); font-size: var(--body-size);
   display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 14px; border: 1px solid var(--border);
 }
 
 /* SVG 图标通用 */

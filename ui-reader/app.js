@@ -51,7 +51,9 @@ const S = {
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
-  glass: LS.get('sr_glass', { on: true, chrome: 80, reader: 92, pop: 85 }),
+  // W7 玻璃默认值（Pebrel 路线，真屏 30/40/55/45 定稿）：底 30 / 铬 40 / 正文 55 / 浮层 45。
+  // 旧存档（仅 chrome/reader/pop、无 base）直接丢弃，用新默认（W7 迁移一次）。
+  glass: (() => { const d = { on: true, base: 30, chrome: 40, reader: 55, pop: 45 }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'base' in g) ? g : d; })(),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -959,16 +961,21 @@ function applyGlass(opaque) {
   if (!S.glass || typeof S.glass !== 'object') S.glass = {};
   const on = opaque ? false : S.glass.on !== false;
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
-  const chrome = num(S.glass.chrome, 80, 40, 100);
-  const reader = num(S.glass.reader, 92, 60, 100);
-  const pop = num(S.glass.pop, 85, 40, 100);
+  // W6 默认走 Pebrel 路线，真屏 30/40/55/45 定稿。
+  // 底色是见壁纸的总开关——它 100% 时上层再透也只透出实色底（W5 教训）。
+  const base = num(S.glass.base, 30, 25, 100);
+  const chrome = num(S.glass.chrome, 40, 35, 100);
+  const reader = num(S.glass.reader, 55, 50, 100);
+  const pop = num(S.glass.pop, 45, 35, 100);
   const root = document.documentElement.style;
+  root.setProperty('--glass-base', (on ? base : 100) + '%');
   root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
   root.setProperty('--glass-reader', (on ? reader : 100) + '%');
   root.setProperty('--glass-pop', (on ? pop : 100) + '%');
   // 面板控件回显（面板关闭时节点仍在，?. 守无）
   $id('setGlassOn')?.classList.toggle('active', on);
   $id('setGlassOff')?.classList.toggle('active', !on);
+  const gb = $id('setGlassBase'); if (gb) { gb.value = base; $id('valGlassBase').textContent = base + '%'; }
   const gc = $id('setGlassChrome'); if (gc) { gc.value = chrome; $id('valGlassChrome').textContent = chrome + '%'; }
   const gr = $id('setGlassReader'); if (gr) { gr.value = reader; $id('valGlassReader').textContent = reader + '%'; }
   const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
@@ -1008,6 +1015,7 @@ function bindSettings() {
   const glassOn = () => { if (!S.glass || typeof S.glass !== 'object') S.glass = {}; return S.glass; };
   $id('setGlassOn')?.addEventListener('click', () => { glassOn().on = true; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassOff')?.addEventListener('click', () => { glassOn().on = false; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassBase')?.addEventListener('input', (e) => { glassOn().base = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
