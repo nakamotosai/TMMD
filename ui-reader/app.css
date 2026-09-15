@@ -299,3 +299,78 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 12px; }
 .markdown-body th { background: var(--bg2); }
 .markdown-body .katex { font-size: 1.05em; }
+
+/* ==================== v1.3.0 · 导读地图 + AI 章节卡 ==================== */
+
+/* 导读地图（侧栏地铁图视图） */
+.map-head { padding: 10px 12px 4px; }
+.map-title { font-size: 13px; font-weight: 600; color: var(--fg); letter-spacing: .04em; }
+.map-prog { margin-top: 8px; height: 6px; border-radius: 3px; background: var(--bg3); overflow: hidden; }
+.map-prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .25s ease; }
+.map-prog-text { margin-top: 4px; font-size: 11px; color: var(--fg-dim); }
+.map-actions { padding: 6px 12px 10px; }
+.map-gen-all {
+  width: 100%; padding: 6px 8px; font-size: 12px; cursor: pointer;
+  background: var(--bg3); color: var(--fg); border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.map-gen-all:hover { border-color: var(--accent); color: var(--accent2); }
+.map-gen-all:disabled { opacity: .55; cursor: default; }
+.map-list { position: relative; padding: 2px 0 16px 0; }
+.map-node {
+  position: relative; display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px 8px 14px; cursor: pointer; border-radius: var(--radius);
+  margin: 0 8px;
+}
+.map-node:hover { background: var(--bg2); }
+.map-node::before {
+  content: ""; position: absolute; left: 21px; top: 26px; bottom: -8px;
+  border-left: 1px dashed var(--border);
+}
+.map-node:last-child::before { display: none; }
+.map-dot {
+  flex: 0 0 26px; width: 26px; height: 26px; border-radius: 50%;
+  border: 2px solid var(--fg-faint); background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--fg-dim); z-index: 1;
+}
+.map-node.done .map-dot { border-color: var(--green); color: var(--green); }
+.map-node.now .map-dot { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px rgba(254,128,25,.18); }
+.map-node.now { background: var(--bg2); }
+.map-meta { min-width: 0; flex: 1; }
+.map-name { font-size: 13px; color: var(--fg); line-height: 1.35; word-break: break-all; }
+.map-sub { font-size: 11px; color: var(--fg-faint); margin-top: 2px; display: flex; gap: 8px; align-items: center; }
+.map-card-flag { color: var(--accent2); font-size: 11px; }
+.map-empty { padding: 24px 14px; color: var(--fg-faint); font-size: 13px; }
+
+/* 章节导读卡（插在每个章节标题下） */
+.ch-card {
+  margin: 6px 0 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg2); overflow: hidden;
+}
+.ch-card-head {
+  display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+  cursor: pointer; user-select: none; font-size: 13px; color: var(--accent2);
+}
+.ch-card-head:hover { background: var(--bg3); }
+.ch-card-head .ic { width: 15px; height: 15px; }
+.ch-card-head .ch-hint { margin-left: auto; font-size: 11px; color: var(--fg-faint); }
+.ch-card-body { padding: 8px 14px 14px; font-size: 13.5px; line-height: 1.7; }
+.ch-card-summary { color: var(--fg); border-left: 3px solid var(--accent); padding-left: 10px; margin: 4px 0 10px; }
+.ch-card-sec-t { font-size: 11px; letter-spacing: .08em; color: var(--fg-faint); margin: 10px 0 4px; }
+.ch-card-judges { margin: 0; padding-left: 18px; }
+.ch-card-judges li { margin: 3px 0; }
+.ch-card-counter { color: var(--accent2); }
+.ch-card-action { color: var(--green); }
+.ch-card-quote { margin-top: 10px; padding: 8px 10px; background: var(--bg); border-radius: var(--radius); color: var(--fg-dim); font-style: italic; }
+.ch-card-loading { color: var(--fg-faint); padding: 6px 0; }
+.ch-card-error { color: var(--red); }
+
+/* 设置面板 AI 文本输入 */
+.settings-sub { color: var(--fg-faint); font-size: 12px; letter-spacing: .06em; border-top: 1px solid var(--border); padding-top: 12px; }
+.set-text {
+  flex: 1; min-width: 0; padding: 5px 8px; font-size: 12px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.set-text:focus { outline: none; border-color: var(--accent); }

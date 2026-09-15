@@ -1,4 +1,5 @@
 /* Sai Reader · 轻量本地 Markdown 阅读器（Tauri 2）
+ * v1.3.0：导读地图视图（侧栏地铁图+进度）/ AI 章节导读卡（3判断+1反常识+1动作，LLM 生成+本机缓存）/ 设置面板 AI 网关配置
  * v1.2.1：窗口拖动修复——WebView2 不认 CSS -webkit-app-region，改 mousedown → startDragging()（capabilities 加 allow-start-dragging）
  * v1.2.0：正文本地图片/视频/音频渲染（asset 协议 convertFileSrc + 相对路径基于 md 目录解析）
  * v1.1.0：SVG 线性图标 / 工具栏分组+响应式溢出 / 历史与收藏合并 /
@@ -50,6 +51,9 @@ const S = {
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
+  aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
+  aiKey: LS.raw('sr_ai_key') || '',
+  aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
   root: null,
   cur: null,
   view: 'tree',
@@ -170,7 +174,7 @@ function renderMarkdown(md, absParam) {
   const body = document.createElement('div');
   body.className = 'markdown-body';
   CURRENT_ABS = absParam || null;
-  body.innerHTML = marked.parse(md);
+  body.innerHTML = marked.parse(md.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n/, ''));
   CURRENT_ABS = null;
   sanitize(body);
   highlightCode(body);
@@ -196,7 +200,8 @@ function renderMarkdown(md, absParam) {
     }
   }
   refreshFavDocBtn();
-  if (S.view === 'toc') renderSide();
+  insertChapterCards(body);
+  if (S.view === 'toc' || S.view === 'map') renderSide();
 }
 
 function rememberScroll() {
@@ -409,8 +414,9 @@ function renderSide() {
   const side = $id('sideBody');
   side.innerHTML = '';
   $id('sideEmpty').hidden = true;
-  $id('btnBackToTree').hidden = (S.view !== 'toc');
+  $id('btnBackToTree').hidden = (S.view !== 'toc' && S.view !== 'map');
   if (S.view === 'toc') { renderToc(side); return; }
+  if (S.view === 'map') { renderMap(side); return; }
   renderTree(side);
 }
 function renderTree(side) {
@@ -473,15 +479,16 @@ function renderToc(side) {
   });
   side.appendChild(list);
 }
-const VIEW_BTNS = ['btnTree', 'btnToc'];
+const VIEW_BTNS = ['btnTree', 'btnToc', 'btnMap'];
 function setView(v) {
   S.view = v;
-  VIEW_BTNS.forEach((id) => { const b = $id(id); if (b) b.classList.toggle('active', id === ({ tree: 'btnTree', toc: 'btnToc' }[v])); });
+  VIEW_BTNS.forEach((id) => { const b = $id(id); if (b) b.classList.toggle('active', id === ({ tree: 'btnTree', toc: 'btnToc', map: 'btnMap' }[v])); });
   renderSide();
 }
 
 /* ---- 大纲高亮：滚动时标记当前可见区域最顶的标题 ---- */
 function highlightCurrentToc() {
+  if (S.view === 'map') { updateMapHighlight(); return; }
   if (S.view !== 'toc' || !S.toc.length) return;
   const reader = $id('reader');
   const y = reader.scrollTop + 30;
@@ -496,6 +503,250 @@ function highlightCurrentToc() {
   if (!cur) return;
   const act = $q('#side .toc[data-toc-id="' + CSS.escape(cur.id) + '"]');
   if (act) { act.classList.add('toc-active'); act.scrollIntoView({ block: 'nearest' }); }
+}
+
+/* ==================== 导读地图 + AI 章节卡（v1.3.0） ==================== */
+
+/* 章节集合 = 深度 ≤2 的标题；无二级标题时降级用 h1 */
+function chapterList() {
+  const h2 = S.toc.filter((h) => h.level === 2);
+  if (h2.length) return h2;
+  return S.toc.filter((h) => h.level === 1);
+}
+
+function cardStoreKey() {
+  const abs = (S.cur && S.cur.abs) || '';
+  let h = 0;
+  for (let i = 0; i < abs.length; i++) h = (h * 31 + abs.charCodeAt(i)) >>> 0;
+  return 'sr_cards_' + h.toString(36);
+}
+function cardStore() {
+  return LS.get(cardStoreKey(), null);
+}
+function cardStoreValid(store) {
+  const sig = String((S.cur && S.cur.raw || '').length) + ':' + ((S.cur && S.cur.raw || '').slice(0, 64));
+  return store && store.sig === sig ? store : null;
+}
+function getCachedCard(idx) {
+  const st = cardStoreValid(cardStore());
+  return st && st.cards && st.cards[idx] ? st.cards[idx] : null;
+}
+function setCachedCard(idx, card) {
+  const sig = String((S.cur && S.cur.raw || '').length) + ':' + ((S.cur && S.cur.raw || '').slice(0, 64));
+  const st = cardStoreValid(cardStore()) || { sig, cards: {} };
+  st.sig = sig; st.cards[idx] = card;
+  LS.set(cardStoreKey(), st);
+}
+
+/* 取某一章的正文纯文本（标题到下一个同级标题之间） */
+function chapterText(idx) {
+  const chs = chapterList();
+  const h = chs[idx];
+  if (!h) return '';
+  const el = document.getElementById(h.id);
+  if (!el) return '';
+  let txt = h.text + '\n';
+  for (let n = el.nextElementSibling; n; n = n.nextElementSibling) {
+    if (/^H[1-3]$/.test(n.tagName) && +n.tagName[1] <= h.level) break;
+    if (!/^(H4|H5|H6)$/.test(n.tagName)) txt += n.textContent + '\n';
+    else txt += n.textContent + '\n';
+  }
+  return txt.slice(0, 6000);
+}
+
+/* 在每个章节标题下挂一张折叠导读卡 */
+function insertChapterCards(body) {
+  const chs = chapterList();
+  chs.forEach((h, idx) => {
+    const el = document.getElementById(h.id);
+    if (!el) return;
+    const card = document.createElement('div');
+    card.className = 'ch-card';
+    card.dataset.ch = String(idx);
+    card.innerHTML =
+      '<div class="ch-card-head"><svg class="ic"><use href="#i-card"/></svg><span class="ch-t">本章导读卡</span><span class="ch-hint"></span></div>' +
+      '<div class="ch-card-body" hidden></div>';
+    const head = card.querySelector('.ch-card-head');
+    const hint = card.querySelector('.ch-hint');
+    const bd = card.querySelector('.ch-card-body');
+    function refreshHint() {
+      hint.textContent = getCachedCard(idx) ? '已缓存✓ 点我展开' : '点击生成';
+    }
+    refreshHint();
+    head.addEventListener('click', async () => {
+      const opening = bd.hidden;
+      bd.hidden = !bd.hidden;
+      if (!opening) return;
+      let data = getCachedCard(idx);
+      if (!data) {
+        bd.innerHTML = '<div class="ch-card-loading">正在请 AI 读这一章并做卡片…</div>';
+        data = await genChapterCard(idx);
+        if (data) { setCachedCard(idx, data); updateMapFlags(); }
+      }
+      if (data) renderCardInto(bd, data);
+      else bd.innerHTML = '<div class="ch-card-error">生成失败：请在 设置 → AI 导读卡 里填网关与 Key 后重试。</div>';
+      refreshHint();
+    });
+    el.insertAdjacentElement('afterend', card);
+  });
+}
+
+/* 卡片渲染 */
+function renderCardInto(bd, d) {
+  const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const judges = Array.isArray(d.judgments) ? d.judgments : [];
+  bd.innerHTML =
+    '<div class="ch-card-summary">' + esc(d.summary) + '</div>' +
+    '<div class="ch-card-sec-t">三个判断</div>' +
+    '<ol class="ch-card-judges">' + judges.slice(0, 3).map((j) => '<li>' + esc(j) + '</li>').join('') + '</ol>' +
+    (d.counter ? '<div class="ch-card-sec-t">反常识</div><div class="ch-card-counter">' + esc(d.counter) + '</div>' : '') +
+    (d.action ? '<div class="ch-card-sec-t">下一步动作</div><div class="ch-card-action">' + esc(d.action) + '</div>' : '') +
+    (d.quote ? '<div class="ch-card-quote">「' + esc(d.quote) + '」</div>' : '');
+}
+
+/* 调 AI 网关生成卡片 */
+async function genChapterCard(idx) {
+  const chs = chapterList();
+  const h = chs[idx];
+  const text = chapterText(idx);
+  if (!text.trim()) return null;
+  const ep = (S.aiEndpoint || '').replace(/\/+$/, '');
+  if (!ep || !S.aiKey) return null;
+  const prompt =
+    '你在为一篇知识库文章做章节导读卡。基于下面这一章的原文，输出严格 JSON（不要多余文字、不要用 markdown 代码块包裹）：\n' +
+    '{"summary":"一句话总结本章（30字内）","judgments":["本章最重要的三个判断/结论，每条一句","",""],"counter":"本章里最反常识或最容易被忽略的一点","action":"读者读完本章最该做的下一步动作","quote":"从原文挑一句最有力的话（可修剪）"}\n\n' +
+    '【章节标题】' + h.text + '\n【章节原文】\n' + text;
+  try {
+    const res = await fetch(ep + '/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.aiKey },
+      body: JSON.stringify({
+        model: S.aiModel || 'moonshotai/kimi-k3',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3,
+        max_tokens: 2048,
+      }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const raw = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || '';
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (!m) return null;
+    const d = JSON.parse(m[0]);
+    if (!d.summary || !Array.isArray(d.judgments)) return null;
+    return d;
+  } catch { return null; }
+}
+
+/* 一键生成本文全部章节卡 */
+async function genAllCards(btn) {
+  const chs = chapterList();
+  if (!chs.length) return;
+  btn.disabled = true;
+  for (let i = 0; i < chs.length; i++) {
+    if (getCachedCard(i)) continue;
+    btn.textContent = '生成中 ' + (i + 1) + '/' + chs.length + '…';
+    const d = await genChapterCard(i);
+    if (d) setCachedCard(i, d);
+    updateMapFlags();
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  btn.textContent = '重新生成全部章节卡';
+  btn.disabled = false;
+  toast('章节卡生成完毕');
+  // 刷新所有已展开状态提示
+  $qa('.ch-card').forEach((c) => {
+    const idx = +c.dataset.ch;
+    const hint = c.querySelector('.ch-hint');
+    const bd = c.querySelector('.ch-card-body');
+    if (hint) hint.textContent = getCachedCard(idx) ? '已缓存✓ 点我展开' : '点击生成';
+    if (bd && !bd.hidden && getCachedCard(idx) && !bd.querySelector(':scope > div:not(.ch-card-error)')) {
+      renderCardInto(bd, getCachedCard(idx));
+    }
+  });
+}
+
+/* ---- 导读地图视图 ---- */
+function renderMap(side) {
+  const chs = chapterList();
+  if (!chs.length) { side.innerHTML = '<div class="map-empty">本文没有可用章节标题，无法生成地图。</div>'; return; }
+  const total = chs.length;
+  // 每章字数（粗略）
+  const lens = chs.map((c, i) => chapterText(i).length);
+  const doneIdx = currentChapterIndex();
+  const head = document.createElement('div');
+  head.className = 'map-head';
+  head.innerHTML =
+    '<div class="map-title">导读地图</div>' +
+    '<div class="map-prog"><div class="map-prog-fill" id="mapProgFill"></div></div>' +
+    '<div class="map-prog-text" id="mapProgText"></div>';
+  side.appendChild(head);
+  const act = document.createElement('div');
+  act.className = 'map-actions';
+  const genBtn = document.createElement('button');
+  genBtn.className = 'map-gen-all';
+  genBtn.textContent = '一键生成全部章节卡';
+  genBtn.addEventListener('click', () => genAllCards(genBtn));
+  act.appendChild(genBtn);
+  side.appendChild(act);
+  const list = document.createElement('div');
+  list.className = 'map-list';
+  chs.forEach((h, i) => {
+    const n = document.createElement('div');
+    n.className = 'map-node';
+    n.dataset.ch = String(i);
+    n.innerHTML =
+      '<div class="map-dot">' + (i + 1) + '</div>' +
+      '<div class="map-meta"><div class="map-name"></div>' +
+      '<div class="map-sub"><span>约 ' + Math.max(1, Math.round(lens[i] / 400)) + ' 分钟</span><span class="map-card-flag"></span></div></div>';
+    n.querySelector('.map-name').textContent = h.text;
+    n.addEventListener('click', () => {
+      const el = document.getElementById(h.id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    list.appendChild(n);
+  });
+  side.appendChild(list);
+  updateMapFlags();
+  updateMapHighlight();
+}
+
+function currentChapterIndex() {
+  const chs = chapterList();
+  if (!chs.length) return -1;
+  const reader = $id('reader');
+  const y = reader.scrollTop + 40;
+  let cur = -1;
+  chs.forEach((h, i) => {
+    const el = document.getElementById(h.id);
+    if (el && el.offsetTop <= y) cur = i;
+  });
+  return cur;
+}
+function updateMapHighlight() {
+  if (S.view !== 'map') return;
+  const cur = currentChapterIndex();
+  $qa('#side .map-node').forEach((n) => {
+    const i = +n.dataset.ch;
+    n.classList.toggle('now', i === cur);
+    n.classList.toggle('done', cur > i);
+  });
+  const chs = chapterList();
+  const fill = $id('mapProgFill');
+  const txt = $id('mapProgText');
+  const reader = $id('reader');
+  const pct = reader.scrollHeight > reader.clientHeight
+    ? Math.min(100, Math.round((reader.scrollTop + reader.clientHeight) / reader.scrollHeight * 100))
+    : 100;
+  if (fill) fill.style.width = pct + '%';
+  if (txt) txt.textContent = '第 ' + (cur + 1) + ' / ' + chs.length + ' 章 · 已读约 ' + pct + '%';
+}
+function updateMapFlags() {
+  $qa('#side .map-node').forEach((n) => {
+    const i = +n.dataset.ch;
+    const f = n.querySelector('.map-card-flag');
+    if (f) f.textContent = getCachedCard(i) ? '✦ 有卡' : '';
+  });
 }
 
 /* ==================== 下拉抽屉（文件/编辑/视图/文档/更多） ==================== */
@@ -728,6 +979,10 @@ function bindSettings() {
   $id('setSideWidth')?.addEventListener('input', (e) => { applySideWidth(+e.target.value); });
   $id('setThemeDark')?.addEventListener('click', () => { S.theme = 'dark'; LS.set('sr_theme', 'dark'); applySettings(); renderPaletteSwatches(); });
   $id('setThemeLight')?.addEventListener('click', () => { S.theme = 'light'; LS.set('sr_theme', 'light'); applySettings(); renderPaletteSwatches(); });
+  // AI 导读卡设置
+  const aiEp = $id('setAiEndpoint'); if (aiEp) { aiEp.value = S.aiEndpoint; aiEp.addEventListener('change', () => { S.aiEndpoint = aiEp.value.trim(); LS.str('sr_ai_endpoint', S.aiEndpoint); }); }
+  const aiKey = $id('setAiKey'); if (aiKey) { aiKey.value = S.aiKey; aiKey.addEventListener('change', () => { S.aiKey = aiKey.value.trim(); LS.str('sr_ai_key', S.aiKey); }); }
+  const aiModel = $id('setAiModel'); if (aiModel) { aiModel.value = S.aiModel; aiModel.addEventListener('change', () => { S.aiModel = aiModel.value.trim(); LS.str('sr_ai_model', S.aiModel); }); }
 }
 
 /* ==================== 启动 ==================== */
@@ -770,6 +1025,7 @@ function wire() {
   $id('btnTheme')?.addEventListener('click', () => { S.theme = S.theme === 'dark' ? 'light' : 'dark'; LS.set('sr_theme', S.theme); applySettings(); renderPaletteSwatches(); });
   $id('btnTree').addEventListener('click', () => setView('tree'));
   $id('btnToc').addEventListener('click', () => setView('toc'));
+  $id('btnMap')?.addEventListener('click', () => setView('map'));
   $id('btnBackToTree').addEventListener('click', () => setView('tree'));
   $id('btnFavDoc').addEventListener('click', () => { if (S.cur) toggleFavorite(S.cur.abs); });
   $id('btnRefresh')?.addEventListener('click', refreshCurrent);

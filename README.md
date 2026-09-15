@@ -75,10 +75,10 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 
 > Tracked via `skill://sai-long-project` + `skill://sai-closeout`. Full session log in `progress.md`; portfolio card in vps `~/project-portfolio/projects.md`.
 
-- **Status**: 暂时完结 (paused, 2026-08-06 08-06 暂收口)
-- **Latest**: v1.2.1 published (drag/perf fixed, GH Release shipped, homepage open-source listed, reviewer 8/8)
-- **Open residuals**: ① first-screen black/编辑遮挡 ② version number ③ transparency ④ background color `go` ⑤ toolbar two modes ⑥ overlay + version auto-publish
-- **Next**: review residuals after user feedback
+- **Status**: active (v1.3.0 closed 2026-09-16, committed; whole-window glass redesign spec frozen, awaiting build approval)
+- **Latest**: v1.3.0 AI chapter guide cards + minimap view + AI gateway settings (unpushed, pending user push confirm)
+- **Open residuals**: ① first-screen black/编辑遮挡 ② version number ③ transparency →整窗玻璃方案已定稿未开工 ④ background color `go` ⑤ toolbar two modes ⑥ overlay + version auto-publish
+- **Next**: whole-window glass W0→W4 after approval; push v1.3.0 commit after per-push confirm
 - **Mirrors**: GitHub (SSOT) + Gitea (self-hosted), dual-repo same HEAD (verify with `git ls-remote`)
 
 ---
