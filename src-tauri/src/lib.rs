@@ -467,14 +467,12 @@ pub fn run() {
             // 冷启动（首个进程）：argv[1] 可能带着 .md 路径，先存起来等前端就绪再取
             let first = std::env::args().nth(1);
             *app.state::<StartupPending>().0.lock().unwrap() = first;
-            // W1 玻璃后端材质：透明窗 + 亚克力底（tint 沿用 v0.3.2 实测值）。
-            // CSS 仍全实色，视觉零变化，分层留到 W2；旧坑（透明窗首屏黑/合成层，
-            // progress v1.1.3/v1.1.1）由 W4 双通道验收覆盖。材质失败只记忽略，不崩窗口。
-            // 玻璃后端材质：透明窗 + 亚克力底（acrylic=Ok 已实证，见 progress W5）。
+            // R3b 玻璃底：Pebrel 配方 legacy AccentPolicy（tint 沿用 v0.3.2 实测值），
+            // 不再走 TRANSIENTWINDOW（DC 窗上是灰板）。失败只记忽略，不崩窗口。
             if let Some(win) = app.get_webview_window("main") {
                 #[cfg(target_os = "windows")]
                 {
-                    let _ = window_vibrancy::apply_acrylic(&win, Some((20, 20, 22, 100)));
+                    let _ = paint_glass(&win, true, 20, 20, 22, 100);
                 }
             }
             Ok(())
@@ -508,19 +506,131 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
     Ok(state.0.lock().unwrap().take())
 }
 
-/// 上次落盘的材质键（进程内记忆）：同值跳过 DWM 写操作。
-/// 本机实证（2026-09-16，真机截图闭环）：首写生效，反复写 SYSTEMBACKDROP_TYPE 会把渲染致盲且不可逆
-/// （DWM 读值正常、页全透、屏实色， GPU 空闲也救不回）；只有真变化时才值得落盘。
+/// 上次落盘的材质键（进程内记忆）：同值跳过 DWM 写操作，只在真变化时落盘。
 #[cfg(target_os = "windows")]
 static LAST_GLASS: std::sync::Mutex<Option<(String, u8, u8, u8, u8)>> =
     std::sync::Mutex::new(None);
 
+/// R3b 玻璃落盘：Pebrel 配方（nebula_app/src/gpui_shell/wallpaper.rs 对照实现）。
+/// 两档都走 legacy AccentPolicy 通道 + `DWMSBT_NONE`，绝不用 `TRANSIENTWINDOW`
+/// （WebView2 是 DirectComposition 窗，新接口上去就是不透明灰板——之前全灭的真因）。
+/// 顺序：先清 WCA 旧层 → 关 BlurBehind（清 R2 时代 aero 残留）→ 写 `DWMSBT_NONE` →
+/// 需要则写 accent state 4 → `SetWindowPos + FRAMECHANGED`（只重绘画布 DWM 不重读，
+/// 不刷 frame 等于没写）。mica/aero 已删，旧值兜底 acrylic。失败返回 Err，绝不 panic。
+#[cfg(target_os = "windows")]
+fn paint_glass(
+    win: &tauri::WebviewWindow,
+    acrylic: bool,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: u8,
+) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWM_BB_ENABLE, DWM_BLURBEHIND, DWMSBT_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
+        DwmEnableBlurBehindWindow, DwmSetWindowAttribute,
+    };
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct AccentPolicy {
+        state: u32,
+        flags: u32,
+        gradient_color: u32,
+        animation_id: u32,
+    }
+    type SetWindowCompositionAttribute =
+        unsafe extern "system" fn(HWND, *mut AccentData) -> i32;
+    #[repr(C)]
+    struct AccentData {
+        attribute: u32,
+        data: *mut std::ffi::c_void,
+        size: usize,
+    }
+
+    let raw: isize = win
+        .hwnd()
+        .map(|h| h.0 as isize)
+        .map_err(|e| format!("取 HWND 失败: {e}"))?;
+    let hwnd = raw as HWND;
+    // WCA_ACCENT_POLICY 未进公开 SDK，和上游一样动态取 user32 地址
+    let set_wca: Option<SetWindowCompositionAttribute> = unsafe {
+        let user32 = GetModuleHandleA(c"user32.dll".as_ptr() as *const u8);
+        if user32.is_null() {
+            None
+        } else {
+            GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr() as *const u8)
+                .map(|f| std::mem::transmute(f))
+        }
+    };
+    let apply_accent = |mut accent: AccentPolicy| {
+        let Some(set_wca) = set_wca else { return };
+        let mut data = AccentData {
+            attribute: 19, // WCA_ACCENT_POLICY
+            data: &mut accent as *mut _ as *mut std::ffi::c_void,
+            size: std::mem::size_of::<AccentPolicy>(),
+        };
+        unsafe {
+            set_wca(hwnd, &mut data);
+        }
+    };
+
+    // 1) 先清旧 WCA 层：反过来先写 DWMSBT，DWM 不会重算 frame，事后补清也救不回
+    apply_accent(AccentPolicy { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+    // 2) 关 BlurBehind：R2 时代 aero（state 3）可能留了玻璃层，所有档位显式关
+    unsafe {
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE,
+            fEnable: 0,
+            hRgnBlur: std::ptr::null_mut(),
+            fTransitionOnMaximized: 0,
+        };
+        DwmEnableBlurBehindWindow(hwnd, &bb);
+    }
+    // 3) backdrop 永远 NONE（两档都不用 system backdrop，避免灰板）
+    unsafe {
+        let none = DWMSBT_NONE;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE as u32,
+            &none as *const _ as *const std::ffi::c_void,
+            std::mem::size_of_val(&none) as u32,
+        );
+    }
+    // 4) 磨砂才写 accent state 4；alpha=0 会被部分 DWM 跳过，强制保 1
+    if acrylic {
+        let a = alpha.max(1) as u32;
+        apply_accent(AccentPolicy {
+            state: 4, // ACCENT_ENABLE_ACRYLICBLURBEHIND
+            flags: 0,
+            gradient_color: (r as u32) | ((g as u32) << 8) | ((b as u32) << 16) | (a << 24),
+            animation_id: 0,
+        });
+    }
+    // 5) 刷非客户区 frame：没有这一步，DWM 不重读上面的属性
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    }
+    Ok(())
+}
+
 /// R2 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
-/// material: none（DWM 不画材质，直透 + 网页层自身半透明）/ acrylic（高开销，r/g/b/alpha 为 tint，可透后方窗口）。
-/// aero 已删：SWCA blur-behind 在 Win11 上是废弃通道（纯黑 + 拖动抖，库文档自认无解）。
-/// mica 已删：本机三轮实证不画（DWM 值钉到 2、网页层全透、屏上仍是均匀实色，壁纸是彩色大理石仍无纹理），
-///   旧存档 mica/aero 一律兜底 acrylic。clear_mica 保留在清理序列里，专清 DWM 里残留的 MAINWINDOW。
-/// dark 参数保留占位（以后材质回归再用）。失败返回 Err 由前端 toast，绝不 panic。
+/// material: none（直透）/ acrylic（legacy state 4 磨砂，tint 直驱）。
+/// 实现见 `paint_glass`（Pebrel 配方）。mica/aero 已删，旧值兜底 acrylic。
+/// dark 参数保留占位。失败返回 Err 由前端 toast，绝不 panic。
 #[tauri::command]
 fn set_glass_material(
     app: tauri::AppHandle,
@@ -533,7 +643,6 @@ fn set_glass_material(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::{apply_acrylic, clear_acrylic, clear_blur, clear_mica};
         let _ = dark;
         // 同值跳过：重放/连点不再落 DWM，只在 none↔acrylic 真切换时写一次
         {
@@ -547,20 +656,10 @@ fn set_glass_material(
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
-        // 先清后设：DWMWA_SYSTEMBACKDROP_TYPE 常驻，叠写会造成双 backdrop 冲突
-        // （顶栏重影：拖动时正常、松手恢复，2026-09-16 实证）。每次先把三者清干净。
-        let _ = clear_blur(&win);
-        let _ = clear_acrylic(&win);
-        let _ = clear_mica(&win);
-        match material.as_str() {
-            "none" => {
-                // 上面已全清，这里无需再做；保留分支语义
-                Ok(())
-            }
-            // mica/aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错
-            _ => apply_acrylic(&win, Some((r, g, b, alpha)))
-                .map_err(|e| format!("亚克力应用失败: {e}")),
-        }
+        // mica/aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错；落盘走 Pebrel 配方的 paint_glass
+        let acrylic = material.as_str() != "none";
+        paint_glass(&win, acrylic, r, g, b, alpha)
+            .map_err(|e| format!("玻璃应用失败: {e}"))
     }
     #[cfg(not(target_os = "windows"))]
     {

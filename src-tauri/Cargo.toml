@@ -21,8 +21,9 @@ rfd = "0.15"
 tauri-plugin-single-instance = "2"
 window-vibrancy = "0.8"
 # R2-fix 诊断位：直读 DWM 实时 backdrop（DwmGetWindowAttribute），与 window-vibrancy 0.8 同款 0.60 同编
+# R3b Pebrel 配方：legacy AccentPolicy（user32 动态取）+ SetWindowPos 刷 frame
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Graphics_Dwm"] }
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_System_LibraryLoader", "Win32_UI_WindowsAndMessaging"] }
 
 [profile.release]
 panic = "abort"
