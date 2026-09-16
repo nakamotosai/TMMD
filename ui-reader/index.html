@@ -171,6 +171,15 @@
         <button id="setGlassOff" class="theme-btn">关</button>
       </div>
       <div class="settings-row">
+        <label>材质</label>
+        <select id="setGlassMaterial" class="set-select">
+          <option value="none">无</option>
+          <option value="mica">Mica（低开销）</option>
+          <option value="aero">Aero（经典玻璃）</option>
+          <option value="acrylic">Acrylic（高开销）</option>
+        </select>
+      </div>
+      <div class="settings-row">
         <label>整窗底色</label>
         <input type="range" id="setGlassBase" min="1" max="100" step="1" />
         <span class="settings-val" id="valGlassBase">12%</span>

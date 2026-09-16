@@ -492,7 +492,7 @@ pub fn run() {
             load_roots,
             save_roots,
             pending_open,
-            set_glass_tint
+            set_glass_material
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai Reader");
@@ -507,23 +507,48 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
     Ok(state.0.lock().unwrap().take())
 }
 
-/// W8 玻璃底色：运行时重设亚克力 tint（前端背景色选择器驱动）。
-/// R5 材质切换 / R6 失焦重放 / R7 真圆角已随 W9 整轮回退砍掉，见 tag glass-w9-archive 取代码。
+/// R2 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
+/// material: none（清效果）/ mica（低开销）/ aero（经典 blur-behind）/ acrylic（高开销，r/g/b/alpha 为 tint）。
+/// 实现照抄 tag glass-w9-archive（W8/W9 实证版），保留先清后设；Mica Alt 因 vibrancy 0.8 无 API 暂缺。
+/// 替代 R0 的 set_glass_tint：tint 改由本命令并参，避免 tint 强行 apply_acrylic 盖掉 mica/aero 造成双 backdrop 重影。
 /// 失败返回 Err 由前端 toast，绝不 panic。
 #[tauri::command]
-fn set_glass_tint(app: tauri::AppHandle, r: u8, g: u8, b: u8, alpha: u8) -> Result<(), String> {
+fn set_glass_material(
+    app: tauri::AppHandle,
+    material: String,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: u8,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        use window_vibrancy::{
+            apply_acrylic, apply_blur, apply_mica, clear_acrylic, clear_blur, clear_mica,
+        };
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
-        window_vibrancy::apply_acrylic(&win, Some((r, g, b, alpha)))
-            .map_err(|e| format!("亚克力重设失败: {e}"))?;
-        Ok(())
+        // 先清后设：mica 会写 DWMWA_SYSTEMBACKDROP_TYPE 并一直残留，
+        // 直接叠 acrylic 会造成双 backdrop 冲突（顶栏重影：拖动时正常、松手恢复，2026-09-16 实证）。
+        // 每次切换先把三者清干净，再设选中的那一个。
+        let _ = clear_blur(&win);
+        let _ = clear_acrylic(&win);
+        let _ = clear_mica(&win);
+        match material.as_str() {
+            "none" => {
+                // 上面已全清，这里无需再做；保留分支语义
+                Ok(())
+            }
+            "mica" => apply_mica(&win, None).map_err(|e| format!("Mica 应用失败: {e}")),
+            "aero" => apply_blur(&win, None).map_err(|e| format!("Aero 应用失败: {e}")),
+            _ => apply_acrylic(&win, Some((r, g, b, alpha)))
+                .map_err(|e| format!("亚克力应用失败: {e}")),
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, r, g, b, alpha);
-        Err("仅 Windows 支持亚克力底".to_string())
+        let _ = (app, material, r, g, b, alpha);
+        Err("玻璃材质仅 Windows 支持".to_string())
     }
 }

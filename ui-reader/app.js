@@ -51,9 +51,9 @@ const S = {
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
-  // W8 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
-  // 旧存档（无 material 键）直接丢弃，用新默认（W8 迁移一次）。
-  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e' }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'tint' in g) ? g : d; })(),
+  // R2 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
+  // 加法迁移：旧存档只补缺的 material 键，用户已调的底/铬/正文/浮层/文字/tint 原样保留，不丢弃。
+  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic' }; const g = LS.get('sr_glass', null); if (!(g && typeof g === 'object' && 'tint' in g)) return d; if (typeof g.material !== 'string') g.material = 'acrylic'; return g; })(),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -983,16 +983,20 @@ function applyGlass(opaque) {
   const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
   const gt = $id('setGlassText'); if (gt) { gt.value = text; $id('valGlassText').textContent = text + '%'; }
   const ti = $id('setGlassTint'); if (ti) { ti.value = tint; const tv = $id('valGlassTint'); if (tv) tv.textContent = tint; }
+  const mm = $id('setGlassMaterial'); if (mm) mm.value = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic');
 }
-/* W8 背景色直驱亚克力 tint：#rrggbb → 后端 set_glass_tint。非 Tauri 环境（invoke 为空）静默跳过。 */
-async function applyGlassTint() {
+/* R2 材质 + 底色直驱后端：material（none/mica/aero/acrylic）+ tint。非 Tauri 环境（invoke 为空）静默跳过。
+ * 失焦重放是 R3 的事，本轮不加 onFocusChanged；圆角是 R4 的事，本轮不碰。 */
+async function applyGlassMaterial() {
   if (!invoke) return;
-  const tint = (S.glass && typeof S.glass.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tint)) ? S.glass.tint : '#26282e';
+  const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
+  const material = (typeof g.material === 'string' ? g.material : 'acrylic');
+  const tint = (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) ? g.tint : '#26282e';
   const n = parseInt(tint.slice(1), 16);
   try {
-    await invoke('set_glass_tint', { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha: 100 });
+    await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha: 100 });
   } catch (e) {
-    toast('玻璃底色应用失败：' + ((e && e.message) || e));
+    toast('玻璃材质应用失败：' + ((e && e.message) || e));
   }
 }
 function renderPaletteSwatches() {
@@ -1034,9 +1038,11 @@ function bindSettings() {
   $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
-  // W8 文字整体透明度 + 背景色（底色直驱亚克力 tint）
+  // W8 文字整体透明度 + 背景色（底色并入材质命令的 tint 参数）
   $id('setGlassText')?.addEventListener('input', (e) => { glassOn().text = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
-  $id('setGlassTint')?.addEventListener('input', (e) => { glassOn().tint = e.target.value; LS.set('sr_glass', S.glass); const tv = $id('valGlassTint'); if (tv) tv.textContent = e.target.value; applyGlassTint(); });
+  $id('setGlassTint')?.addEventListener('input', (e) => { glassOn().tint = e.target.value; LS.set('sr_glass', S.glass); const tv = $id('valGlassTint'); if (tv) tv.textContent = e.target.value; applyGlassMaterial(); });
+  // R2 材质下拉：切换即持久化并直驱后端（先清后设防重影）；失焦重放是 R3，本轮不加
+  $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', S.glass); applyGlassMaterial(); });
   // W8 玻璃独立面板：工具栏按钮直达，开时自动收起设置面板；Esc 关闭
   $id('btnGlass')?.addEventListener('click', () => {
     const gp = $id('glassPanel'); if (!gp) return;
@@ -1153,7 +1159,7 @@ async function boot() {
   wire();
   // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
   applyGlass(true);
-  setTimeout(() => { applyGlass(false); applyGlassTint(); }, 450);
+  setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);
   // 字体加载会改变按钮宽度，加载完成后重排溢出
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);
