@@ -684,18 +684,21 @@ fn set_glass_material(
     b: u8,
     alpha: u8,
     dark: bool,
+    force: Option<bool>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _ = dark;
-        // 同值跳过：重放/连点不再落 DWM，只在 none↔acrylic 真切换时写一次
+        // 同值跳过：连点不再落 DWM，只在真变化时写一次；
+        // 开机/回焦重放带 force 穿透（DWM 丢状态时自愈，写了一定落）。
         {
             let key = (material.clone(), r, g, b, alpha);
             let mut last = LAST_GLASS.lock().map_err(|e| format!("材质记忆锁失败: {e}"))?;
-            if last.as_ref() == Some(&key) {
+            let same = last.as_ref() == Some(&key);
+            *last = Some(key);
+            if same && !force.unwrap_or(false) {
                 return Ok(());
             }
-            *last = Some(key);
         }
         let win = app
             .get_webview_window("main")

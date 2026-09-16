@@ -1086,7 +1086,7 @@ function glassDbg(evt) {
     localStorage.setItem('sr_glass_dbg', JSON.stringify(a));
   } catch { /* 存储不可用则静默跳过 */ }
 }
-async function applyGlassMaterial() {
+async function applyGlassMaterial(force) {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
   let material = (typeof g.material === 'string' ? g.material : 'acrylic');
@@ -1094,8 +1094,12 @@ async function applyGlassMaterial() {
   const tint = (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) ? g.tint : '#26282e';
   const dark = S.theme !== 'light';
   const n = parseInt(tint.slice(1), 16);
+  // 连续映射：底色滑杆 1–100 → DWM alpha 1–255（磨砂霜跟着滑杆走，不透明↔透明一杆到底）；
+  // 直透通道渐变恒零，透明度全由页面层承担。开机/回焦重放带 force 穿透去重（DWM 丢状态自愈）。
+  const bs = Math.min(100, Math.max(1, Number(g.base) || 12));
+  const alpha = Math.max(1, Math.round(bs * 255 / 100));
   try {
-    await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha: 100, dark });
+    await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha, dark, force: !!force });
     glassDbg('mat:' + material + ':ok');
   } catch (e) {
     glassDbg('mat:' + material + ':ERR');
@@ -1134,6 +1138,7 @@ function bindSettings() {
   $id('setGlassOn')?.addEventListener('click', () => { glassOn().on = true; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassOff')?.addEventListener('click', () => { glassOn().on = false; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassBase')?.addEventListener('input', (e) => { glassOn().base = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
+  $id('setGlassBase')?.addEventListener('change', () => { applyGlassMaterial(false); });   // 松手才落后端（拖动过程只走 CSS，防 DWM 连写）
   $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
@@ -1281,13 +1286,13 @@ async function boot() {
       glassDbg('focus:' + focused);
       if (!focused) return;
       clearTimeout(glassRefocusTimer);
-      glassRefocusTimer = setTimeout(() => { applyGlassMaterial(); }, 300);
+      glassRefocusTimer = setTimeout(() => { applyGlassMaterial(true); }, 300);
     }).catch(() => {});
   } catch { /* 非 Tauri 环境 */ }
   glassDbg('boot:' + ((S.glass && S.glass.material) || '?'));
   // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
   applyGlass(true);
-  setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);
+  setTimeout(() => { applyGlass(false); applyGlassMaterial(true); }, 450);
   // 字体加载会改变按钮宽度，加载完成后重排溢出
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);
