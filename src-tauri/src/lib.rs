@@ -491,7 +491,8 @@ pub fn run() {
             save_path,
             load_roots,
             save_roots,
-            pending_open
+            pending_open,
+            set_glass_tint
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai Reader");
@@ -504,4 +505,25 @@ struct StartupPending(std::sync::Mutex<Option<String>>);
 #[tauri::command]
 fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, String> {
     Ok(state.0.lock().unwrap().take())
+}
+
+/// W8 玻璃底色：运行时重设亚克力 tint（前端背景色选择器驱动）。
+/// R5 材质切换 / R6 失焦重放 / R7 真圆角已随 W9 整轮回退砍掉，见 tag glass-w9-archive 取代码。
+/// 失败返回 Err 由前端 toast，绝不 panic。
+#[tauri::command]
+fn set_glass_tint(app: tauri::AppHandle, r: u8, g: u8, b: u8, alpha: u8) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let win = app
+            .get_webview_window("main")
+            .ok_or_else(|| "找不到主窗口".to_string())?;
+        window_vibrancy::apply_acrylic(&win, Some((r, g, b, alpha)))
+            .map_err(|e| format!("亚克力重设失败: {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, r, g, b, alpha);
+        Err("仅 Windows 支持亚克力底".to_string())
+    }
 }

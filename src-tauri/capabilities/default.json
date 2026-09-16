@@ -15,6 +15,7 @@
     "core:window:allow-set-position",
     "core:window:allow-start-dragging",
     "core:window:allow-set-effects",
+    "allow-set-glass-tint",
     "core:app:default",
     "core:path:default",
     "allow-desktop-info",

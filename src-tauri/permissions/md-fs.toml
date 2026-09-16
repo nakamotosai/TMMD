@@ -87,3 +87,8 @@ commands.allow = ["app_minimize"]
 identifier = "allow-app-toggle-maximize"
 description = "Allow app_toggle_maximize (titlebar chrome)"
 commands.allow = ["app_toggle_maximize"]
+
+[[permission]]
+identifier = "allow-set-glass-tint"
+description = "Allow set_glass_tint (W8 玻璃底色选择器运行时重设亚克力 tint)"
+commands.allow = ["set_glass_tint"]

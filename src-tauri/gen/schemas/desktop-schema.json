@@ -297,6 +297,12 @@
           "markdownDescription": "Allow save_roots to app config"
         },
         {
+          "description": "Allow set_glass_tint (W8 玻璃底色选择器运行时重设亚克力 tint)",
+          "type": "string",
+          "const": "allow-set-glass-tint",
+          "markdownDescription": "Allow set_glass_tint (W8 玻璃底色选择器运行时重设亚克力 tint)"
+        },
+        {
           "description": "Allow write_text under path cage",
           "type": "string",
           "const": "allow-write-text",
