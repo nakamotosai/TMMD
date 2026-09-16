@@ -31,12 +31,11 @@ let histLock = false; // doUndo/doRedo 编程赋值期间抑制 input 记史
 // resize 防抖计时器（重排工具栏溢出；曾用于透明窗合成层 hack，见 wire 内注释）
 const resizeTimer = { _t: 0 };
 const PALETTES = {
-  dark: ['gruvbox', 'github-dark', 'monokai', 'solarized-dark', 'tokyonight'],
-  light: ['gruvbox', 'github-light', 'solarized-light'],
+  dark: ['charcoal', 'gruvbox'],
+  light: ['paper', 'gruvbox'],
 };
 const SWATCH_COLORS = {
-  'gruvbox': '#fe8019', 'github-dark': '#58a6ff', 'github-light': '#0366d6',
-  'monokai': '#a6e22e', 'solarized-dark': '#268bd2', 'solarized-light': '#268bd2', 'tokyonight': '#7aa2f7',
+  'charcoal': '#e0a458', 'paper': '#b3541e', 'gruvbox': '#fe8019',
 };
 
 const S = {
@@ -44,7 +43,7 @@ const S = {
   recent: LS.get('sr_recent', []),
   favorites: LS.get('sr_favorites', []),
   theme: LS.get('sr_theme', 'dark'),
-  palette: LS.get('sr_palette', 'gruvbox'),
+  palette: LS.get('sr_palette', 'charcoal'),
   h1Size: LS.get('sr_h1', 1.75),
   bodySize: LS.get('sr_body', 16),
   codeSize: LS.get('sr_code', 14),
