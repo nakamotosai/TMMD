@@ -986,6 +986,20 @@ function applyGlass(opaque) {
 }
 /* R2 材质 + 底色直驱后端：material（none/acrylic）+ tint。mica/aero 已删，旧值一律按 acrylic。
  * 非 Tauri 环境（invoke 为空）静默跳过。失焦重放在 boot 里（R3）；圆角是 R4 的事，本轮不碰。 */
+/* R3-诊断：玻璃事件环形日志。默认关闭（sr_glass_debug !== '1' 时零开销零落盘），
+ * agent 自测时手动开，存在共享 localStorage（sr_glass_dbg，上限 60 条），正常实例与调试实例都能读。
+ * 这是摆在明面上的诊断开关，不是隐蔽后门：无网络、无外发、关 flag 即停。 */
+function glassDbg(evt) {
+  try {
+    if (localStorage.getItem('sr_glass_debug') !== '1') return;
+    let a = [];
+    try { a = JSON.parse(localStorage.getItem('sr_glass_dbg') || '[]'); } catch { a = []; }
+    if (!Array.isArray(a)) a = [];
+    a.push(Date.now() + ':' + evt);
+    while (a.length > 60) a.shift();
+    localStorage.setItem('sr_glass_dbg', JSON.stringify(a));
+  } catch { /* 存储不可用则静默跳过 */ }
+}
 async function applyGlassMaterial() {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
@@ -996,7 +1010,9 @@ async function applyGlassMaterial() {
   const n = parseInt(tint.slice(1), 16);
   try {
     await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha: 100, dark });
+    glassDbg('mat:' + material + ':ok');
   } catch (e) {
+    glassDbg('mat:' + material + ':ERR');
     toast('玻璃材质应用失败：' + ((e && e.message) || e));
   }
 }
@@ -1157,9 +1173,20 @@ async function boot() {
   applySideCollapsed(S.sideCollapsed);
   applyToolbarMode();
   wire();
-  // R3 失焦重放：个别机器失焦会丢 backdrop 材质（磨砂变实），焦点变化就重放一次材质即恢复；
-  // 其余机器上是幂等无操作。直透无材质可丢，不受影响。非 Tauri 环境静默跳过。
-  try { if (winApi && typeof winApi.onFocusChanged === 'function') winApi.onFocusChanged(() => { applyGlassMaterial(); }).catch(() => {}); } catch { /* 非 Tauri 环境 */ }
+  // R3 失焦重放（修正版）：blur 时不动手——DWM 失活期写 backdrop 属性会丢渲染，写了也白写；
+  // 只在 focus 回来后 300ms 全序列重放一次，等 DWM 走完激活再落 backdrop。直透无材质可丢，不受影响。
+  // 非 Tauri 环境静默跳过。
+  let glassRefocusTimer = 0;
+  try {
+    if (winApi && typeof winApi.onFocusChanged === 'function') winApi.onFocusChanged((ev) => {
+      const focused = !!((ev && typeof ev === 'object' && 'payload' in ev) ? ev.payload : ev);
+      glassDbg('focus:' + focused);
+      if (!focused) return;
+      clearTimeout(glassRefocusTimer);
+      glassRefocusTimer = setTimeout(() => { applyGlassMaterial(); }, 300);
+    }).catch(() => {});
+  } catch { /* 非 Tauri 环境 */ }
+  glassDbg('boot:' + ((S.glass && S.glass.material) || '?'));
   // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
   applyGlass(true);
   setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);

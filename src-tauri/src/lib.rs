@@ -508,6 +508,13 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
     Ok(state.0.lock().unwrap().take())
 }
 
+/// 上次落盘的材质键（进程内记忆）：同值跳过 DWM 写操作。
+/// 本机实证（2026-09-16，真机截图闭环）：首写生效，反复写 SYSTEMBACKDROP_TYPE 会把渲染致盲且不可逆
+/// （DWM 读值正常、页全透、屏实色， GPU 空闲也救不回）；只有真变化时才值得落盘。
+#[cfg(target_os = "windows")]
+static LAST_GLASS: std::sync::Mutex<Option<(String, u8, u8, u8, u8)>> =
+    std::sync::Mutex::new(None);
+
 /// R2 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
 /// material: none（DWM 不画材质，直透 + 网页层自身半透明）/ acrylic（高开销，r/g/b/alpha 为 tint，可透后方窗口）。
 /// aero 已删：SWCA blur-behind 在 Win11 上是废弃通道（纯黑 + 拖动抖，库文档自认无解）。
@@ -528,6 +535,15 @@ fn set_glass_material(
     {
         use window_vibrancy::{apply_acrylic, clear_acrylic, clear_blur, clear_mica};
         let _ = dark;
+        // 同值跳过：重放/连点不再落 DWM，只在 none↔acrylic 真切换时写一次
+        {
+            let key = (material.clone(), r, g, b, alpha);
+            let mut last = LAST_GLASS.lock().map_err(|e| format!("材质记忆锁失败: {e}"))?;
+            if last.as_ref() == Some(&key) {
+                return Ok(());
+            }
+            *last = Some(key);
+        }
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
