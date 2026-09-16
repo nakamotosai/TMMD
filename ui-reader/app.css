@@ -97,7 +97,7 @@ button {
   transition: background .1s, border-color .1s, color .1s; white-space: nowrap;
 }
 button:hover { background: var(--bg3); border-color: var(--accent); color: var(--fg); }
-button.active { background: var(--accent); color: #1d2021; border-color: var(--accent); }
+button.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-color: transparent; }
 button:disabled { opacity: .45; cursor: default; }
 
 /* ===== 隐形滚动条（DESIGN.md 硬铁律） ===== */
@@ -121,7 +121,7 @@ button:disabled { opacity: .45; cursor: default; }
 }
 /* 抽屉触发按钮：仅图标/仅文字双模式由 body.tb-icon / body.tb-text 控制 */
 .topbar .tb-btn { height: 26px; padding: 0 9px; font-size: 13px; flex-shrink: 0; }
-.topbar .tb-btn.active { background: var(--accent); color: #1d2021; border-color: var(--accent); }
+.topbar .tb-btn.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-color: transparent; border-radius: 7px; }
 .topbar .tb-caret { width: 10px; height: 10px; margin-left: 1px; opacity: .7; }
 body.tb-icon .tb-btn { width: 30px; padding: 0; justify-content: center; }
 body.tb-icon .tb-btn .tb-label, body.tb-icon .tb-btn .tb-caret { display: none; }
