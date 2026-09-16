@@ -985,7 +985,7 @@ function applyGlass(opaque) {
   const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic') ? m : 'acrylic'; }
 }
 /* R2 材质 + 底色直驱后端：material（none/acrylic）+ tint。mica/aero 已删，旧值一律按 acrylic。
- * 非 Tauri 环境（invoke 为空）静默跳过。失焦重放是 R3 的事，本轮不加 onFocusChanged；圆角是 R4 的事，本轮不碰。 */
+ * 非 Tauri 环境（invoke 为空）静默跳过。失焦重放在 boot 里（R3）；圆角是 R4 的事，本轮不碰。 */
 async function applyGlassMaterial() {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
@@ -1157,6 +1157,9 @@ async function boot() {
   applySideCollapsed(S.sideCollapsed);
   applyToolbarMode();
   wire();
+  // R3 失焦重放：个别机器失焦会丢 backdrop 材质（磨砂变实），焦点变化就重放一次材质即恢复；
+  // 其余机器上是幂等无操作。直透无材质可丢，不受影响。非 Tauri 环境静默跳过。
+  try { if (winApi && typeof winApi.onFocusChanged === 'function') winApi.onFocusChanged(() => { applyGlassMaterial(); }).catch(() => {}); } catch { /* 非 Tauri 环境 */ }
   // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
   applyGlass(true);
   setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);
