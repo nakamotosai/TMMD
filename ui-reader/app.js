@@ -53,8 +53,8 @@ const S = {
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
   // R2 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
   // 加法迁移：旧存档只补缺的 material 键，用户已调的底/铬/正文/浮层/文字/tint 原样保留，不丢弃。
-  // aero 已删：旧存档 aero 迁到 acrylic，不报错。
-  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic' }; const g = LS.get('sr_glass', null); if (!(g && typeof g === 'object' && 'tint' in g)) return d; if (g.material === 'aero' || typeof g.material !== 'string') g.material = 'acrylic'; return g; })(),
+  // aero/mica 已删：旧存档两者一律迁到 acrylic，不报错。
+  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic' }; const g = LS.get('sr_glass', null); if (!(g && typeof g === 'object' && 'tint' in g)) return d; if (g.material !== 'none' && g.material !== 'acrylic') g.material = 'acrylic'; return g; })(),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -984,15 +984,15 @@ function applyGlass(opaque) {
   const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
   const gt = $id('setGlassText'); if (gt) { gt.value = text; $id('valGlassText').textContent = text + '%'; }
   const ti = $id('setGlassTint'); if (ti) { ti.value = tint; const tv = $id('valGlassTint'); if (tv) tv.textContent = tint; }
-  const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'mica' || m === 'acrylic') ? m : 'acrylic'; }
+  const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic') ? m : 'acrylic'; }
 }
-/* R2 材质 + 底色直驱后端：material（none/mica/acrylic）+ tint + dark（沉浸深色，mica 必备）。非 Tauri 环境（invoke 为空）静默跳过。
- * 失焦重放是 R3 的事，本轮不加 onFocusChanged；圆角是 R4 的事，本轮不碰。 */
+/* R2 材质 + 底色直驱后端：material（none/acrylic）+ tint。mica/aero 已删，旧值一律按 acrylic。
+ * 非 Tauri 环境（invoke 为空）静默跳过。失焦重放是 R3 的事，本轮不加 onFocusChanged；圆角是 R4 的事，本轮不碰。 */
 async function applyGlassMaterial() {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
   let material = (typeof g.material === 'string' ? g.material : 'acrylic');
-  if (material !== 'none' && material !== 'mica' && material !== 'acrylic') material = 'acrylic';
+  if (material !== 'none' && material !== 'acrylic') material = 'acrylic';
   const tint = (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) ? g.tint : '#26282e';
   const dark = S.theme !== 'light';
   const n = parseInt(tint.slice(1), 16);

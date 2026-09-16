@@ -509,10 +509,11 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
 }
 
 /// R2 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
-/// material: none（清效果）/ mica（低开销，只取壁纸）/ acrylic（高开销，r/g/b/alpha 为 tint，可透后方窗口）。
-/// aero 已删：SWCA blur-behind 在 Win11 上是废弃通道（纯黑 + 拖动抖，库文档自认无解），旧存档 aero 兜底走 acrylic。
-/// mica 必须显式沉浸深色：库默认 None 不写 DWMWA_USE_IMMERSIVE_DARK_MODE，深色内容下 backdrop 变体不对，看着像不透明。
-/// Mica Alt 因 vibrancy 0.8 无 API 暂缺。失败返回 Err 由前端 toast，绝不 panic。
+/// material: none（DWM 不画材质，直透 + 网页层自身半透明）/ acrylic（高开销，r/g/b/alpha 为 tint，可透后方窗口）。
+/// aero 已删：SWCA blur-behind 在 Win11 上是废弃通道（纯黑 + 拖动抖，库文档自认无解）。
+/// mica 已删：本机三轮实证不画（DWM 值钉到 2、网页层全透、屏上仍是均匀实色，壁纸是彩色大理石仍无纹理），
+///   旧存档 mica/aero 一律兜底 acrylic。clear_mica 保留在清理序列里，专清 DWM 里残留的 MAINWINDOW。
+/// dark 参数保留占位（以后材质回归再用）。失败返回 Err 由前端 toast，绝不 panic。
 #[tauri::command]
 fn set_glass_material(
     app: tauri::AppHandle,
@@ -525,13 +526,13 @@ fn set_glass_material(
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_blur, clear_mica};
+        use window_vibrancy::{apply_acrylic, clear_acrylic, clear_blur, clear_mica};
+        let _ = dark;
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
-        // 先清后设：mica 会写 DWMWA_SYSTEMBACKDROP_TYPE 并一直残留，
-        // 直接叠 acrylic 会造成双 backdrop 冲突（顶栏重影：拖动时正常、松手恢复，2026-09-16 实证）。
-        // 每次切换先把三者清干净，再设选中的那一个。
+        // 先清后设：DWMWA_SYSTEMBACKDROP_TYPE 常驻，叠写会造成双 backdrop 冲突
+        // （顶栏重影：拖动时正常、松手恢复，2026-09-16 实证）。每次先把三者清干净。
         let _ = clear_blur(&win);
         let _ = clear_acrylic(&win);
         let _ = clear_mica(&win);
@@ -540,10 +541,7 @@ fn set_glass_material(
                 // 上面已全清，这里无需再做；保留分支语义
                 Ok(())
             }
-            "mica" => {
-                apply_mica(&win, Some(dark)).map_err(|e| format!("Mica 应用失败: {e}"))
-            }
-            // aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错
+            // mica/aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错
             _ => apply_acrylic(&win, Some((r, g, b, alpha)))
                 .map_err(|e| format!("亚克力应用失败: {e}")),
         }
