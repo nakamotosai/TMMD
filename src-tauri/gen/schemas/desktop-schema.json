@@ -303,6 +303,12 @@
           "markdownDescription": "Allow set_glass_material (W8 玻璃材质下拉：none/mica/aero/acrylic + tint)"
         },
         {
+          "description": "Allow set_glass_radius (W9 圆角滑杆：OS 层 SetWindowRgn 真切窗口形状)",
+          "type": "string",
+          "const": "allow-set-glass-radius",
+          "markdownDescription": "Allow set_glass_radius (W9 圆角滑杆：OS 层 SetWindowRgn 真切窗口形状)"
+        },
+        {
           "description": "Allow write_text under path cage",
           "type": "string",
           "const": "allow-write-text",

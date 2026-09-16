@@ -52,8 +52,9 @@ const S = {
   sideCollapsed: LS.get('sr_side_col', false),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
   // W8 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
-  // 旧存档（无 material 键）直接丢弃，用新默认（W8 迁移一次）。
-  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic' }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'material' in g) ? g : d; })(),
+  // W9 加圆角 14（0–24 可调，与后端 SetWindowRgn 共用同一个数）。
+  // 旧存档（无 radius 键）直接丢弃，用新默认（W9 迁移一次）。
+  glass: (() => { const d = { on: true, base: 12, chrome: 25, reader: 35, pop: 30, text: 100, tint: '#26282e', material: 'acrylic', radius: 14 }; const g = LS.get('sr_glass', null); return (g && typeof g === 'object' && 'radius' in g) ? g : d; })(),
   aiEndpoint: LS.raw('sr_ai_endpoint') || 'http://100.86.60.101:8317',
   aiKey: LS.raw('sr_ai_key') || '',
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
@@ -984,9 +985,20 @@ function applyGlass(opaque) {
   const gt = $id('setGlassText'); if (gt) { gt.value = text; $id('valGlassText').textContent = text + '%'; }
   const ti = $id('setGlassTint'); if (ti) { ti.value = tint; const tv = $id('valGlassTint'); if (tv) tv.textContent = tint; }
   const mm = $id('setGlassMaterial'); if (mm) mm.value = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic');
+  // W9 圆角回显：CSS 变量与后端共用同一个数，0 = 直角
+  const radius = num(S.glass.radius, 14, 0, 24);
+  root.setProperty('--win-radius', radius + 'px');
+  const gr2 = $id('setGlassRadius'); if (gr2) { gr2.value = radius; $id('valGlassRadius').textContent = radius + 'px'; }
+}
+/* W9 圆角同步后端：滑杆/开机时把半径送给 SetWindowRgn。非 Tauri 环境静默跳过。 */
+function pushGlassRadius() {
+  if (!invoke) return;
+  const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
+  let r = Math.round(Number(g.radius)); if (!Number.isFinite(r)) r = 14; r = Math.min(24, Math.max(0, r));
+  invoke('set_glass_radius', { radius: r }).catch(() => {});
 }
 /* W8 材质 + 底色直驱后端：material（none/mica/aero/acrylic）+ tint。非 Tauri 环境（invoke 为空）静默跳过。
- * 焦点变化时重放一次：失焦导致材质丢失的 machine 上可自愈；正常机器上是无操作幂等调用。 */
+ * 焦点变化时重放一次：失焦导致材质丢失的机器上可自愈；正常机器上是无操作幂等调用。 */
 async function applyGlassMaterial() {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
@@ -1043,6 +1055,11 @@ function bindSettings() {
   $id('setGlassTint')?.addEventListener('input', (e) => { glassOn().tint = e.target.value; LS.set('sr_glass', S.glass); const tv = $id('valGlassTint'); if (tv) tv.textContent = e.target.value; applyGlassMaterial(); });
   // W8 材质下拉 + 失焦自愈：焦点变化就重放材质（失焦丢材质的机器上自愈，其余机器幂等无操作）
   $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', S.glass); applyGlassMaterial(); });
+  // W9 圆角滑杆：CSS 变量即时生效 + 后端 SetWindowRgn 真切窗口形状（0 = 直角）
+  $id('setGlassRadius')?.addEventListener('input', (e) => {
+    let r = Math.round(+e.target.value); if (!Number.isFinite(r)) r = 14; r = Math.min(24, Math.max(0, r));
+    glassOn().radius = r; LS.set('sr_glass', S.glass); applyGlass(false); pushGlassRadius();
+  });
   // W8 玻璃独立面板：工具栏按钮直达，开时自动收起设置面板；Esc 关闭
   $id('btnGlass')?.addEventListener('click', () => {
     const gp = $id('glassPanel'); if (!gp) return;
@@ -1163,9 +1180,9 @@ async function boot() {
   applySideCollapsed(S.sideCollapsed);
   applyToolbarMode();
   wire();
-  // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint）
+  // W3 开机延迟应用：首帧先全不透明（避开透明窗冷启动合成坑），450ms 后再落用户玻璃值（含材质 + 底色 tint + 圆角）
   applyGlass(true);
-  setTimeout(() => { applyGlass(false); applyGlassMaterial(); }, 450);
+  setTimeout(() => { applyGlass(false); applyGlassMaterial(); pushGlassRadius(); }, 450);
   // 字体加载会改变按钮宽度，加载完成后重排溢出
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);

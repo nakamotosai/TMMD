@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU32, Ordering};
 use tauri::{Emitter, Manager};
 
 const MAX_FILES: usize = 5000;
@@ -449,6 +450,47 @@ fn open_path(path: String) -> Result<String, String> {
     fs::read_to_string(p).map_err(|e| format!("读取失败: {e}"))
 }
 
+/// W9 窗口圆角半径（px），前端滑杆经 set_glass_radius 写入，后台线程 resize 时跟随重算。
+static GLASS_RADIUS: AtomicU32 = AtomicU32::new(14);
+
+/// W9 真切窗口形状：CSS border-radius 只切 WebView 内容，DWM 亚克力底仍是直角，
+/// 所谓“直角包圆角”即来源于此。必须 OS 层 SetWindowRgn 裁窗口本身。
+/// 最大化/全屏时去圆角（r=0 清 region），resize 由 setup 里后台线程跟随。
+#[cfg(target_os = "windows")]
+fn apply_window_region(win: &tauri::WebviewWindow, radius: u32) {
+    use windows::Win32::{
+        Foundation::HWND,
+        Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn},
+    };
+    let (w, h) = match win.inner_size() {
+        Ok(s) => (s.width as i32, s.height as i32),
+        Err(_) => return,
+    };
+    if w <= 0 || h <= 0 {
+        return;
+    }
+    let r = if win.is_maximized().unwrap_or(false) {
+        0
+    } else {
+        radius.min(48) as i32
+    };
+    // 经原始指针中转 HWND，不绑定 windows crate 具体版本（tauri 内置的与直引的可能差小版本）
+    let raw = match win.hwnd() {
+        Ok(h) => h.0 as isize,
+        Err(_) => return,
+    };
+    let hwnd = HWND(raw as *mut std::ffi::c_void);
+    unsafe {
+        if r <= 0 {
+            // 传 None = 摘掉裁剪，窗口恢复完整直角（最大化/圆角 0 时）
+            SetWindowRgn(hwnd, None, true);
+        } else {
+            let hrgn = CreateRoundRectRgn(0, 0, w + 1, h + 1, r * 2, r * 2);
+            SetWindowRgn(hwnd, Some(hrgn), true);
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -475,7 +517,33 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     let _ = window_vibrancy::apply_acrylic(&win, Some((20, 20, 22, 100)));
+                    // W9 首帧即按默认半径裁形，避免先出直角再跳圆角
+                    apply_window_region(&win, GLASS_RADIUS.load(Ordering::Relaxed));
                 }
+            }
+            // W9 圆角跟随线程：窗口形状是 OS 层状态，resize/最大化切换后 250ms 内重算
+            #[cfg(target_os = "windows")]
+            {
+                let handle = app.handle().clone();
+                std::thread::spawn(move || {
+                    let mut last: (u32, u32, u32) = (0, 0, u32::MAX);
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(250));
+                        let radius = GLASS_RADIUS.load(Ordering::Relaxed);
+                        let Some(wn) = handle.get_webview_window("main") else {
+                            break;
+                        };
+                        let (w, h) = match wn.inner_size() {
+                            Ok(s) => (s.width, s.height),
+                            Err(_) => continue,
+                        };
+                        if (w, h, radius) == last {
+                            continue;
+                        }
+                        last = (w, h, radius);
+                        apply_window_region(&wn, radius);
+                    }
+                });
             }
             Ok(())
         })
@@ -492,7 +560,8 @@ pub fn run() {
             load_roots,
             save_roots,
             pending_open,
-            set_glass_material
+            set_glass_material,
+            set_glass_radius
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai Reader");
@@ -507,6 +576,27 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
     Ok(state.0.lock().unwrap().take())
 }
 
+/// W9 窗口圆角：前端滑杆驱动，0–32px（CSS 同步跟 var(--win-radius)）。
+/// 只记值 + 当场裁一次，resize 后续由后台线程按此值跟随。
+/// 失败返回 Err 由前端 toast，绝不 panic。
+#[tauri::command]
+fn set_glass_radius(app: tauri::AppHandle, radius: u32) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let r = radius.min(32);
+        GLASS_RADIUS.store(r, Ordering::Relaxed);
+        let win = app
+            .get_webview_window("main")
+            .ok_or_else(|| "找不到主窗口".to_string())?;
+        apply_window_region(&win, r);
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, radius);
+        Err("窗口圆角仅 Windows 支持".to_string())
+    }
+}
 /// W8 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
 /// material: none（清效果，纯透明直透）/ mica（低开销）/ aero（经典 blur-behind 玻璃）/ acrylic（高开销，r/g/b/alpha 为 tint）。
 /// Mica Alt 缺席：window-vibrancy 0.8 未提供该 API（见 progress W8），如需后续升级库再补。
@@ -528,11 +618,15 @@ fn set_glass_material(
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
+        // W9 先清后设：mica 会写 DWMWA_SYSTEMBACKDROP_TYPE 并一直残留，
+        // 直接叠 acrylic 会造成双 backdrop 冲突（顶栏重影：拖动时正常、松手恢复，2026-09-16 实证）。
+        // 每次切换先把三者清干净，再设选中的那一个。
+        let _ = clear_blur(&win);
+        let _ = clear_acrylic(&win);
+        let _ = clear_mica(&win);
         match material.as_str() {
             "none" => {
-                let _ = clear_blur(&win);
-                let _ = clear_acrylic(&win);
-                let _ = clear_mica(&win);
+                // 上面已全清，这里无需再做；保留分支语义
                 Ok(())
             }
             "mica" => apply_mica(&win, None).map_err(|e| format!("Mica 应用失败: {e}")),
