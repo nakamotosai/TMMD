@@ -6,11 +6,11 @@
 
 </div>
 
-# Sai Reader
+# 透明MD（TMMD）
 
-![Sai Reader hero — 面向 Windows 的本地优先 Markdown 阅读器](assets/readme/hero.svg)
+![透明MD hero — 面向 Windows 的透明本地优先 Markdown 阅读器](assets/readme/hero.svg)
 
-一款面向 Windows 的本地优先 Markdown 阅读器，基于 Tauri 2（Rust + WebView2）构建。快速、私密、完全离线 —— 你的笔记永远不会离开你的设备。
+透明MD（TMMD）是一款面向 Windows 的透明本地优先 Markdown 阅读器，基于 Tauri 2（Rust + WebView2）构建。快速、私密、完全离线 —— 你的笔记永远不会离开你的设备。
 
 ## 功能特性
 
@@ -24,7 +24,7 @@
 
 ## 截图
 
-<img src="assets/readme/screenshot.png" alt="Sai Reader 截图" width="100%">
+<img src="assets/readme/screenshot.png" alt="透明MD 截图" width="100%">
 
 上方 hero 已预览实际外观 —— 侧边栏文件树、纸质阅读页与代码块，均以应用自身的配色绘制。完整窗口截图将稍后补充。
 

@@ -1,4 +1,4 @@
-//! Sai Reader · 极速本地 Markdown 阅读器（Tauri 2，纯阅读，无工作台）
+//! TMMD（透明MD） · 极速本地 Markdown 阅读器（Tauri 2，纯阅读，无工作台）
 
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -494,7 +494,7 @@ pub fn run() {
             get_glass_state
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Sai Reader");
+        .expect("error while running TMMD");
 }
 
 /// 冷启动待打开路径：setup 时存入，前端 boot 后取走（取后清空，避免重复打开）

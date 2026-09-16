@@ -6,11 +6,11 @@
 
 </div>
 
-# Sai Reader
+# TMMD
 
-![Sai Reader hero — Windows 向けローカルファースト Markdown リーダー](assets/readme/hero.svg)
+![TMMD hero — Windows 向け透明ローカルファースト Markdown リーダー](assets/readme/hero.svg)
 
-Windows 向けのローカルファースト Markdown リーダー。Tauri 2（Rust + WebView2）で構築。高速・プライベート・完全オフライン —— あなたのノートがマシンの外に出ることはありません。
+Windows 向けの透明ローカルファースト Markdown リーダー。Tauri 2（Rust + WebView2）で構築。高速・プライベート・完全オフライン —— あなたのノートがマシンの外に出ることはありません。
 
 ## 機能
 
@@ -24,7 +24,7 @@ Windows 向けのローカルファースト Markdown リーダー。Tauri 2（R
 
 ## スクリーンショット
 
-<img src="assets/readme/screenshot.png" alt="Sai Reader スクリーンショット" width="100%">
+<img src="assets/readme/screenshot.png" alt="TMMD スクリーンショット" width="100%">
 
 上の hero は実際の見た目をすでにプレビューしています —— サイドバーのファイルツリー、紙面風リーダーページ、コードブロックをアプリ自身のカラーパレットで描画。フルウィンドウのスクリーンショットは後ほど追加予定です。
 

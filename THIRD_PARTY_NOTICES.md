@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Sai Reader bundles the following open-source frontend libraries (vendored under `ui-reader/vendor/`).
+TMMD bundles the following open-source frontend libraries (vendored under `ui-reader/vendor/`).
 
 ## KaTeX
 

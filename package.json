@@ -2,7 +2,7 @@
   "name": "sai-md-reader",
   "version": "1.5.0",
   "private": true,
-  "description": "Sai Reader — a lightweight local-first Markdown reader built with Tauri 2",
+  "description": "TMMD — 透明 Markdown 阅读器，基于 Tauri 2 的轻量本地优先阅读器",
   "type": "module",
   "license": "MIT",
   "scripts": {

@@ -6,11 +6,11 @@
 
 </div>
 
-# Sai Reader
+# TMMD
 
-![Sai Reader hero — local-first Markdown reader for Windows](assets/readme/hero.svg)
+![TMMD hero — transparent local-first Markdown reader for Windows](assets/readme/hero.svg)
 
-A local-first Markdown reader for Windows, built with Tauri 2 (Rust + WebView2). Fast, private, and entirely offline — your notes never leave your machine.
+TMMD is a transparent local-first Markdown reader for Windows, built with Tauri 2 (Rust + WebView2). Fast, private, and entirely offline — your notes never leave your machine.
 
 ## Features
 
@@ -24,7 +24,7 @@ A local-first Markdown reader for Windows, built with Tauri 2 (Rust + WebView2).
 
 ## Screenshots
 
-<img src="assets/readme/screenshot.png" alt="Sai Reader screenshot" width="100%">
+<img src="assets/readme/screenshot.png" alt="TMMD screenshot" width="100%">
 
 The hero above already previews the actual look — sidebar file tree, paper reader page, and code block, drawn in the app's own color palette. A full window screenshot will be added here.
 

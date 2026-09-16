@@ -1,4 +1,4 @@
-/* Sai Reader · 轻量本地 Markdown 阅读器（Tauri 2）
+/* TMMD（透明MD） · 轻量本地 Markdown 阅读器（Tauri 2）
  * v1.3.0：导读地图视图（侧栏地铁图+进度）/ AI 章节导读卡（3判断+1反常识+1动作，LLM 生成+本机缓存）/ 设置面板 AI 网关配置
  * v1.2.1：窗口拖动修复——WebView2 不认 CSS -webkit-app-region，改 mousedown → startDragging()（capabilities 加 allow-start-dragging）
  * v1.2.0：正文本地图片/视频/音频渲染（asset 协议 convertFileSrc + 相对路径基于 md 目录解析）
@@ -190,7 +190,7 @@ function renderMarkdown(md, absParam) {
   inner.innerHTML = '';
   inner.appendChild(body);
   const name = absParam ? absParam.split(/[\\/]/).pop() : '';
-  document.title = name ? name + ' · Sai Reader' : 'Sai Reader';
+  document.title = name ? name + ' · TMMD' : 'TMMD';
   const top = Number(LS.raw('sr_scr_' + absParam) || 0);
   const rd = $id('reader');
   rd.scrollTop = 0; // 容器复用：先清旧文件滚动残留，防切换 md 后新文件停在底部
@@ -458,7 +458,7 @@ function renderEmpty() {
     $id('emptyOpenFolder')?.addEventListener('click', onOpenFolder);
     $id('emptyOpenFile')?.addEventListener('click', pickOpenFile);
   }
-  document.title = 'Sai Reader';
+  document.title = 'TMMD';
   markActive(null);
   if (S.view === 'toc' || S.view === 'map') renderSide();
 }
@@ -1269,7 +1269,7 @@ async function boot() {
   try {
     const v = await window.__TAURI__.app.getVersion();
     const sv = $id('settingsVer');
-    if (sv) sv.textContent = v ? 'Sai Reader v' + v : 'Sai Reader';
+    if (sv) sv.textContent = v ? 'TMMD v' + v : 'TMMD';
   } catch { /* 非 Tauri 环境 */ }
   applySettings();
   renderPaletteSwatches();
@@ -1302,7 +1302,7 @@ async function boot() {
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutToolbar());
-  if (!invoke) { toast('请通过 Sai Reader 桌面应用打开'); return; }
+  if (!invoke) { toast('请通过 TMMD 桌面应用打开'); return; }
   S.roots = await invoke('load_roots').catch(() => []);
   if (S.roots.length) await loadRoot(S.roots[0]);
   await restoreTabs();   // R7：恢复上次标签页（内容重读，draft 不恢复）

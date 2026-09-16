@@ -1,4 +1,4 @@
-/* Sai Reader · 轻量本地 Markdown 阅读器（Tauri 2）
+/* TMMD（透明MD） · 轻量本地 Markdown 阅读器（Tauri 2）
  * 视觉规范：DESIGN.md（Maple Mono NF CN / 正文 16px / 隐形滚动条 / Gruvbox 实色）
  * v1.1.0：统一 SVG 线性图标 / 工具栏分组+响应式溢出 / 实色背景层（修滚动色变）
  *        历史与收藏合并 / 侧栏折叠按钮置左 / 主题降级 / 配色一致
@@ -139,7 +139,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .tabbar::-webkit-scrollbar { display: none; }
 .tabbar[hidden] { display: none; }
 .topbar .actions { flex: 0 1 auto; min-width: 148px; }   /* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽；保底 ⋮＋两三个图标，顶栏永不只剩一个按钮 */
-.brand { display: none; }   /* R7b：品牌字移入设置菜单，顶栏只留标签页 */
+.brand { display: inline-flex; align-items: center; margin-left: 8px; }   /* T1：品牌字回顶栏右侧（窗口控制钮左），版本仍只在设置显示 */
 .tab { display: flex; align-items: center; gap: 6px; max-width: 200px; min-width: 60px; flex: 0 1 auto;
   height: 26px; padding: 0 6px 0 10px; font-size: 13px; color: var(--fg-dim); white-space: nowrap;
   background: transparent; border: 1px solid transparent; border-radius: 7px;
