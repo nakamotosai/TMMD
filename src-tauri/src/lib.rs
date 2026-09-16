@@ -492,7 +492,8 @@ pub fn run() {
             load_roots,
             save_roots,
             pending_open,
-            set_glass_material
+            set_glass_material,
+            get_glass_state
         ])
         .run(tauri::generate_context!())
         .expect("error while running Sai Reader");
@@ -508,10 +509,10 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
 }
 
 /// R2 玻璃材质：运行时切换整窗 backdrop 材质（前端玻璃面板材质下拉驱动）。
-/// material: none（清效果）/ mica（低开销）/ aero（经典 blur-behind）/ acrylic（高开销，r/g/b/alpha 为 tint）。
-/// 实现照抄 tag glass-w9-archive（W8/W9 实证版），保留先清后设；Mica Alt 因 vibrancy 0.8 无 API 暂缺。
-/// 替代 R0 的 set_glass_tint：tint 改由本命令并参，避免 tint 强行 apply_acrylic 盖掉 mica/aero 造成双 backdrop 重影。
-/// 失败返回 Err 由前端 toast，绝不 panic。
+/// material: none（清效果）/ mica（低开销，只取壁纸）/ acrylic（高开销，r/g/b/alpha 为 tint，可透后方窗口）。
+/// aero 已删：SWCA blur-behind 在 Win11 上是废弃通道（纯黑 + 拖动抖，库文档自认无解），旧存档 aero 兜底走 acrylic。
+/// mica 必须显式沉浸深色：库默认 None 不写 DWMWA_USE_IMMERSIVE_DARK_MODE，深色内容下 backdrop 变体不对，看着像不透明。
+/// Mica Alt 因 vibrancy 0.8 无 API 暂缺。失败返回 Err 由前端 toast，绝不 panic。
 #[tauri::command]
 fn set_glass_material(
     app: tauri::AppHandle,
@@ -520,12 +521,11 @@ fn set_glass_material(
     g: u8,
     b: u8,
     alpha: u8,
+    dark: bool,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use window_vibrancy::{
-            apply_acrylic, apply_blur, apply_mica, clear_acrylic, clear_blur, clear_mica,
-        };
+        use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_blur, clear_mica};
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
@@ -540,15 +540,61 @@ fn set_glass_material(
                 // 上面已全清，这里无需再做；保留分支语义
                 Ok(())
             }
-            "mica" => apply_mica(&win, None).map_err(|e| format!("Mica 应用失败: {e}")),
-            "aero" => apply_blur(&win, None).map_err(|e| format!("Aero 应用失败: {e}")),
+            "mica" => {
+                apply_mica(&win, Some(dark)).map_err(|e| format!("Mica 应用失败: {e}"))
+            }
+            // aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错
             _ => apply_acrylic(&win, Some((r, g, b, alpha)))
                 .map_err(|e| format!("亚克力应用失败: {e}")),
         }
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (app, material, r, g, b, alpha);
+        let _ = (app, material, r, g, b, alpha, dark);
         Err("玻璃材质仅 Windows 支持".to_string())
+    }
+}
+
+/// R2-fix 诊断位：直读 DWM 当前真实 backdrop（SYSTEMBACKDROP_TYPE：0 无/1 自动/2 Mica/3 Acrylic/4 Tabbed）
+/// 与沉浸深色开关。肉眼说不清时以它为准：值对但看着实 → 壁纸/焦点因素；值不对 → 调用被吞。
+/// HWND 经 win.hwnd() 原始指针中转，不绑定 windows crate 版本。
+#[tauri::command]
+fn get_glass_state(win: tauri::WebviewWindow) -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows_sys::Win32::Graphics::Dwm::{
+            DwmGetWindowAttribute, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+        };
+        let raw: isize = win
+            .hwnd()
+            .map(|h| h.0 as isize)
+            .map_err(|e| format!("取 HWND 失败: {e}"))?;
+        let hwnd = raw as *mut std::ffi::c_void;
+        let mut backdrop: i32 = -1;
+        let mut dark: i32 = -1;
+        unsafe {
+            let r = DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE as u32,
+                &mut backdrop as *mut _ as _,
+                4,
+            );
+            if r != 0 {
+                return Err(format!("读 backdrop 失败: {r}"));
+            }
+            // 深色开关读不到不致命，记 -1 照常返回
+            let _ = DwmGetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE as u32,
+                &mut dark as *mut _ as _,
+                4,
+            );
+        }
+        Ok(serde_json::json!({ "backdrop": backdrop, "darkMode": dark }))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = win;
+        Err("仅 Windows 支持".to_string())
     }
 }

@@ -90,5 +90,10 @@ commands.allow = ["app_toggle_maximize"]
 
 [[permission]]
 identifier = "allow-set-glass-material"
-description = "Allow set_glass_material (R2 玻璃材质下拉：none/mica/aero/acrylic + tint)"
+description = "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)"
 commands.allow = ["set_glass_material"]
+
+[[permission]]
+identifier = "allow-get-glass-state"
+description = "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)"
+commands.allow = ["get_glass_state"]

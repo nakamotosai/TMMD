@@ -16,6 +16,7 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-effects",
     "allow-set-glass-material",
+    "allow-get-glass-state",
     "core:app:default",
     "core:path:default",
     "allow-desktop-info",

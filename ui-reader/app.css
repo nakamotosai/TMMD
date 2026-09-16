@@ -392,6 +392,14 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
   width: 46px; height: 26px; padding: 1px 3px; cursor: pointer;
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
 }
+/* R2-fix 材质下拉：深色样式与面板统一，盖掉系统默认白底下拉 */
+.set-select {
+  padding: 5px 8px; font-size: 12px; cursor: pointer;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.set-select:focus { outline: none; border-color: var(--accent); }
+.set-select option { background: var(--bg2); color: var(--fg); }
 /* W8 文字整体透明度落点：正文区 + 侧栏内容（编辑态 textarea 不在内，保持清晰可写） */
 .reader-inner, #sideBody { opacity: var(--text-opa); }
 .set-text {

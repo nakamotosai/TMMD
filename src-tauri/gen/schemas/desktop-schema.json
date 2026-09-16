@@ -219,6 +219,12 @@
           "markdownDescription": "Allow desktop_info command"
         },
         {
+          "description": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)",
+          "type": "string",
+          "const": "allow-get-glass-state",
+          "markdownDescription": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)"
+        },
+        {
           "description": "Allow list_md_tree under registered root",
           "type": "string",
           "const": "allow-list-md-tree",
@@ -297,10 +303,10 @@
           "markdownDescription": "Allow save_roots to app config"
         },
         {
-          "description": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/aero/acrylic + tint)",
+          "description": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)",
           "type": "string",
           "const": "allow-set-glass-material",
-          "markdownDescription": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/aero/acrylic + tint)"
+          "markdownDescription": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)"
         },
         {
           "description": "Allow write_text under path cage",
