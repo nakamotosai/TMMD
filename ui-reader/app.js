@@ -1244,6 +1244,11 @@ function wire() {
   });
   $id('setTbIcon')?.addEventListener('click', () => { S.toolbarMode = 'icon'; LS.set('sr_tb_mode', 'icon'); applyToolbarMode(); });
   $id('setTbText')?.addEventListener('click', () => { S.toolbarMode = 'text'; LS.set('sr_tb_mode', 'text'); applyToolbarMode(); });
+  $id('btnFileAssoc')?.addEventListener('click', async () => {
+    try { await invoke('open_default_apps_settings'); } catch (e) { toast('打不开系统设置：' + e); return; }
+    toast('已打开系统"默认应用"页：搜 .md → 选 TMMD');
+    refreshFileAssoc();
+  });
   $id('reader').addEventListener('scroll', () => {
     clearTimeout(rememberScroll._t);
     rememberScroll._t = setTimeout(() => { rememberScroll(); highlightCurrentToc(); }, 120);
@@ -1264,6 +1269,14 @@ function wire() {
   });
 }
 
+/* 文件关联：按钮只打开系统"默认应用"页（OS 禁止静默自设默认）；状态只读展示 */
+async function refreshFileAssoc() {
+  const el = $id('fileAssocStatus'); if (!el || !invoke) return;
+  try {
+    const r = await invoke('get_md_default');
+    el.textContent = r && r.isTmmd ? 'TMMD（就是本应用）' : (r && r.progId ? r.progId : '未知');
+  } catch { el.textContent = '读不到'; }
+}
 async function boot() {
   // 版本号（R7b：顶栏品牌字已撤，版本只在设置菜单显示；浏览器预览降级为空）
   try {
@@ -1280,6 +1293,7 @@ async function boot() {
   applySideBottomH(S.sideBottomH);
   renderRecent();
   applyToolbarMode();
+  refreshFileAssoc();
   wire();
   // R3 失焦重放（修正版）：blur 时不动手——DWM 失活期写 backdrop 属性会丢渲染，写了也白写；
   // 只在 focus 回来后 300ms 全序列重放一次，等 DWM 走完激活再落 backdrop。直透无材质可丢，不受影响。

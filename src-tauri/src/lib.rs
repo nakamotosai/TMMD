@@ -491,7 +491,9 @@ pub fn run() {
             save_roots,
             pending_open,
             set_glass_material,
-            get_glass_state
+            get_glass_state,
+            open_default_apps_settings,
+            get_md_default
         ])
         .run(tauri::generate_context!())
         .expect("error while running TMMD");
@@ -504,6 +506,51 @@ struct StartupPending(std::sync::Mutex<Option<String>>);
 #[tauri::command]
 fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, String> {
     Ok(state.0.lock().unwrap().take())
+}
+
+/// 文件关联：打开系统"默认应用"设置页。Windows 10+ 不允许程序静默自设默认
+/// （防劫持），最后一下必须用户亲手点；绿色版无安装包写注册表，更只能走这条路。
+#[tauri::command]
+fn open_default_apps_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:defaultapps"])
+            .spawn()
+            .map_err(|e| format!("打开默认应用设置失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/// 文件关联：只读当前 .md 的 UserChoice ProgId（HKCU 读无害；写受 ACL 保护）。
+/// reg 输出中文区是 GBK，但 ProgId 行纯 ASCII，按空白切末段即得，不怕乱码。
+#[tauri::command]
+fn get_md_default() -> Result<serde_json::Value, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let out = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\UserChoice",
+                "/v",
+                "ProgId",
+            ])
+            .output()
+            .map_err(|e| format!("读默认打开方式失败: {e}"))?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let prog = text
+            .lines()
+            .find(|l| l.contains("ProgId"))
+            .and_then(|l| l.split_whitespace().last())
+            .map(|s| s.to_string());
+        let is_tmmd = prog
+            .as_ref()
+            .map(|p| p.to_lowercase().contains("tmmd"))
+            .unwrap_or(false);
+        return Ok(serde_json::json!({ "progId": prog, "isTmmd": is_tmmd }));
+    }
+    #[allow(unreachable_code)]
+    Ok(serde_json::json!({ "progId": null, "isTmmd": false }))
 }
 
 /// 上次落盘的材质键（进程内记忆）：同值跳过 DWM 写操作，只在真变化时落盘。

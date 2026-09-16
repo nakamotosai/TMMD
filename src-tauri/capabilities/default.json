@@ -17,6 +17,8 @@
     "core:window:allow-set-effects",
     "allow-set-glass-material",
     "allow-get-glass-state",
+    "allow-open-default-apps-settings",
+    "allow-get-md-default",
     "core:app:default",
     "core:path:default",
     "allow-desktop-info",

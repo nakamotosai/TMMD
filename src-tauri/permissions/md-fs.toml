@@ -97,3 +97,13 @@ commands.allow = ["set_glass_material"]
 identifier = "allow-get-glass-state"
 description = "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)"
 commands.allow = ["get_glass_state"]
+
+[[permission]]
+identifier = "allow-open-default-apps-settings"
+description = "Allow open_default_apps_settings (文件关联按钮：打开系统默认应用设置页，不静默改默认)"
+commands.allow = ["open_default_apps_settings"]
+
+[[permission]]
+identifier = "allow-get-md-default"
+description = "Allow get_md_default (文件关联状态：只读 HKCU .md UserChoice ProgId)"
+commands.allow = ["get_md_default"]
