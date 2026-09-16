@@ -129,7 +129,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .brand { font-weight: 600; color: var(--accent); letter-spacing: .5px; font-size: 14px; flex-shrink: 0; }
 .brand-ver { font-size: 10px; color: var(--fg-faint); font-family: var(--mono); margin-left: 4px; letter-spacing: 0; }
 
-.win-ctrl { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.win-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .win-btn { width: 30px; height: 26px; padding: 0; background: transparent; border: none; color: var(--fg-dim); justify-content: center; }
 .win-btn:hover { background: var(--bg3); color: var(--fg); border: none; }
 .win-close:hover { background: var(--red); color: #1d2021; }
@@ -139,7 +139,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .tabbar::-webkit-scrollbar { display: none; }
 .tabbar[hidden] { display: none; }
 .topbar .actions { flex: 0 1 auto; min-width: 148px; }   /* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽；保底 ⋮＋两三个图标，顶栏永不只剩一个按钮 */
-.brand { display: inline-flex; align-items: center; margin-left: 8px; }   /* T1：品牌字回顶栏右侧（窗口控制钮左），版本仍只在设置显示 */
+.brand { display: inline-flex; align-items: center; margin-left: auto; }   /* T1b：品牌字靠右对齐（最小化钮左）；margin 撑在 brand 上，无 tab 时也不塌回左边 */
 .tab { display: flex; align-items: center; gap: 6px; max-width: 200px; min-width: 60px; flex: 0 1 auto;
   height: 26px; padding: 0 6px 0 10px; font-size: 13px; color: var(--fg-dim); white-space: nowrap;
   background: transparent; border: 1px solid transparent; border-radius: 7px;
@@ -291,6 +291,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .settings-row label { flex-shrink: 0; width: 72px; font-size: 13px; color: var(--fg-dim); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .settings-row input[type=range] { flex: 1; min-width: 100px; accent-color: var(--accent); }
 .settings-val { font-size: 12px; color: var(--fg-faint); width: 48px; text-align: right; }
+#fileAssocStatus { width: auto; flex: 1; text-align: left; white-space: normal; }
 .theme-btn { font-size: 12px; padding: 4px 12px; }
 .palette-swatches { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
 .swatch {
