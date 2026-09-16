@@ -512,7 +512,8 @@ static LAST_GLASS: std::sync::Mutex<Option<(String, u8, u8, u8, u8)>> =
     std::sync::Mutex::new(None);
 
 /// R3b 玻璃落盘：两档彻底解耦，互不碰对方的通道。
-/// 直透：只复位 `DWMSBT_NONE`，其余不动（R2 实证锐利直透；多余动作会变纯黑）。
+/// 直透：accent 写回零 + 关 BlurBehind + `DWMSBT` 复位 NONE + 刷 frame，四笔缺一不可
+/// （缺清霜两档长一个样；缺刷 frame 停在纯黑中间态——两条都是本机实证）。
 /// 磨砂：Pebrel 配方（先清 WCA 旧层 → 关 BlurBehind → 写 `DWMSBT_NONE` → 写 accent
 /// state 4 + tint → `SetWindowPos + FRAMECHANGED`），绝不用 `TRANSIENTWINDOW`
 /// （WebView2 是 DC 窗，新接口上去就是灰板）。mica/aero 已删，旧值兜底 acrylic。
@@ -558,22 +559,6 @@ fn paint_glass(
         .map(|h| h.0 as isize)
         .map_err(|e| format!("取 HWND 失败: {e}"))?;
     let hwnd = raw as HWND;
-
-    if !acrylic {
-        // 直透独立通道：只把 DWMSBT 复位 NONE，其余一律不动。
-        // R2 实证这条路是锐利直透；新通道任一多余动作（写 accent、关 BlurBehind、刷 frame）
-        // 都会让直透变纯黑，所以这里只做最小复位。磨砂通道在下面，互不干涉。
-        unsafe {
-            let none = DWMSBT_NONE;
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_SYSTEMBACKDROP_TYPE as u32,
-                &none as *const _ as *const std::ffi::c_void,
-                std::mem::size_of_val(&none) as u32,
-            );
-        }
-        return Ok(());
-    }
     // WCA_ACCENT_POLICY 未进公开 SDK，和上游一样动态取 user32 地址
     let set_wca: Option<SetWindowCompositionAttribute> = unsafe {
         let user32 = GetModuleHandleA(c"user32.dll".as_ptr() as *const u8);
@@ -595,6 +580,40 @@ fn paint_glass(
             set_wca(hwnd, &mut data);
         }
     };
+
+    if !acrylic {
+        // 直透独立通道：accent 写回零 + 关 BlurBehind + DWMSBT 复位 NONE + 刷 frame。
+        // 和 R3b 初版逐字一致（E2 实证锐利直透）：accent 清掉磨砂残霜（不清两档长一个样），
+        // frame 必须刷——只写属性不刷，DWM 停在中间态变纯黑，我刚亲手复现过一次。
+        // 磨砂通道在下面，互不干涉。
+        apply_accent(AccentPolicy { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+        unsafe {
+            let bb = DWM_BLURBEHIND {
+                dwFlags: DWM_BB_ENABLE,
+                fEnable: 0,
+                hRgnBlur: std::ptr::null_mut(),
+                fTransitionOnMaximized: 0,
+            };
+            DwmEnableBlurBehindWindow(hwnd, &bb);
+            let none = DWMSBT_NONE;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE as u32,
+                &none as *const _ as *const std::ffi::c_void,
+                std::mem::size_of_val(&none) as u32,
+            );
+            SetWindowPos(
+                hwnd,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+        }
+        return Ok(());
+    }
 
     // 1) 先清旧 WCA 层：反过来先写 DWMSBT，DWM 不会重算 frame，事后补清也救不回
     apply_accent(AccentPolicy { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
