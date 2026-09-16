@@ -968,7 +968,6 @@ function applyGlass(opaque) {
   const reader = num(S.glass.reader, 35, 1, 100);
   const pop = num(S.glass.pop, 30, 1, 100);
   const text = num(S.glass.text, 100, 10, 100);
-  const tint = (typeof S.glass.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tint)) ? S.glass.tint : '#26282e';
   const root = document.documentElement.style;
   root.setProperty('--glass-base', (on ? base : 100) + '%');
   root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
@@ -983,7 +982,6 @@ function applyGlass(opaque) {
   const gr = $id('setGlassReader'); if (gr) { gr.value = reader; $id('valGlassReader').textContent = reader + '%'; }
   const gp = $id('setGlassPop'); if (gp) { gp.value = pop; $id('valGlassPop').textContent = pop + '%'; }
   const gt = $id('setGlassText'); if (gt) { gt.value = text; $id('valGlassText').textContent = text + '%'; }
-  const ti = $id('setGlassTint'); if (ti) { ti.value = tint; const tv = $id('valGlassTint'); if (tv) tv.textContent = tint; }
   const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic') ? m : 'acrylic'; }
 }
 /* R2 材质 + 底色直驱后端：material（none/acrylic）+ tint。mica/aero 已删，旧值一律按 acrylic。
@@ -1041,9 +1039,8 @@ function bindSettings() {
   $id('setGlassChrome')?.addEventListener('input', (e) => { glassOn().chrome = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassReader')?.addEventListener('input', (e) => { glassOn().reader = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   $id('setGlassPop')?.addEventListener('input', (e) => { glassOn().pop = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
-  // W8 文字整体透明度 + 背景色（底色并入材质命令的 tint 参数）
+  // W8 文字整体透明度（背景色行已删：直透下无用，磨砂底色走存档默认）
   $id('setGlassText')?.addEventListener('input', (e) => { glassOn().text = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
-  $id('setGlassTint')?.addEventListener('input', (e) => { glassOn().tint = e.target.value; LS.set('sr_glass', S.glass); const tv = $id('valGlassTint'); if (tv) tv.textContent = e.target.value; applyGlassMaterial(); });
   // R2 材质下拉：切换即持久化并直驱后端（先清后设防重影）；失焦重放是 R3，本轮不加
   $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', S.glass); applyGlassMaterial(); });
   // W8 玻璃独立面板：工具栏按钮直达，开时自动收起设置面板；Esc 关闭

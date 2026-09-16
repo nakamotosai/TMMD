@@ -60,7 +60,7 @@
       <button id="tbDoc" class="tb-btn" data-drawer="menuDoc" data-overflow="1" title="文档"><svg class="ic"><use href="#i-star"/></svg><span class="tb-label">文档</span><svg class="ic tb-caret"><use href="#i-caret"/></svg></button>
       <button id="btnTheme" class="tb-btn" data-overflow="1" title="切换深浅主题"><svg class="ic"><use href="#i-moon"/></svg><span class="tb-label">主题</span></button>
       <button id="btnSettings" class="tb-btn" data-overflow="1" title="显示设置"><svg class="ic"><use href="#i-settings"/></svg><span class="tb-label">设置</span></button>
-      <button id="btnGlass" class="tb-btn" data-overflow="1" title="玻璃质感（透明度/背景色）"><svg class="ic"><use href="#i-glass"/></svg><span class="tb-label">玻璃</span></button>
+      <button id="btnGlass" class="tb-btn" data-overflow="1" title="玻璃质感（透明度/材质）"><svg class="ic"><use href="#i-glass"/></svg><span class="tb-label">玻璃</span></button>
       <button id="tbMore" class="tb-btn" data-drawer="menuMore" title="更多功能" hidden><svg class="ic"><use href="#i-more"/></svg><span class="tb-label">更多</span><svg class="ic tb-caret"><use href="#i-caret"/></svg></button>
     </nav>
     <nav class="win-ctrl">
@@ -158,7 +158,7 @@
     </div>
   </div>
 
-  <!-- 玻璃质感独立面板（工具栏「玻璃」按钮直达；四路下限 1%，背景色直驱亚克力 tint） -->
+  <!-- 玻璃质感独立面板（工具栏「玻璃」按钮直达；四路下限 1%） -->
   <div id="glassPanel" class="settings-panel" hidden>
     <div class="settings-header">
       <span>玻璃质感</span>
@@ -173,8 +173,8 @@
       <div class="settings-row">
         <label>材质</label>
         <select id="setGlassMaterial" class="set-select">
-          <option value="none">无（直透）</option>
-          <option value="acrylic">Acrylic（磨砂）</option>
+          <option value="none">直透</option>
+          <option value="acrylic">磨砂</option>
         </select>
       </div>
       <div class="settings-row">
@@ -201,11 +201,6 @@
         <label>文字</label>
         <input type="range" id="setGlassText" min="10" max="100" step="1" />
         <span class="settings-val" id="valGlassText">100%</span>
-      </div>
-      <div class="settings-row">
-        <label>背景色</label>
-        <input type="color" id="setGlassTint" class="set-color" value="#26282e" />
-        <span class="settings-val" id="valGlassTint">#26282e</span>
       </div>
     </div>
   </div>
