@@ -911,7 +911,6 @@ function applySideCollapsed(c) {
   const sb = $id('btnSide');
   if (sb) sb.title = c ? '展开侧栏' : '收起侧栏';
 }
-}
 /* ==================== 侧栏下半（R8a：最近十条＋中间可拖） ==================== */
 function applySideBottomH(h) {
   h = Math.max(48, Math.min(600, Math.round(Number(h) || 180)));
