@@ -815,6 +815,26 @@ fn probe_glass(
             apply_accent(AccentPolicy2 { state: 3, flags: 2, gradient_color: 0, animation_id: 0 });
             refresh_frame();
         }
+        // 候选4：DISABLED + BlurBehind 开（验证“无渐变纯 per-pixel”是否锐透）
+        "probe_disabled_bluron" => {
+            apply_accent(AccentPolicy2 { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+            set_backdrop_none();
+            set_blurbehind(true);
+            refresh_frame();
+        }
+        // 候选5：state 2 + BlurBehind 关（验证 TG 是否不需要 blur）
+        "probe_tg_bluroff" => {
+            apply_accent(AccentPolicy2 { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+            set_blurbehind(false);
+            set_backdrop_none();
+            apply_accent(AccentPolicy2 {
+                state: 2, // ACCENT_ENABLE_TRANSPARENTGRADIENT
+                flags: 2,
+                gradient_color: 0,
+                animation_id: 0,
+            });
+            refresh_frame();
+        }
         _ => return Err(format!("未知探针: {mode}")),
     }
     Ok(())
