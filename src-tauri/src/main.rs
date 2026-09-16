@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    sai_md_reader_lib::run();
+    tmmd_lib::run();
 }

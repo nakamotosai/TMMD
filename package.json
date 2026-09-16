@@ -1,5 +1,5 @@
 {
-  "name": "sai-md-reader",
+  "name": "tmmd",
   "version": "1.5.0",
   "private": true,
   "description": "TMMD — 透明 Markdown 阅读器，基于 Tauri 2 的轻量本地优先阅读器",
