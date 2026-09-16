@@ -891,6 +891,12 @@ function applySideWidth(w) {
   LS.set('sr_side_w', w);
   const sw = $id('setSideWidth'); if (sw) { sw.value = w; $id('valSideWidth').textContent = w + 'px'; }
 }
+// R10a：侧栏开关唯一入口（顶栏常驻按钮＋视图菜单共用；窄窗手动拨过即加锁）
+function toggleSide() {
+  if (window.innerWidth < 780) sideManualLock = true;
+  sideAutoFolded = false;
+  applySideCollapsed(!S.sideCollapsed);
+}
 function applySideCollapsed(c) {
   S.sideCollapsed = c;
   LS.set('sr_side_col', c);
@@ -902,6 +908,9 @@ function applySideCollapsed(c) {
     const u = btn.querySelector('use'); if (u) u.setAttribute('href', c ? '#i-side-off' : '#i-side');
     btn.title = c ? '显示侧栏' : '隐藏侧栏';
   }
+  const sb = $id('btnSide');
+  if (sb) sb.title = c ? '展开侧栏' : '收起侧栏';
+}
 }
 /* ==================== 侧栏下半（R8a：最近十条＋中间可拖） ==================== */
 function applySideBottomH(h) {
@@ -1215,11 +1224,8 @@ function wire() {
     S.editDirty = true; pushUndo(prevEditValue); prevEditValue = $id('editor').value;
     renderTabs();   // R7：即时点亮 tab 脏点
   });
-  $id('btnSideToggle').addEventListener('click', () => {
-    if (window.innerWidth < 780) sideManualLock = true;
-    sideAutoFolded = false;
-    applySideCollapsed(!S.sideCollapsed);
-  });
+  $id('btnSideToggle').addEventListener('click', toggleSide);
+  $id('btnSide')?.addEventListener('click', toggleSide);
   $id('btnCompact')?.addEventListener('click', () => applySideCompact(!S.sideCompact));
   // 下拉抽屉：触发按钮 + 点击外部/Escape 关闭
   $qa('[data-drawer]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(b.dataset.drawer, b); }));
