@@ -345,13 +345,13 @@ async function refreshTreeOrder() {
 
 /* ==================== 打开文件（R7：统一进标签页） ==================== */
 async function openExternal(abs) {
-  openTab({ abs, kind: 'ext' });
+  await openTab({ abs, kind: 'ext' });
 }
 async function openInRoot(rel) {
   const root = S.root;
   if (!root || !root.scan || !root.rootPath) return toast('请先打开文件夹');
   const abs = root.rootPath.split('/').join('\\') + '\\' + rel.split('/').join('\\');
-  openTab({ abs, relPos: rel, rootPath: root.rootPath, kind: 'root' });
+  await openTab({ abs, relPos: rel, rootPath: root.rootPath, kind: 'root' });
 }
 
 /* ==================== 标签页（R7：多 md 并存，浏览器式） ==================== */
@@ -371,7 +371,12 @@ function stashTab() {
   if (S.editing) { const ed = $id('editor'); t.draft = ed ? ed.value : null; t.editing = true; t.editDirty = S.editDirty; }
   else { t.draft = null; t.editing = false; t.editDirty = false; }
 }
-async function openTab(spec) {
+// R7：打开/切换串行化（连续双击/多文件拖拽/单实例连发/CDP 连发时渲染不交错）
+let openChain = Promise.resolve();
+function uiQueue(fn) { const p = openChain.then(fn); openChain = p.catch(() => {}); return p; }
+function openTab(spec) { return uiQueue(() => openTabInner(spec)); }
+function activateTab(t, opts) { return uiQueue(() => activateTabRaw(t, opts)); }
+async function openTabInner(spec) {
   const abs = spec && spec.abs;
   if (!abs) return;
   let t = getTab(abs);
@@ -379,10 +384,10 @@ async function openTab(spec) {
     t = { abs, relPos: spec.relPos || null, rootPath: spec.rootPath || null, raw: null, draft: null, editing: false, editDirty: false };
     S.tabs.push(t);
   } else if (spec.relPos) { t.relPos = spec.relPos; t.rootPath = spec.rootPath || t.rootPath; }
-  const ok = await activateTab(t, { recent: true, kind: spec.kind });
+  const ok = await activateTabRaw(t, { recent: true, kind: spec.kind });
   if (ok && spec.kind === 'ext') await scanSiblingTree(abs);
 }
-async function activateTab(t, opts) {
+async function activateTabRaw(t, opts) {
   opts = opts || {};
   if (t.abs !== S.activeKey) {
     if (!confirmLeaveEdit()) return false;
