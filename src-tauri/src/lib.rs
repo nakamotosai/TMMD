@@ -511,12 +511,12 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
 static LAST_GLASS: std::sync::Mutex<Option<(String, u8, u8, u8, u8)>> =
     std::sync::Mutex::new(None);
 
-/// R3b 玻璃落盘：Pebrel 配方（nebula_app/src/gpui_shell/wallpaper.rs 对照实现）。
-/// 两档都走 legacy AccentPolicy 通道 + `DWMSBT_NONE`，绝不用 `TRANSIENTWINDOW`
-/// （WebView2 是 DirectComposition 窗，新接口上去就是不透明灰板——之前全灭的真因）。
-/// 顺序：先清 WCA 旧层 → 关 BlurBehind（清 R2 时代 aero 残留）→ 写 `DWMSBT_NONE` →
-/// 需要则写 accent state 4 → `SetWindowPos + FRAMECHANGED`（只重绘画布 DWM 不重读，
-/// 不刷 frame 等于没写）。mica/aero 已删，旧值兜底 acrylic。失败返回 Err，绝不 panic。
+/// R3b 玻璃落盘：两档彻底解耦，互不碰对方的通道。
+/// 直透：只复位 `DWMSBT_NONE`，其余不动（R2 实证锐利直透；多余动作会变纯黑）。
+/// 磨砂：Pebrel 配方（先清 WCA 旧层 → 关 BlurBehind → 写 `DWMSBT_NONE` → 写 accent
+/// state 4 + tint → `SetWindowPos + FRAMECHANGED`），绝不用 `TRANSIENTWINDOW`
+/// （WebView2 是 DC 窗，新接口上去就是灰板）。mica/aero 已删，旧值兜底 acrylic。
+/// 失败返回 Err，绝不 panic。
 #[cfg(target_os = "windows")]
 fn paint_glass(
     win: &tauri::WebviewWindow,
@@ -558,6 +558,22 @@ fn paint_glass(
         .map(|h| h.0 as isize)
         .map_err(|e| format!("取 HWND 失败: {e}"))?;
     let hwnd = raw as HWND;
+
+    if !acrylic {
+        // 直透独立通道：只把 DWMSBT 复位 NONE，其余一律不动。
+        // R2 实证这条路是锐利直透；新通道任一多余动作（写 accent、关 BlurBehind、刷 frame）
+        // 都会让直透变纯黑，所以这里只做最小复位。磨砂通道在下面，互不干涉。
+        unsafe {
+            let none = DWMSBT_NONE;
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE as u32,
+                &none as *const _ as *const std::ffi::c_void,
+                std::mem::size_of_val(&none) as u32,
+            );
+        }
+        return Ok(());
+    }
     // WCA_ACCENT_POLICY 未进公开 SDK，和上游一样动态取 user32 地址
     let set_wca: Option<SetWindowCompositionAttribute> = unsafe {
         let user32 = GetModuleHandleA(c"user32.dll".as_ptr() as *const u8);
