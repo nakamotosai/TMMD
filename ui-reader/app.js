@@ -497,6 +497,7 @@ function renderTabs() {
   });
   const act = bar.querySelector('.tab.active');
   if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (typeof layoutToolbar === 'function') layoutToolbar();   // R7b：标签占宽变化后重排工具栏溢出
 }
 async function restoreTabs() {
   renderTabs();
@@ -1322,14 +1323,12 @@ function wire() {
 }
 
 async function boot() {
-  // 顶栏版本号：Tauri 桌面环境取包版本；浏览器预览降级为空
-  const bv = $id('brandVer');
-  if (bv) {
-    try {
-      const v = await window.__TAURI__.app.getVersion();
-      if (v) bv.textContent = 'v' + v;
-    } catch { /* 非 Tauri 环境 */ }
-  }
+  // 版本号（R7b：顶栏品牌字已撤，版本只在设置菜单显示；浏览器预览降级为空）
+  try {
+    const v = await window.__TAURI__.app.getVersion();
+    const sv = $id('settingsVer');
+    if (sv) sv.textContent = v ? 'Sai Reader v' + v : 'Sai Reader';
+  } catch { /* 非 Tauri 环境 */ }
   applySettings();
   renderPaletteSwatches();
   applySideWidth(S.sideW);

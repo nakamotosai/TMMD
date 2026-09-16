@@ -51,7 +51,7 @@
   </svg>
 
   <header class="topbar">
-    <span class="brand">Sai Reader <span id="brandVer" class="brand-ver"></span></span>
+    <div class="tabbar" id="tabBar" hidden></div>
     <nav class="actions" id="actions">
       <!-- 抽屉触发组：仅图标/仅文字双模式，缩窗溢出自动进 ⋮ 更多抽屉 -->
       <button id="tbFile" class="tb-btn" data-drawer="menuFile" data-overflow="1" title="文件"><svg class="ic"><use href="#i-folder"/></svg><span class="tb-label">文件</span><svg class="ic tb-caret"><use href="#i-caret"/></svg></button>
@@ -69,9 +69,6 @@
       <button id="btnClose" title="关闭" aria-label="关闭" class="win-btn win-close"><svg class="ic"><use href="#i-close"/></svg></button>
     </nav>
   </header>
-
-  <!-- 文档标签页（R7：多 md 并存，浏览器式；零 tab 时隐藏） -->
-  <div class="tabbar" id="tabBar" hidden></div>
 
   <!-- 下拉抽屉（文件/编辑/视图/文档/更多） -->
   <div id="menuFile" class="drawer" hidden>
@@ -139,6 +136,10 @@
         <label>工具栏</label>
         <button id="setTbIcon" class="theme-btn active">仅图标</button>
         <button id="setTbText" class="theme-btn">仅文字</button>
+      </div>
+      <div class="settings-row">
+        <label>版本</label>
+        <span class="settings-val" id="settingsVer">Sai Reader</span>
       </div>
       <div class="settings-row">
         <label>侧栏宽度</label>
