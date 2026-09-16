@@ -512,8 +512,8 @@ static LAST_GLASS: std::sync::Mutex<Option<(String, u8, u8, u8, u8)>> =
     std::sync::Mutex::new(None);
 
 /// R3b 玻璃落盘：两档彻底解耦，互不碰对方的通道。
-/// 直透：accent 写回零 + 关 BlurBehind + `DWMSBT` 复位 NONE + 刷 frame，四笔缺一不可
-/// （缺清霜两档长一个样；缺刷 frame 停在纯黑中间态——两条都是本机实证）。
+/// 直透：老好代码三清（clear_blur + clear_acrylic + clear_mica），到此即返
+/// （只复位 NONE 则残霜两档一样；手写四笔反而纯黑——两条都是本机实证）。
 /// 磨砂：Pebrel 配方（先清 WCA 旧层 → 关 BlurBehind → 写 `DWMSBT_NONE` → 写 accent
 /// state 4 + tint → `SetWindowPos + FRAMECHANGED`），绝不用 `TRANSIENTWINDOW`
 /// （WebView2 是 DC 窗，新接口上去就是灰板）。mica/aero 已删，旧值兜底 acrylic。
@@ -582,36 +582,13 @@ fn paint_glass(
     };
 
     if !acrylic {
-        // 直透独立通道：accent 写回零 + 关 BlurBehind + DWMSBT 复位 NONE + 刷 frame。
-        // 和 R3b 初版逐字一致（E2 实证锐利直透）：accent 清掉磨砂残霜（不清两档长一个样），
-        // frame 必须刷——只写属性不刷，DWM 停在中间态变纯黑，我刚亲手复现过一次。
+        // 直透独立通道：老好代码三清，到此即返（R2/R3 实证锐利直透）。
+        // 库内按版本分流：clear_blur 走 SWCA DISABLED，clear_acrylic/clear_mica 走
+        // DWMSBT_NONE；手写 accent/关 BlurBehind/刷 frame 反而进纯黑中间态。
         // 磨砂通道在下面，互不干涉。
-        apply_accent(AccentPolicy { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
-        unsafe {
-            let bb = DWM_BLURBEHIND {
-                dwFlags: DWM_BB_ENABLE,
-                fEnable: 0,
-                hRgnBlur: std::ptr::null_mut(),
-                fTransitionOnMaximized: 0,
-            };
-            DwmEnableBlurBehindWindow(hwnd, &bb);
-            let none = DWMSBT_NONE;
-            DwmSetWindowAttribute(
-                hwnd,
-                DWMWA_SYSTEMBACKDROP_TYPE as u32,
-                &none as *const _ as *const std::ffi::c_void,
-                std::mem::size_of_val(&none) as u32,
-            );
-            SetWindowPos(
-                hwnd,
-                std::ptr::null_mut(),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            );
-        }
+        let _ = window_vibrancy::clear_blur(win);
+        let _ = window_vibrancy::clear_acrylic(win);
+        let _ = window_vibrancy::clear_mica(win);
         return Ok(());
     }
 
