@@ -60,6 +60,9 @@ const S = {
   aiModel: LS.raw('sr_ai_model') || 'minimaxai/minimax-m3',
   root: null,
   cur: null,
+  // R7 标签页：多 md 并存。tabs 存描述符（持久化只留路径三元组），raw/draft/editing 常驻内存。
+  tabs: (() => { const t = LS.get('sr_tabs', []); return Array.isArray(t) ? t.filter((x) => x && typeof x.abs === 'string') : []; })(),
+  activeKey: LS.get('sr_active_tab', null),
   view: 'tree',
   toc: [],
   editing: false,
@@ -298,12 +301,16 @@ async function saveEdit() {
   if (!S.cur || !S.editing) return;
   const content = $id('editor').value;
   try {
-    if (S.cur.relPos) await invoke('write_text', { root: S.root.rootPath, rel: S.cur.relPos, content });
+    if (S.cur.relPos) await invoke('write_text', { root: S.cur.rootPath || S.root.rootPath, rel: S.cur.relPos, content });
     else await invoke('save_path', { path: S.cur.abs, content });
     S.cur.raw = content;
     S.editDirty = false;
+    const tb = getTab(S.cur.abs);
+    if (tb) { tb.raw = content; tb.draft = null; tb.editing = false; tb.editDirty = false; }
     renderMarkdown(content, S.cur.abs);   // 恢复进入编辑前的滚动位置
     leaveEdit();
+    persistTabs();
+    renderTabs();
     toast('已保存');
     refreshTreeOrder();
   } catch (e) { toast('保存失败：' + ((e && e.message) || e)); }
@@ -315,10 +322,14 @@ async function refreshCurrent() {
   rememberScroll();
   try {
     const md = S.cur.relPos
-      ? await invoke('read_text', { root: S.root.rootPath, rel: S.cur.relPos })
+      ? await invoke('read_text', { root: S.cur.rootPath || S.root.rootPath, rel: S.cur.relPos })
       : await invoke('open_path', { path: S.cur.abs });
     S.cur.raw = md;
+    const tb2 = getTab(S.cur.abs);
+    if (tb2) { tb2.raw = md; tb2.draft = null; tb2.editing = false; tb2.editDirty = false; }
     renderMarkdown(md, S.cur.abs);
+    persistTabs();
+    renderTabs();
     toast('已刷新');
   } catch (e) { toast('刷新失败：' + ((e && e.message) || e)); }
 }
@@ -332,33 +343,172 @@ async function refreshTreeOrder() {
   } catch { /* 静默：树保持现状 */ }
 }
 
-/* ==================== 打开文件 ==================== */
+/* ==================== 打开文件（R7：统一进标签页） ==================== */
 async function openExternal(abs) {
-  if (!confirmLeaveEdit()) return;
-  leaveEdit();
-  try {
-    const md = await invoke('open_path', { path: abs });
-    S.cur = { abs, raw: md };
-    renderMarkdown(md, abs);
-    pushRecent(abs);
-    await scanSiblingTree(abs);   // 扫描所在目录的 md 文件
-    setView('toc');
-  } catch (e) { toast('打开失败：' + ((e && e.message) || e)); }
+  openTab({ abs, kind: 'ext' });
 }
 async function openInRoot(rel) {
   const root = S.root;
   if (!root || !root.scan || !root.rootPath) return toast('请先打开文件夹');
-  if (!confirmLeaveEdit()) return;
-  leaveEdit();
+  const abs = root.rootPath.split('/').join('\\') + '\\' + rel.split('/').join('\\');
+  openTab({ abs, relPos: rel, rootPath: root.rootPath, kind: 'root' });
+}
+
+/* ==================== 标签页（R7：多 md 并存，浏览器式） ==================== */
+// tab 描述符：{ abs, relPos?, rootPath?, raw?, draft?, editing?, editDirty? }；
+// 持久化只留路径三元组（sr_tabs/sr_active_tab），内容重启重读，draft 不落盘。
+// S.cur 恒指 active tab 的 live 文档，其余代码（保存/刷新/收藏/导读卡）零改动。
+function persistTabs() {
+  LS.set('sr_tabs', S.tabs.map((t) => ({ abs: t.abs, relPos: t.relPos || null, rootPath: t.rootPath || null })));
+  LS.set('sr_active_tab', S.activeKey);
+}
+function getTab(abs) { return S.tabs.find((t) => t.abs === abs); }
+function stashTab() {
+  rememberScroll();
+  const t = getTab(S.activeKey);
+  if (!t || !S.cur || S.cur.abs !== t.abs) return;
+  t.raw = S.cur.raw;
+  if (S.editing) { const ed = $id('editor'); t.draft = ed ? ed.value : null; t.editing = true; t.editDirty = S.editDirty; }
+  else { t.draft = null; t.editing = false; t.editDirty = false; }
+}
+async function openTab(spec) {
+  const abs = spec && spec.abs;
+  if (!abs) return;
+  let t = getTab(abs);
+  if (!t) {
+    t = { abs, relPos: spec.relPos || null, rootPath: spec.rootPath || null, raw: null, draft: null, editing: false, editDirty: false };
+    S.tabs.push(t);
+  } else if (spec.relPos) { t.relPos = spec.relPos; t.rootPath = spec.rootPath || t.rootPath; }
+  const ok = await activateTab(t, { recent: true, kind: spec.kind });
+  if (ok && spec.kind === 'ext') await scanSiblingTree(abs);
+}
+async function activateTab(t, opts) {
+  opts = opts || {};
+  if (t.abs !== S.activeKey) {
+    if (!confirmLeaveEdit()) return false;
+    stashTab();
+    leaveEdit();
+  }
+  S.activeKey = t.abs;
   try {
-    const md = await invoke('read_text', { root: root.rootPath, rel });
-    const abs = root.rootPath.split('/').join('\\') + '\\' + rel.split('/').join('\\');
-    S.cur = { abs, relPos: rel, raw: md };
-    renderMarkdown(md, abs);
-    pushRecent(abs);
-    markActive(rel);
-    setView('toc');
-  } catch (e) { toast('读取失败：' + ((e && e.message) || e)); }
+    if (t.raw == null) {
+      t.raw = t.relPos
+        ? await invoke('read_text', { root: t.rootPath, rel: t.relPos })
+        : await invoke('open_path', { path: t.abs });
+    }
+  } catch (e) {
+    toast('读取失败：' + ((e && e.message) || e));
+    S.tabs = S.tabs.filter((x) => x !== t);
+    if (S.activeKey === t.abs) { S.activeKey = null; S.cur = null; renderEmpty(); }
+    persistTabs();
+    renderTabs();
+    return false;
+  }
+  S.cur = { abs: t.abs, raw: t.raw };
+  if (t.relPos) { S.cur.relPos = t.relPos; S.cur.rootPath = t.rootPath; }
+  renderMarkdown(t.raw, t.abs);
+  if (t.editing && t.draft != null) {
+    enterEdit();
+    const ed = $id('editor');
+    if (ed) { ed.value = t.draft; prevEditValue = t.draft; }
+    S.editDirty = !!t.editDirty;
+    syncHistBtns();
+  }
+  if (opts.recent) pushRecent(t.abs);
+  markActive(t.relPos || null);
+  if (opts.kind) setView('toc');
+  persistTabs();
+  renderTabs();
+  return true;
+}
+function closeTab(abs) {
+  const t = getTab(abs);
+  if (!t) return;
+  const isActive = (S.activeKey === abs);
+  const dirty = isActive ? (S.editing && S.editDirty) : !!t.editDirty;
+  if (dirty && !window.confirm('当前编辑有未保存的修改，放弃修改继续吗？')) return;
+  if (isActive) { stashTab(); leaveEdit(); }
+  const idx = S.tabs.indexOf(t);
+  S.tabs.splice(idx, 1);
+  LS.del('sr_scr_' + abs);
+  if (isActive) {
+    const next = S.tabs[Math.min(idx, S.tabs.length - 1)];
+    if (next) activateTab(next, {});
+    else { S.activeKey = null; S.cur = null; renderEmpty(); }
+  }
+  persistTabs();
+  renderTabs();
+}
+function cycleTab(dir) {
+  if (S.tabs.length < 2) return;
+  const i = S.tabs.findIndex((t) => t.abs === S.activeKey);
+  const n = S.tabs[(i + dir + S.tabs.length) % S.tabs.length];
+  if (n) activateTab(n, {});
+}
+function renderEmpty() {
+  S.cur = null;
+  S.toc = [];
+  leaveEdit();
+  const inner = $id('readerInner');
+  if (inner) {
+    inner.hidden = false;
+    inner.innerHTML = '<div class="empty" id="readerEmpty"><h2>Sai Reader</h2><p>轻量本地 Markdown 阅读器</p><p>打开文件夹，或把 .md 文件拖进窗口，即可安静阅读。</p></div>';
+  }
+  document.title = 'Sai Reader';
+  markActive(null);
+  if (S.view === 'toc' || S.view === 'map') renderSide();
+}
+function renderTabs() {
+  const bar = $id('tabBar');
+  if (!bar) return;
+  bar.hidden = S.tabs.length === 0;
+  bar.innerHTML = '';
+  S.tabs.forEach((t) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tab' + (t.abs === S.activeKey ? ' active' : '');
+    b.title = t.abs;
+    const nm = document.createElement('span');
+    nm.className = 'tab-name';
+    nm.textContent = fileName(t.abs);
+    b.appendChild(nm);
+    const dirty = (t.abs === S.activeKey) ? (S.editing && S.editDirty) : !!t.editDirty;
+    if (dirty) {
+      const d = document.createElement('span');
+      d.className = 'tab-dirty';
+      d.textContent = '•';
+      b.appendChild(d);
+    }
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.className = 'tab-x';
+    x.title = '关闭标签页';
+    x.setAttribute('aria-label', '关闭' + fileName(t.abs));
+    x.innerHTML = '<svg class="ic"><use href="#i-close"/></svg>';
+    x.addEventListener('click', (e) => { e.stopPropagation(); closeTab(t.abs); });
+    b.appendChild(x);
+    b.addEventListener('click', () => { if (t.abs !== S.activeKey) activateTab(t, {}); });
+    bar.appendChild(b);
+  });
+  const act = bar.querySelector('.tab.active');
+  if (act && act.scrollIntoView) act.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+async function restoreTabs() {
+  renderTabs();
+  if (!S.tabs.length || !invoke) return;
+  let target = getTab(S.activeKey) || S.tabs[0];
+  for (;;) {
+    if (!target) { S.activeKey = null; S.cur = null; renderEmpty(); break; }
+    try {
+      target.raw = target.relPos
+        ? await invoke('read_text', { root: target.rootPath, rel: target.relPos })
+        : await invoke('open_path', { path: target.abs });
+      await activateTab(target, {});
+      break;
+    } catch { S.tabs = S.tabs.filter((x) => x !== target); target = S.tabs[0]; }
+  }
+  persistTabs();
+  renderTabs();
 }
 function fileName(p) { return p.split(/[\\/]/).pop(); }
 function pushRecent(abs) {
@@ -854,7 +1004,7 @@ function bindDragDrop() {
       else if (p.type === 'drop') {
         depth = 0; document.body.classList.remove('dragover');
         const paths = (p.paths || []).filter((x) => /\.(md|markdown)$/i.test(x));
-        if (paths.length) openExternal(paths[0]);
+        (async () => { for (const ph of paths) await openExternal(ph); })();   // R7：多文件依次进标签页
       }
     });
     return;
@@ -1126,6 +1276,7 @@ function wire() {
   $id('editor')?.addEventListener('input', () => {
     if (histLock) return; // doUndo/doRedo 编程赋值不记历史（防栈污染/弹跳）
     S.editDirty = true; pushUndo(prevEditValue); prevEditValue = $id('editor').value;
+    renderTabs();   // R7：即时点亮 tab 脏点
   });
   $id('btnSideToggle').addEventListener('click', () => applySideCollapsed(!S.sideCollapsed));
   // 下拉抽屉：触发按钮 + 点击外部/Escape 关闭
@@ -1137,6 +1288,13 @@ function wire() {
     closeDrawers();
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawers(); });
+  // R7 标签页快捷键：Ctrl+W 关当前，Ctrl+Tab / Ctrl+Shift+Tab 轮切（浏览器同感；编辑框内同样生效）
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    const k = e.key.toLowerCase();
+    if (k === 'w') { e.preventDefault(); if (S.activeKey) closeTab(S.activeKey); }
+    else if (k === 'tab') { e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); }
+  });
   $id('setTbIcon')?.addEventListener('click', () => { S.toolbarMode = 'icon'; LS.set('sr_tb_mode', 'icon'); applyToolbarMode(); });
   $id('setTbText')?.addEventListener('click', () => { S.toolbarMode = 'text'; LS.set('sr_tb_mode', 'text'); applyToolbarMode(); });
   $id('reader').addEventListener('scroll', () => {
@@ -1197,6 +1355,7 @@ async function boot() {
   if (!invoke) { toast('请通过 Sai Reader 桌面应用打开'); return; }
   S.roots = await invoke('load_roots').catch(() => []);
   if (S.roots.length) await loadRoot(S.roots[0]);
+  await restoreTabs();   // R7：恢复上次标签页（内容重读，draft 不恢复）
   if (listen) {
     try { listen('open-file', (e) => { if (e && typeof e.payload === 'string') openExternal(e.payload); }); } catch {}
   }
