@@ -50,6 +50,7 @@ const S = {
   codeSize: LS.get('sr_code', 14),
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
+  sideCompact: LS.get('sr_side_compact', false),
   sideBottomH: LS.get('sr_side_bottom_h', 180),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
   // R2 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
@@ -637,6 +638,7 @@ function renderToc(side) {
     it.className = 'tree-item toc';
     it.style.paddingLeft = (10 + (h.level - 1) * 14) + 'px';
     it.dataset.tocId = h.id;
+    it.dataset.level = h.level;
     it.textContent = h.text;
     it.onclick = () => { const el = document.getElementById(h.id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     list.appendChild(it);
@@ -1117,6 +1119,30 @@ function bindSideVResizer() {
     e.preventDefault();
   });
 }
+/* ==================== 侧栏精简＋窄窗自适应（R8b） ==================== */
+function applySideCompact(c) {
+  S.sideCompact = !!c;
+  LS.set('sr_side_compact', S.sideCompact);
+  document.body.classList.toggle('side-compact', S.sideCompact);
+  const st = document.documentElement.style;
+  if (S.sideCompact) st.setProperty('--side-w', '190px');
+  else st.setProperty('--side-w', S.sideW + 'px');
+  const b = $id('btnCompact');
+  if (b) b.classList.toggle('active', S.sideCompact);
+}
+// 窄窗自动折叠：<780px 自动收（记 auto），回宽自动放；窄窗下手动拨过开关就不再代劳，直到回宽重置。
+let sideManualLock = false;
+let sideAutoFolded = false;
+function autoFoldSide() {
+  const narrow = window.innerWidth < 780;
+  if (!narrow) {
+    sideManualLock = false;
+    if (sideAutoFolded && S.sideCollapsed) applySideCollapsed(false);
+    sideAutoFolded = false;
+    return;
+  }
+  if (!sideManualLock && !S.sideCollapsed) { applySideCollapsed(true); sideAutoFolded = true; }
+}
 /* ==================== 窗口拖动 ==================== */
 // WebView2 不认 CSS -webkit-app-region: drag（computed 生效但系统忽略，2026-08-06 实证），
 // 必须 mousedown 同步调 startDragging()（Tauri 2 官方机制；capabilities 需 core:window:allow-start-dragging）。
@@ -1346,7 +1372,12 @@ function wire() {
     S.editDirty = true; pushUndo(prevEditValue); prevEditValue = $id('editor').value;
     renderTabs();   // R7：即时点亮 tab 脏点
   });
-  $id('btnSideToggle').addEventListener('click', () => applySideCollapsed(!S.sideCollapsed));
+  $id('btnSideToggle').addEventListener('click', () => {
+    if (window.innerWidth < 780) sideManualLock = true;
+    sideAutoFolded = false;
+    applySideCollapsed(!S.sideCollapsed);
+  });
+  $id('btnCompact')?.addEventListener('click', () => applySideCompact(!S.sideCompact));
   // 下拉抽屉：触发按钮 + 点击外部/Escape 关闭
   $qa('[data-drawer]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(b.dataset.drawer, b); }));
   document.addEventListener('click', (e) => {
@@ -1381,7 +1412,7 @@ function wire() {
   // 触发 WebView2 合成层损坏：正文/按钮大面积不绘制，只剩旧帧残影，2026-08-05 实证）
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer._t);
-    resizeTimer._t = setTimeout(layoutToolbar, 120);
+    resizeTimer._t = setTimeout(() => { layoutToolbar(); autoFoldSide(); }, 120);
   });
 }
 
@@ -1396,6 +1427,8 @@ async function boot() {
   renderPaletteSwatches();
   applySideWidth(S.sideW);
   applySideCollapsed(S.sideCollapsed);
+  applySideCompact(!!S.sideCompact);
+  autoFoldSide();
   applySideBottomH(S.sideBottomH);
   renderRecent();
   applyToolbarMode();
