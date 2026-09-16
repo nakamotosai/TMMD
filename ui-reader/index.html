@@ -218,14 +218,20 @@
         <div id="sideBody"></div>
         <div class="side-empty" id="sideEmpty">还没有打开文件夹。<br/>点上方「文件夹」，或把 .md 文件拖进窗口。</div>
       </div>
+      <div class="side-vresizer" id="sideVResizer" title="拖拽调整上下高度"></div>
+      <section class="side-bottom" id="sideBottom">
+        <div class="side-bottom-head"><span>最近打开</span><span id="recentCount"></span></div>
+        <div class="side-bottom-list" id="recentList"></div>
+      </section>
     </aside>
     <div class="side-resizer" id="sideResizer" title="拖拽调整侧栏宽度"></div>
     <section class="reader" id="reader">
       <div class="reader-inner" id="readerInner">
         <div class="empty" id="readerEmpty">
-          <h2>Sai Reader</h2>
+          <h2>还没有打开任何文档</h2>
           <p>轻量本地 Markdown 阅读器</p>
-          <p>打开文件夹，或把 .md 文件拖进窗口，即可安静阅读。</p>
+          <p class="empty-actions"><button type="button" id="emptyOpenFolder">打开文件夹</button> <button type="button" id="emptyOpenFile">打开文件</button></p>
+          <p class="empty-hint">也可以把 .md 文件拖进窗口。</p>
         </div>
       </div>
       <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>

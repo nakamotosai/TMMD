@@ -50,6 +50,7 @@ const S = {
   codeSize: LS.get('sr_code', 14),
   sideW: LS.get('sr_side_w', 260),
   sideCollapsed: LS.get('sr_side_col', false),
+  sideBottomH: LS.get('sr_side_bottom_h', 180),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
   // R2 玻璃默认值（Pebrel 路线：下限放到 1%，默认调透）：底 12 / 铬 25 / 正文 35 / 浮层 30 / 文字 100 / 底色 #26282e / 材质 acrylic。
   // 加法迁移：旧存档只补缺的 material 键，用户已调的底/铬/正文/浮层/文字/tint 原样保留，不丢弃。
@@ -457,7 +458,9 @@ function renderEmpty() {
   const inner = $id('readerInner');
   if (inner) {
     inner.hidden = false;
-    inner.innerHTML = '<div class="empty" id="readerEmpty"><h2>Sai Reader</h2><p>轻量本地 Markdown 阅读器</p><p>打开文件夹，或把 .md 文件拖进窗口，即可安静阅读。</p></div>';
+    inner.innerHTML = '<div class="empty" id="readerEmpty"><h2>还没有打开任何文档</h2><p>轻量本地 Markdown 阅读器</p><p class="empty-actions"><button type="button" id="emptyOpenFolder">打开文件夹</button> <button type="button" id="emptyOpenFile">打开文件</button></p><p class="empty-hint">也可以把 .md 文件拖进窗口。</p></div>';
+    $id('emptyOpenFolder')?.addEventListener('click', onOpenFolder);
+    $id('emptyOpenFile')?.addEventListener('click', pickOpenFile);
   }
   document.title = 'Sai Reader';
   markActive(null);
@@ -522,6 +525,7 @@ function pushRecent(abs) {
   S.recent.unshift(abs);
   if (S.recent.length > 40) S.recent.length = 40;
   LS.set('sr_recent', S.recent);
+  renderRecent();
 }
 
 /// 打开文件后扫描所在目录，在文件树里显示同目录全部 .md（用后端 list_md_tree）
@@ -1055,6 +1059,64 @@ function applySideCollapsed(c) {
     btn.title = c ? '显示侧栏' : '隐藏侧栏';
   }
 }
+/* ==================== 侧栏下半（R8a：最近十条＋中间可拖） ==================== */
+function applySideBottomH(h) {
+  h = Math.max(48, Math.min(600, Math.round(Number(h) || 180)));
+  document.documentElement.style.setProperty('--side-bottom-h', h + 'px');
+  S.sideBottomH = h;
+  LS.set('sr_side_bottom_h', h);
+}
+function renderRecent() {
+  const box = $id('recentList');
+  if (!box) return;
+  box.innerHTML = '';
+  const cnt = $id('recentCount');
+  const list = S.recent.slice(0, 10);
+  if (cnt) cnt.textContent = list.length ? list.length + ' 项' : '';
+  if (!list.length) { box.innerHTML = '<div class="side-empty">暂无打开记录</div>'; return; }
+  list.forEach((abs) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'side-recent';
+    b.title = abs;
+    const nm = document.createElement('span');
+    nm.className = 'tab-name';
+    nm.textContent = fileName(abs);
+    b.appendChild(nm);
+    b.addEventListener('click', () => openExternal(abs));
+    box.appendChild(b);
+  });
+}
+let vResizeDragging = false;
+function bindSideVResizer() {
+  const rz = $id('sideVResizer');
+  const side = $id('side');
+  if (!rz || !side) return;
+  rz.addEventListener('mousedown', (e) => {
+    if (e.button !== 0 || S.sideCollapsed) return;
+    vResizeDragging = true;
+    rz.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    const startY = e.clientY;
+    const startH = $id('sideBottom').offsetHeight;
+    const max = Math.max(96, side.clientHeight - 120);
+    const move = (ev) => {
+      if (!vResizeDragging) return;
+      applySideBottomH(Math.min(max, startH + (startY - ev.clientY)));
+    };
+    const up = () => {
+      if (!vResizeDragging) return;
+      vResizeDragging = false;
+      rz.classList.remove('dragging');
+      document.body.style.cursor = '';
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    e.preventDefault();
+  });
+}
 /* ==================== 窗口拖动 ==================== */
 // WebView2 不认 CSS -webkit-app-region: drag（computed 生效但系统忽略，2026-08-06 实证），
 // 必须 mousedown 同步调 startDragging()（Tauri 2 官方机制；capabilities 需 core:window:allow-start-dragging）。
@@ -1312,6 +1374,7 @@ function wire() {
   bindWinCtrl();
   bindWindowDrag();
   bindSideResizer();
+  bindSideVResizer();
   bindSettings();
   // resize 结束后重排工具栏溢出（纯 layoutToolbar，不做 opacity 合成层 hack——
   // 透明窗时代该 hack 轻触合成层强制刷新；实色窗（transparent:false）下它反而
@@ -1333,6 +1396,8 @@ async function boot() {
   renderPaletteSwatches();
   applySideWidth(S.sideW);
   applySideCollapsed(S.sideCollapsed);
+  applySideBottomH(S.sideBottomH);
+  renderRecent();
   applyToolbarMode();
   wire();
   // R3 失焦重放（修正版）：blur 时不动手——DWM 失活期写 backdrop 属性会丢渲染，写了也白写；

@@ -160,7 +160,7 @@ body.tb-text .tb-btn .ic { display: none; }
   padding: 6px 2px; overflow-x: auto; overflow-y: hidden; user-select: none; scrollbar-width: none; }
 .tabbar::-webkit-scrollbar { display: none; }
 .tabbar[hidden] { display: none; }
-.topbar .actions { flex: 0 1 auto; }   /* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽 */
+.topbar .actions { flex: 0 1 auto; min-width: 148px; }   /* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽；保底 ⋮＋两三个图标，顶栏永不只剩一个按钮 */
 .brand { display: none; }   /* R7b：品牌字移入设置菜单，顶栏只留标签页 */
 .tab { display: flex; align-items: center; gap: 6px; max-width: 200px; min-width: 60px; flex: 0 1 auto;
   height: 26px; padding: 0 6px 0 10px; font-size: 13px; color: var(--fg-dim); white-space: nowrap;
@@ -188,6 +188,21 @@ body.tb-text .tb-btn .ic { display: none; }
 .side-scroll { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
 .tree { padding: 4px 6px 12px; }
 .side-empty { margin: auto; padding: 20px; color: var(--fg-faint); text-align: center; font-size: 14px; line-height: 2; }
+
+/* ===== 侧栏上下分（R8a：上树下最近十条，中间可拖） ===== */
+.side-vresizer { height: 5px; flex-shrink: 0; cursor: row-resize; }
+.side-vresizer:hover, .side-vresizer.dragging { background: var(--accent); }
+.side-bottom { flex-shrink: 0; height: var(--side-bottom-h, 180px); min-height: 48px; max-height: 70%;
+  display: flex; flex-direction: column; border-top: 1px solid var(--border); background: var(--surface-chrome); }
+.side-bottom-head { display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px 2px; color: var(--fg-faint); font-size: 12px; user-select: none; }
+.side-bottom-list { flex: 1; min-height: 0; overflow: auto; padding: 2px 6px 8px; }
+.side-recent { display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 6px; font-size: 13px;
+  color: var(--fg); background: transparent; border: none; border-radius: 4px; cursor: pointer; text-align: left; }
+.side-recent:hover { background: var(--bg3); }
+.side-recent .tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty .empty-actions { margin: 14px 0 6px; display: flex; gap: 8px; justify-content: center; }
+.empty .empty-hint { color: var(--fg-faint); font-size: 13px; }
 
 .tree-node { user-select: none; }
 .tree-item {
