@@ -83,4 +83,4 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 
 ---
 
-镜像：[GitHub](https://github.com/nakamotosai/sai-md-reader) · Gitea（自托管）
+镜像：[GitHub](https://github.com/nakamotosai/TMMD) · Gitea（自托管）

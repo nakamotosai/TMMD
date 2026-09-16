@@ -83,4 +83,4 @@ npm run build     # リリースビルド → NSIS/MSI インストーラが src
 
 ---
 
-ミラー：[GitHub](https://github.com/nakamotosai/sai-md-reader) · Gitea（セルフホスト）
+ミラー：[GitHub](https://github.com/nakamotosai/TMMD) · Gitea（セルフホスト）

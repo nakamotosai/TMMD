@@ -83,4 +83,4 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 
 ---
 
-Mirrors: [GitHub](https://github.com/nakamotosai/sai-md-reader) · Gitea (self-hosted)
+Mirrors: [GitHub](https://github.com/nakamotosai/TMMD) · Gitea (self-hosted)
