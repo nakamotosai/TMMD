@@ -668,16 +668,156 @@ fn set_glass_material(
         let win = app
             .get_webview_window("main")
             .ok_or_else(|| "找不到主窗口".to_string())?;
-        // mica/aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错；落盘走 Pebrel 配方的 paint_glass
-        let acrylic = material.as_str() != "none";
-        paint_glass(&win, acrylic, r, g, b, alpha)
-            .map_err(|e| format!("玻璃应用失败: {e}"))
+        // mica/aero 已删 + 未知值：统一兜底 acrylic，旧存档不报错；
+        // `probe_*` 是诊断探针（CDP 扫参专用，前端下拉不发这些值），收口时删除。
+        // 落盘走 Pebrel 配方的 paint_glass / 探针走 probe_glass。
+        match material.as_str() {
+            "none" => paint_glass(&win, false, r, g, b, alpha),
+            m if m.starts_with("probe_") => probe_glass(&win, m, r, g, b, alpha),
+            _ => paint_glass(&win, true, r, g, b, alpha),
+        }
+        .map_err(|e| format!("玻璃应用失败: {e}"))
     }
     #[cfg(not(target_os = "windows"))]
     {
         let _ = (app, material, r, g, b, alpha, dark);
         Err("玻璃材质仅 Windows 支持".to_string())
     }
+}
+
+/// 诊断探针：CDP 扫参专用（material 以 `probe_` 开头透传到这里）。
+/// 前端下拉只发 none/acrylic，正常链路不受影响；定案后整段删除。
+/// 每个 arm 都是完整独立序列，结尾统一刷 frame，互不残留。
+#[cfg(target_os = "windows")]
+fn probe_glass(
+    win: &tauri::WebviewWindow,
+    mode: &str,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: u8,
+) -> Result<(), String> {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::Graphics::Dwm::{
+        DWM_BB_ENABLE, DWM_BLURBEHIND, DWMSBT_NONE, DWMWA_SYSTEMBACKDROP_TYPE,
+        DwmEnableBlurBehindWindow, DwmSetWindowAttribute,
+    };
+    use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleA, GetProcAddress};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SetWindowPos,
+    };
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct AccentPolicy2 {
+        state: u32,
+        flags: u32,
+        gradient_color: u32,
+        animation_id: u32,
+    }
+    type SetWca2 = unsafe extern "system" fn(HWND, *mut AccentData2) -> i32;
+    #[repr(C)]
+    struct AccentData2 {
+        attribute: u32,
+        data: *mut std::ffi::c_void,
+        size: usize,
+    }
+
+    let raw: isize = win
+        .hwnd()
+        .map(|h| h.0 as isize)
+        .map_err(|e| format!("取 HWND 失败: {e}"))?;
+    let hwnd = raw as HWND;
+    let set_wca: Option<SetWca2> = unsafe {
+        let user32 = GetModuleHandleA(c"user32.dll".as_ptr() as *const u8);
+        if user32.is_null() {
+            None
+        } else {
+            GetProcAddress(user32, c"SetWindowCompositionAttribute".as_ptr() as *const u8)
+                .map(|f| std::mem::transmute(f))
+        }
+    };
+    let apply_accent = |accent: AccentPolicy2| {
+        let Some(set_wca) = set_wca else { return };
+        let mut a = accent;
+        let mut data = AccentData2 {
+            attribute: 19, // WCA_ACCENT_POLICY
+            data: &mut a as *mut _ as *mut std::ffi::c_void,
+            size: std::mem::size_of::<AccentPolicy2>(),
+        };
+        unsafe {
+            set_wca(hwnd, &mut data);
+        }
+    };
+    let set_backdrop_none = || unsafe {
+        let none = DWMSBT_NONE;
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE as u32,
+            &none as *const _ as *const std::ffi::c_void,
+            std::mem::size_of_val(&none) as u32,
+        );
+    };
+    let set_blurbehind = |on: bool| unsafe {
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE,
+            fEnable: on as i32,
+            hRgnBlur: std::ptr::null_mut(),
+            fTransitionOnMaximized: 0,
+        };
+        DwmEnableBlurBehindWindow(hwnd, &bb);
+    };
+    let refresh_frame = || unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        );
+    };
+
+    match mode {
+        // 对照组：复刻 20e5340 手写四笔，验证它是否就是黑屏来源
+        "probe_accent0" => {
+            apply_accent(AccentPolicy2 { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+            set_blurbehind(false);
+            set_backdrop_none();
+            refresh_frame();
+        }
+        // 候选1：三清 + 补刷 frame（验证三清是否只差这一步）
+        "probe_clear_frame" => {
+            let _ = window_vibrancy::clear_blur(win);
+            let _ = window_vibrancy::clear_acrylic(win);
+            let _ = window_vibrancy::clear_mica(win);
+            refresh_frame();
+        }
+        // 候选2：透明渐变 state 2，渐变色全零，BlurBehind 保持开启
+        "probe_tg" => {
+            apply_accent(AccentPolicy2 { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+            set_blurbehind(true);
+            set_backdrop_none();
+            apply_accent(AccentPolicy2 {
+                state: 2, // ACCENT_ENABLE_TRANSPARENTGRADIENT
+                flags: 2,
+                gradient_color: (r as u32) | ((g as u32) << 8) | ((b as u32) << 16) | ((alpha as u32) << 24),
+                animation_id: 0,
+            });
+            refresh_frame();
+        }
+        // 候选3：经典 blur state 3 + BlurBehind 开（DWM 若存活，必出模糊壁纸）
+        "probe_blur" => {
+            apply_accent(AccentPolicy2 { state: 0, flags: 2, gradient_color: 0, animation_id: 0 });
+            set_backdrop_none();
+            set_blurbehind(true);
+            apply_accent(AccentPolicy2 { state: 3, flags: 2, gradient_color: 0, animation_id: 0 });
+            refresh_frame();
+        }
+        _ => return Err(format!("未知探针: {mode}")),
+    }
+    Ok(())
 }
 
 /// R2-fix 诊断位：直读 DWM 当前真实 backdrop（SYSTEMBACKDROP_TYPE：0 无/1 自动/2 Mica/3 Acrylic/4 Tabbed）
