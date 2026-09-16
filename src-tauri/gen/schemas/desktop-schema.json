@@ -225,6 +225,12 @@
           "markdownDescription": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)"
         },
         {
+          "description": "Allow get_md_default (文件关联状态：只读 HKCU .md UserChoice ProgId)",
+          "type": "string",
+          "const": "allow-get-md-default",
+          "markdownDescription": "Allow get_md_default (文件关联状态：只读 HKCU .md UserChoice ProgId)"
+        },
+        {
           "description": "Allow list_md_tree under registered root",
           "type": "string",
           "const": "allow-list-md-tree",
@@ -235,6 +241,12 @@
           "type": "string",
           "const": "allow-load-roots",
           "markdownDescription": "Allow load_roots from app config"
+        },
+        {
+          "description": "Allow open_default_apps_settings (文件关联按钮：打开系统默认应用设置页，不静默改默认)",
+          "type": "string",
+          "const": "allow-open-default-apps-settings",
+          "markdownDescription": "Allow open_default_apps_settings (文件关联按钮：打开系统默认应用设置页，不静默改默认)"
         },
         {
           "description": "Enables the open_path command without any pre-configured scope.",
