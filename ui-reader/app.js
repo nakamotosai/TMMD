@@ -889,7 +889,7 @@ function applySideWidth(w) {
   document.documentElement.style.setProperty('--side-w', w + 'px');
   S.sideW = w;
   LS.set('sr_side_w', w);
-  const sw = $id('setSideWidth'); if (sw) { sw.value = w; $id('valSideWidth').textContent = w + 'px'; }
+  // 侧栏宽度只走拖拽分隔条（#sideResizer），面板内滑杆已删，不再回写控件
 }
 // R10a：侧栏开关唯一入口（顶栏常驻按钮＋视图菜单共用；窄窗手动拨过即加锁）
 function toggleSide() {
@@ -1128,17 +1128,78 @@ function renderPaletteSwatches() {
     box.appendChild(sw);
   });
 }
+/* 单例面板路由：settings 与 glass 互斥，同一时间最多开一个；null 全关 */
+function showPanel(name) {
+  const sp = $id('settingsPanel');
+  const gp = $id('glassPanel');
+  if (name === 'settings') {
+    if (gp) gp.hidden = true;
+    closeDrawers();
+    if (sp) { sp.hidden = false; applySettings(); renderPaletteSwatches(); applyGlass(false); }
+  } else if (name === 'glass') {
+    if (sp) sp.hidden = true;
+    closeDrawers();
+    if (gp) { gp.hidden = false; applyGlass(false); }
+  } else {
+    if (sp) sp.hidden = true;
+    if (gp) gp.hidden = true;
+  }
+}
+function isPanelOpen() {
+  const sp = $id('settingsPanel');
+  const gp = $id('glassPanel');
+  return !!((sp && !sp.hidden) || (gp && !gp.hidden));
+}
+/* 设置页内搜索：中英别名过滤 + 自动定位首个命中分区，清空即还原 */
+function filterSettings(q) {
+  const query = String(q || '').trim().toLowerCase();
+  const rows = $qa('#settingsPanel .set-row');
+  const clearBtn = $id('btnSetSearchClear');
+  if (clearBtn) clearBtn.hidden = !query;
+  if (!query) {
+    rows.forEach((r) => { r.hidden = false; });
+    $qa('#settingsPanel .set-section').forEach((s) => { s.hidden = false; });
+    return;
+  }
+  let firstSec = null;
+  $qa('#settingsPanel .set-section').forEach((sec) => {
+    let visible = 0;
+    $qa('.set-row', sec).forEach((r) => {
+      const hay = ((r.dataset.search || '') + ' ' + (r.textContent || '')).toLowerCase();
+      const hit = query.split(/\s+/).every((tok) => tok && hay.includes(tok));
+      r.hidden = !hit;
+      if (hit) visible++;
+    });
+    sec.hidden = visible === 0;
+    if (visible > 0 && !firstSec) firstSec = sec;
+  });
+  if (firstSec) {
+    $qa('#setNav .setpage-nav-item').forEach((b) => b.classList.toggle('active', b.dataset.target === firstSec.id));
+    firstSec.scrollIntoView({ block: 'start' });
+  }
+}
 function bindSettings() {
   $id('btnSettings')?.addEventListener('click', () => {
     const p = $id('settingsPanel');
-    p.hidden = !p.hidden;
-    if (!p.hidden) { applySettings(); renderPaletteSwatches(); applyGlass(false); }
+    showPanel(p && !p.hidden ? null : 'settings');
   });
-  $id('btnSettingsClose')?.addEventListener('click', () => { $id('settingsPanel').hidden = true; });
+  $id('btnSettingsClose')?.addEventListener('click', () => showPanel(null));
+  // 左侧分类导航：点击滚动到对应分区
+  $qa('#setNav .setpage-nav-item').forEach((b) => b.addEventListener('click', () => {
+    $qa('#setNav .setpage-nav-item').forEach((x) => x.classList.remove('active'));
+    b.classList.add('active');
+    const sec = $id(b.dataset.target);
+    if (sec) sec.scrollIntoView({ block: 'start' });
+  }));
+  // 搜索框：输入过滤 + 清空还原
+  $id('setSearch')?.addEventListener('input', (e) => filterSettings(e.target.value));
+  $id('btnSetSearchClear')?.addEventListener('click', () => {
+    const inp = $id('setSearch');
+    if (inp) { inp.value = ''; filterSettings(''); inp.focus(); }
+  });
   $id('setH1Size')?.addEventListener('input', (e) => { S.h1Size = +e.target.value; $id('valH1Size').textContent = S.h1Size.toFixed(2) + 'em'; LS.set('sr_h1', S.h1Size); applySettings(); });
   $id('setBodySize')?.addEventListener('input', (e) => { S.bodySize = +e.target.value; $id('valBodySize').textContent = S.bodySize + 'px'; LS.set('sr_body', S.bodySize); applySettings(); });
   $id('setCodeSize')?.addEventListener('input', (e) => { S.codeSize = +e.target.value; $id('valCodeSize').textContent = S.codeSize + 'px'; LS.set('sr_code', S.codeSize); applySettings(); });
-  $id('setSideWidth')?.addEventListener('input', (e) => { applySideWidth(+e.target.value); });
   $id('setThemeDark')?.addEventListener('click', () => { S.theme = 'dark'; LS.set('sr_theme', 'dark'); applySettings(); renderPaletteSwatches(); });
   $id('setThemeLight')?.addEventListener('click', () => { S.theme = 'light'; LS.set('sr_theme', 'light'); applySettings(); renderPaletteSwatches(); });
   // 玻璃质感：开关 + 三路不透明度，拖动即时生效并持久化
@@ -1154,15 +1215,14 @@ function bindSettings() {
   $id('setGlassText')?.addEventListener('input', (e) => { glassOn().text = +e.target.value; LS.set('sr_glass', S.glass); applyGlass(false); });
   // R2 材质下拉：切换即持久化并直驱后端（先清后设防重影）；失焦重放是 R3，本轮不加
   $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', S.glass); applyGlassMaterial(); });
-  // W8 玻璃独立面板：工具栏按钮直达，开时自动收起设置面板；Esc 关闭
+  // 玻璃独立面板：工具栏按钮经单例路由直达，与设置页互斥
   $id('btnGlass')?.addEventListener('click', () => {
     const gp = $id('glassPanel'); if (!gp) return;
-    const sp = $id('settingsPanel'); if (sp) sp.hidden = true;
-    gp.hidden = !gp.hidden;
-    if (!gp.hidden) applyGlass(false);
+    showPanel(!gp.hidden ? null : 'glass');
   });
-  $id('btnGlassClose')?.addEventListener('click', () => { $id('glassPanel').hidden = true; });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { const gp = $id('glassPanel'); if (gp && !gp.hidden) gp.hidden = true; } });
+  $id('btnGlassClose')?.addEventListener('click', () => showPanel(null));
+  // 单一 Esc：关闭任一面板（设置/玻璃两者其一）
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isPanelOpen()) showPanel(null); });
 }
 
 /* ==================== 启动 ==================== */
@@ -1234,7 +1294,8 @@ function wire() {
     if (e.target.closest('.drawer') || e.target.closest('[data-drawer]')) return;
     closeDrawers();
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawers(); });
+  // 单一 Esc：抽屉 + 任一面板一起关（单例路由 showPanel 全关）
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawers(); showPanel(null); } });
   // R7 标签页快捷键：Ctrl+W 关当前，Ctrl+Tab / Ctrl+Shift+Tab 轮切（浏览器同感；编辑框内同样生效）
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;

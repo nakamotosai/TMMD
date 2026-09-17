@@ -104,58 +104,105 @@
     <div id="docMore" class="drawer-list"></div>
   </div>
 
-  <!-- 设置面板 -->
-  <div id="settingsPanel" class="settings-panel" hidden>
+  <!-- 设置面板：整阅读区页面（单例路由 showPanel 控制，与玻璃互斥；左侧 208px 分类导航，右侧 74px 搜索头 + 独立滚动正文） -->
+  <div id="settingsPanel" class="settings-panel settings-page" hidden>
     <div class="settings-header">
-      <span>显示设置</span>
+      <span>设置</span>
       <button id="btnSettingsClose" class="settings-close" aria-label="关闭设置">✕</button>
     </div>
-    <div class="settings-body">
-      <div class="settings-row">
-        <label>标题字号</label>
-        <input type="range" id="setH1Size" min="1.5" max="2.4" step="0.05" />
-        <span class="settings-val" id="valH1Size">1.75em</span>
-      </div>
-      <div class="settings-row">
-        <label>正文字号</label>
-        <input type="range" id="setBodySize" min="14" max="20" step="1" />
-        <span class="settings-val" id="valBodySize">16px</span>
-      </div>
-      <div class="settings-row">
-        <label>代码字号</label>
-        <input type="range" id="setCodeSize" min="12" max="16" step="1" />
-        <span class="settings-val" id="valCodeSize">14px</span>
-      </div>
-      <div class="settings-row">
-        <label>主题</label>
-        <button id="setThemeDark" class="theme-btn active">深色</button>
-        <button id="setThemeLight" class="theme-btn">浅色</button>
-      </div>
-      <div class="settings-row">
-        <label>配色方案</label>
-        <div id="paletteSwatches" class="palette-swatches"></div>
-      </div>
-      <div class="settings-row">
-        <label>工具栏</label>
-        <button id="setTbIcon" class="theme-btn active">仅图标</button>
-        <button id="setTbText" class="theme-btn">仅文字</button>
-      </div>
-      <div class="settings-row">
-        <label>版本</label>
-        <span class="settings-val" id="settingsVer">TMMD</span>
-      </div>
-      <div class="settings-row">
-        <label>MD 默认打开</label>
-        <button id="btnFileAssoc" class="theme-btn">设为默认打开…</button>
-      </div>
-      <div class="settings-row">
-        <label>当前默认</label>
-        <span class="settings-val" id="fileAssocStatus">读取中…</span>
-      </div>
-      <div class="settings-row">
-        <label>侧栏宽度</label>
-        <input type="range" id="setSideWidth" min="160" max="480" step="10" />
-        <span class="settings-val" id="valSideWidth">260px</span>
+    <div class="setpage">
+      <!-- 左侧分类导航（固定 208px） -->
+      <nav class="setpage-nav" id="setNav" aria-label="设置分类">
+        <button type="button" class="setpage-nav-item active" data-target="sec-read">阅读</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-theme">主题外观</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-glass">玻璃</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-file">文件关联</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-keys">快捷键</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-about">关于</button>
+      </nav>
+      <div class="setpage-main">
+        <!-- 右侧固定 74px 搜索头 -->
+        <div class="setpage-search">
+          <input type="text" id="setSearch" class="set-text" placeholder="搜索设置（中文/拼音/英文，如：字号/font/主题/theme/玻璃/glass）" autocomplete="off" />
+          <button type="button" id="btnSetSearchClear" class="theme-btn" hidden>清除</button>
+        </div>
+        <!-- 右侧独立滚动正文 -->
+        <div class="setpage-scroll" id="setScroll">
+          <div class="set-section" id="sec-read" data-title="阅读">
+            <div class="set-section-title">阅读</div>
+            <div class="set-row" data-search="标题字号 title h1 heading size 标题 大小">
+              <div class="set-row-info"><div class="set-row-title">标题字号</div><div class="set-row-desc">正文一级标题大小</div></div>
+              <div class="set-row-ctl"><input type="range" id="setH1Size" min="1.5" max="2.4" step="0.05" /><span class="settings-val" id="valH1Size">1.75em</span></div>
+            </div>
+            <div class="set-row" data-search="正文字号 body font size 正文 大小">
+              <div class="set-row-info"><div class="set-row-title">正文字号</div><div class="set-row-desc">正文默认字号</div></div>
+              <div class="set-row-ctl"><input type="range" id="setBodySize" min="14" max="20" step="1" /><span class="settings-val" id="valBodySize">16px</span></div>
+            </div>
+            <div class="set-row" data-search="代码字号 code font size 代码 大小">
+              <div class="set-row-info"><div class="set-row-title">代码字号</div><div class="set-row-desc">行内代码与代码块字号</div></div>
+              <div class="set-row-ctl"><input type="range" id="setCodeSize" min="12" max="16" step="1" /><span class="settings-val" id="valCodeSize">14px</span></div>
+            </div>
+            <div class="set-row" data-search="工具栏 toolbar 仅图标 仅文字 模式">
+              <div class="set-row-info"><div class="set-row-title">工具栏</div><div class="set-row-desc">顶栏按钮显示模式</div></div>
+              <div class="set-row-ctl"><button id="setTbIcon" class="theme-btn active">仅图标</button><button id="setTbText" class="theme-btn">仅文字</button></div>
+            </div>
+            <div class="set-row" data-search="侧栏宽度 sidebar width 拖拽 宽度说明">
+              <div class="set-row-info"><div class="set-row-title">侧栏宽度</div><div class="set-row-desc">拖拽侧栏分隔条调整（160–480px，自动记忆）</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">拖拽调整</span></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-theme" data-title="主题外观">
+            <div class="set-section-title">主题外观</div>
+            <div class="set-row" data-search="主题 theme 深色 浅色 dark light">
+              <div class="set-row-info"><div class="set-row-title">主题</div><div class="set-row-desc">深色 / 浅色切换</div></div>
+              <div class="set-row-ctl"><button id="setThemeDark" class="theme-btn active">深色</button><button id="setThemeLight" class="theme-btn">浅色</button></div>
+            </div>
+            <div class="set-row" data-search="配色方案 palette color 配色">
+              <div class="set-row-info"><div class="set-row-title">配色方案</div><div class="set-row-desc">跟随当前主题的可选配色</div></div>
+              <div class="set-row-ctl"><div id="paletteSwatches" class="palette-swatches"></div></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-glass" data-title="玻璃">
+            <div class="set-section-title">玻璃</div>
+            <div class="set-row" data-search="玻璃 glass 质感 透明 面板">
+              <div class="set-row-info"><div class="set-row-title">玻璃质感</div><div class="set-row-desc">点工具栏「玻璃」按钮微调透明度与材质</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">见玻璃面板</span></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-file" data-title="文件关联">
+            <div class="set-section-title">文件关联</div>
+            <div class="set-row" data-search="md 默认打开 file assoc default 默认应用">
+              <div class="set-row-info"><div class="set-row-title">MD 默认打开</div><div class="set-row-desc">跳转系统默认应用页设为 TMMD</div></div>
+              <div class="set-row-ctl"><button id="btnFileAssoc" class="theme-btn">设为默认打开…</button></div>
+            </div>
+            <div class="set-row" data-search="当前默认 current default progid 状态">
+              <div class="set-row-info"><div class="set-row-title">当前默认</div><div class="set-row-desc">系统当前 .md 默认程序</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-wide" id="fileAssocStatus">读取中…</span></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-keys" data-title="快捷键">
+            <div class="set-section-title">快捷键</div>
+            <div class="set-row" data-search="esc 关闭 escape 关闭面板 快捷键 shortcut key">
+              <div class="set-row-info"><div class="set-row-title">Esc</div><div class="set-row-desc">关闭设置 / 玻璃 / 下拉抽屉</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">Esc</span></div>
+            </div>
+            <div class="set-row" data-search="ctrl w 关闭标签 tab close">
+              <div class="set-row-info"><div class="set-row-title">Ctrl+W</div><div class="set-row-desc">关闭当前标签页</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+W</span></div>
+            </div>
+            <div class="set-row" data-search="ctrl tab 切换标签 switch">
+              <div class="set-row-info"><div class="set-row-title">Ctrl+Tab</div><div class="set-row-desc">轮切标签页（Shift 反向）</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+Tab</span></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-about" data-title="关于">
+            <div class="set-section-title">关于</div>
+            <div class="set-row" data-search="版本 version about 关于 tmmd">
+              <div class="set-row-info"><div class="set-row-title">版本</div><div class="set-row-desc">当前应用版本</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-wide" id="settingsVer">TMMD</span></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
