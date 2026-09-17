@@ -1212,7 +1212,6 @@ function renderPaletteSwatches() {
     const sw = document.createElement('div');
     sw.className = 'swatch' + (S.palette === p ? ' active' : '');
     sw.style.background = SWATCH_COLORS[p] || 'var(--accent)';
-    sw.textContent = p.slice(0, 3);
     sw.title = p;
     sw.onclick = () => { S.palette = p; LS.set('sr_palette', p); applySettings(); renderPaletteSwatches(); };
     box.appendChild(sw);
