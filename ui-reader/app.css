@@ -252,6 +252,9 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .menu-item:hover { background: var(--bg3); color: var(--fg); }
 .menu-item.active { background: var(--bg3); color: var(--accent); }
 .menu-item:disabled { opacity: .45; cursor: default; }
+/* R12c(b)：快捷键提示只在有效时（编辑态可用）出现；禁态灰字（禁态逻辑仍由 syncHistBtns 统一管） */
+.menu-item:disabled { color: var(--fg-faint); }
+#menuEdit .menu-item:disabled kbd { display: none; }
 .menu-item kbd { margin-left: auto; font-size: 11px; color: var(--fg-faint); font-family: var(--mono); }
 .drawer-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 .drawer-title { padding: 6px 10px 2px; font-size: 11px; color: var(--fg-faint); }
@@ -262,6 +265,8 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 .drawer-item .meta { color: var(--fg-faint); font-size: 11px; flex-shrink: 0; }
 .drawer-item .del { color: var(--fg-faint); padding: 0 4px; font-size: 14px; }
 .drawer-item .del:hover { color: var(--red); }
+/* R12c(e)：右键菜单——复用抽屉浮层，只定定位层级与最小宽（项样式复用 .menu-item，不另起语义） */
+.ctxmenu { position: fixed; z-index: 320; min-width: 160px; max-width: 260px; }
 .drawer-empty { padding: 8px 10px; color: var(--fg-faint); font-size: 12px; }
 /* ⋮ 更多抽屉里的溢出按钮：恢复完整行列样式，不受双模式影响 */
 #menuMore .tb-btn {
@@ -279,14 +284,19 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
   background: var(--surface-pop); border: 1px solid var(--border); border-radius: 10px;
   box-shadow: 0 10px 40px rgba(0,0,0,.4); overflow: hidden;
 }
-/* 设置整页：占满阅读区（顶栏下/全宽），与玻璃面板同 z400 单层、无新增堆叠 */
+/* 设置整页：占满阅读区（顶栏下/全宽），与玻璃面板同 z400 单层、无新增堆叠；
+ * R12c(a)：背景必须用实色 --bg（禁 surface-base——玻璃开时它是半透明的，
+ * 底层正文透出来 = 本轮用户报的双显拥挤根因；玻璃语义只许动 surface-*，不动 --bg 本体） */
 .settings-panel.settings-page {
   top: 38px; right: 0; left: 0; bottom: 0; width: auto;
   border: none; border-top: 1px solid var(--border); border-radius: 0;
-  box-shadow: none; background: var(--surface-base);
+  box-shadow: none; background: var(--bg);
   display: flex; flex-direction: column;
 }
 .settings-panel.settings-page[hidden] { display: none; }
+/* R12c(a)：设置页开时阅读区 DOM 直接不可见（cover-or-hide 的 hide 半边；
+ * visibility 保布局无重排，关即随 class 移除自动恢复；面板 fixed 不受影响） */
+body.settings-open #layout { visibility: hidden; }
 /* 整页体：左导航 + 右主区 */
 .setpage { flex: 1; min-height: 0; display: flex; }
 .setpage-nav {

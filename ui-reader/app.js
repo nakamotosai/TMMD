@@ -823,6 +823,7 @@ function closeDrawers() {
 function drawerFileRow(abs, isFav) {
   const row = document.createElement('div');
   row.className = 'drawer-item';
+  row.dataset.abs = abs; // R12c(e)：右键菜单定位用
   const nm = document.createElement('span'); nm.className = 'name'; nm.textContent = fileName(abs); nm.title = abs;
   const meta = document.createElement('span'); meta.className = 'meta';
   meta.textContent = abs.split(/[\\/]/).slice(-2, -1)[0] || '';
@@ -847,6 +848,40 @@ function renderDocDrawer() {
   const favs = S.favorites.slice(0, 8);
   if (!favs.length) fav.innerHTML = '<div class="drawer-empty">暂无</div>';
   else favs.forEach((a) => fav.appendChild(drawerFileRow(a, true)));
+}
+/* R12c(e)：右键菜单（单例 #ctxMenu；项复用 .menu-item 样式，onclick 自关+阻冒泡，不碰抽屉路由） */
+function closeCtxMenu() { const m = $id('ctxMenu'); if (m) m.hidden = true; }
+function showCtxMenu(x, y, items) {
+  const m = $id('ctxMenu');
+  if (!m || !items || !items.length) return;
+  m.innerHTML = '';
+  items.forEach((it) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'menu-item';
+    b.disabled = !!it.disabled;
+    const nm = document.createElement('span'); nm.textContent = it.label;
+    b.appendChild(nm);
+    b.onclick = (ev) => { ev.stopPropagation(); closeCtxMenu(); if (typeof it.fn === 'function') it.fn(); };
+    m.appendChild(b);
+  });
+  m.hidden = false;
+  m.style.left = Math.max(4, Math.min(x, window.innerWidth - m.offsetWidth - 8)) + 'px';
+  m.style.top = Math.max(4, Math.min(y, window.innerHeight - m.offsetHeight - 8)) + 'px';
+}
+// 由绝对路径拼所在 root 的 rel（openInRoot 要 rel；拼法与 openInRoot 的 abs 互逆）
+function relOfAbs(abs) {
+  const rootPath = S.root && S.root.rootPath ? S.root.rootPath : null;
+  if (!rootPath) return null;
+  const rp = rootPath.split('/').join('\\').replace(/\\+$/, '');
+  const ap = abs.split('/').join('\\');
+  if (ap.toLowerCase().indexOf(rp.toLowerCase() + '\\') !== 0) return null;
+  return ap.slice(rp.length + 1).split('\\').join('/');
+}
+function absOfRel(rel) {
+  const rootPath = S.root && S.root.rootPath ? S.root.rootPath : null;
+  if (!rootPath) return null;
+  return rootPath.split('/').join('\\') + '\\' + String(rel).split('/').join('\\');
 }
 
 /* ==================== 工具栏双模式 + 溢出进 ⋮ 抽屉 ==================== */
@@ -972,6 +1007,7 @@ function renderRecent() {
     b.type = 'button';
     b.className = 'side-recent';
     b.title = abs;
+    b.dataset.abs = abs; // R12c(e)：右键菜单定位用
     const nm = document.createElement('span');
     nm.className = 'tab-name';
     nm.textContent = fileName(abs);
@@ -1022,17 +1058,18 @@ function applySideCompact(c) {
   if (b) b.classList.toggle('active', S.sideCompact);
 }
 // 窄窗自动折叠：<780px 自动收（记 auto），回宽自动放；窄窗下手动拨过开关就不再代劳，直到回宽重置。
+// R12c(c)：自动收/放只在边沿吐一次 toast（靠 sideAutoFolded 状态判定，不骚扰重复 resize）
 let sideManualLock = false;
 let sideAutoFolded = false;
 function autoFoldSide() {
   const narrow = window.innerWidth < 780;
   if (!narrow) {
     sideManualLock = false;
-    if (sideAutoFolded && S.sideCollapsed) applySideCollapsed(false);
+    if (sideAutoFolded && S.sideCollapsed) { applySideCollapsed(false); toast('窗口恢复，已展开侧栏'); }
     sideAutoFolded = false;
     return;
   }
-  if (!sideManualLock && !S.sideCollapsed) { applySideCollapsed(true); sideAutoFolded = true; }
+  if (!sideManualLock && !S.sideCollapsed) { applySideCollapsed(true); sideAutoFolded = true; toast('窗口较窄，已自动收起侧栏'); }
 }
 /* ==================== 窗口拖动 ==================== */
 // WebView2 不认 CSS -webkit-app-region: drag（computed 生效但系统忽略，2026-08-06 实证），
@@ -1182,9 +1219,11 @@ function renderPaletteSwatches() {
   });
 }
 /* 单例面板路由：settings 与 glass 互斥，同一时间最多开一个；null 全关 */
+/* R12c(a)：settings 开/关同步 body.settings-open，阅读区显隐只此一处（根治双显，不逐行打补丁） */
 function showPanel(name) {
   const sp = $id('settingsPanel');
   const gp = $id('glassPanel');
+  document.body.classList.toggle('settings-open', name === 'settings');
   if (name === 'settings') {
     if (gp) gp.hidden = true;
     closeDrawers();
@@ -1319,9 +1358,11 @@ function bindSettings() {
 /* ==================== 启动 ==================== */
 function toast(msg) {
   const t = $id('toast');
+  if (!t) return;
   t.textContent = msg; t.hidden = false;
+  t.classList.add('show'); // R12c：.toast 默认 opacity:0，不加 show 永不可见（基线漏加，c/d 通知靠它）
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => (t.hidden = true), 2600);
+  toast._t = setTimeout(() => { t.classList.remove('show'); t.hidden = true; }, 2600);
 }
 function installDragEnterNative() {
   window.addEventListener('dragover', (e) => e.preventDefault());
@@ -1379,14 +1420,51 @@ function wire() {
   $id('btnCompact')?.addEventListener('click', () => applySideCompact(!S.sideCompact));
   // 下拉抽屉：触发按钮 + 点击外部/Escape 关闭
   $qa('[data-drawer]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(b.dataset.drawer, b); }));
+  // R12c(e)：右键菜单——文件树文件（打开/收藏）、收藏（取消收藏）、最近（移除），委托绑定防重建丢失
+  $id('sideBody')?.addEventListener('contextmenu', (e) => {
+    const t = e.target.closest('.tree-item.file');
+    if (!t) return;
+    e.preventDefault();
+    const rel = t.dataset.rel;
+    const abs = absOfRel(rel);
+    if (!abs) return;
+    const fav = isFavorited(abs);
+    showCtxMenu(e.clientX, e.clientY, [
+      { label: '打开', fn: () => openInRoot(rel) },
+      fav ? { label: '取消收藏', fn: () => toggleFavorite(abs) } : { label: '收藏', fn: () => toggleFavorite(abs) },
+    ]);
+  });
+  $id('docFavs')?.addEventListener('contextmenu', (e) => {
+    const t = e.target.closest('.drawer-item');
+    if (!t || !t.dataset.abs) return;
+    e.preventDefault();
+    const abs = t.dataset.abs;
+    showCtxMenu(e.clientX, e.clientY, [
+      { label: '打开', fn: () => openExternal(abs) },
+      { label: '取消收藏', fn: () => { S.favorites = S.favorites.filter((f) => f !== abs); LS.set('sr_favorites', S.favorites); refreshFavDocBtn(); renderDocDrawer(); } },
+    ]);
+  });
+  const ctxRecent = (boxId) => $id(boxId)?.addEventListener('contextmenu', (e) => {
+    const t = e.target.closest('.drawer-item, .side-recent');
+    if (!t || !t.dataset.abs) return;
+    e.preventDefault();
+    const abs = t.dataset.abs;
+    showCtxMenu(e.clientX, e.clientY, [
+      { label: '打开', fn: () => openExternal(abs) },
+      { label: '移除这条记录', fn: () => { S.recent = S.recent.filter((r) => r !== abs); LS.set('sr_recent', S.recent); renderRecent(); renderDocDrawer(); } },
+    ]);
+  });
+  ctxRecent('docRecent');
+  ctxRecent('recentList');
   document.addEventListener('click', (e) => {
+    if (!e.target.closest('#ctxMenu')) closeCtxMenu(); // 右键菜单：点空白即关（项内点击由 onclick 自关）
     if (e.target.closest('.menu-item')) { closeDrawers(); return; }
     if (!drawerOpen) return;
     if (e.target.closest('.drawer') || e.target.closest('[data-drawer]')) return;
     closeDrawers();
   });
-  // 单一 Esc：抽屉 + 任一面板一起关（单例路由 showPanel 全关）
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeDrawers(); showPanel(null); } });
+  // 单一 Esc：抽屉 + 任一面板一起关（单例路由 showPanel 全关；R12c(e)：右键菜单同车，不另起监听）
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeCtxMenu(); closeDrawers(); showPanel(null); } });
   // R7 标签页快捷键：Ctrl+W 关当前，Ctrl+Tab / Ctrl+Shift+Tab 轮切（浏览器同感；编辑框内同样生效）
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
@@ -1445,6 +1523,11 @@ async function boot() {
   applySideBottomH(S.sideBottomH);
   renderRecent();
   applyToolbarMode();
+  // R12c(d)：纯图标模式一次性引导（sr_tb_guide_seen 落盘，一生一次；延迟 1.2s 避开开机 toast 拥挤）
+  if (!LS.get('sr_tb_guide_seen', null)) {
+    LS.set('sr_tb_guide_seen', 1);
+    if (S.toolbarMode === 'icon') setTimeout(() => toast('顶栏为纯图标模式：悬停看名称，可在设置→阅读→工具栏切换'), 1200);
+  }
   refreshFileAssoc();
   wire();
   // R3 失焦重放（修正版）：blur 时不动手——DWM 失活期写 backdrop 属性会丢渲染，写了也白写；
