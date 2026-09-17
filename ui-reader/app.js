@@ -320,8 +320,10 @@ function doUndo() {
     ed.value = editHist.undo.pop();
     prevEditValue = ed.value;
     lastHistT = 0;
+    S.editDirty = (ed.value !== (S.cur && S.cur.raw != null ? S.cur.raw : '').replace(/\r\n?/g, '\n'));
   } finally { histLock = false; }
   syncHistBtns();
+  renderTabs();
 }
 function doRedo() {
   const ed = $id('editor');
@@ -332,8 +334,10 @@ function doRedo() {
     ed.value = editHist.redo.pop();
     prevEditValue = ed.value;
     lastHistT = 0;
+    S.editDirty = (ed.value !== (S.cur && S.cur.raw != null ? S.cur.raw : '').replace(/\r\n?/g, '\n'));
   } finally { histLock = false; }
   syncHistBtns();
+  renderTabs();
 }
 async function saveEdit() {
   if (!S.cur || !S.editing) return;
