@@ -130,17 +130,9 @@
         <div class="setpage-scroll" id="setScroll">
           <div class="set-section" id="sec-read" data-title="阅读">
             <div class="set-section-title">阅读</div>
-            <div class="set-row" data-search="标题字号 title h1 heading size 标题 大小">
-              <div class="set-row-info"><div class="set-row-title">标题字号</div><div class="set-row-desc">正文一级标题大小</div></div>
-              <div class="set-row-ctl"><input type="range" id="setH1Size" min="1.5" max="2.4" step="0.05" /><span class="settings-val" id="valH1Size">1.75em</span></div>
-            </div>
-            <div class="set-row" data-search="正文字号 body font size 正文 大小">
-              <div class="set-row-info"><div class="set-row-title">正文字号</div><div class="set-row-desc">正文默认字号</div></div>
-              <div class="set-row-ctl"><input type="range" id="setBodySize" min="14" max="20" step="1" /><span class="settings-val" id="valBodySize">16px</span></div>
-            </div>
-            <div class="set-row" data-search="代码字号 code font size 代码 大小">
-              <div class="set-row-info"><div class="set-row-title">代码字号</div><div class="set-row-desc">行内代码与代码块字号</div></div>
-              <div class="set-row-ctl"><input type="range" id="setCodeSize" min="12" max="16" step="1" /><span class="settings-val" id="valCodeSize">14px</span></div>
+            <div class="set-row" data-search="字号 font size 标题 正文 代码 阅读 演示 title body code read demo preset 预设">
+              <div class="set-row-info"><div class="set-row-title">字号预设</div><div class="set-row-desc" id="valFontPreset">阅读 · 标题1.75em·正文16px·代码14px</div></div>
+              <div class="set-row-ctl"><button id="setFontRead" class="theme-btn active">阅读</button><button id="setFontCode" class="theme-btn">代码</button><button id="setFontDemo" class="theme-btn">演示</button></div>
             </div>
             <div class="set-row" data-search="工具栏 toolbar 仅图标 仅文字 模式">
               <div class="set-row-info"><div class="set-row-title">工具栏</div><div class="set-row-desc">顶栏按钮显示模式</div></div>
@@ -207,7 +199,7 @@
     </div>
   </div>
 
-  <!-- 玻璃质感独立面板（工具栏「玻璃」按钮直达；四路下限 1%） -->
+  <!-- R12b Round-2 玻璃面板收敛：只留总开关 + 材质 + 整窗底色（草稿+预览+应用） + 氛围三预设；分表面滑条已删，数值走预设 -->
   <div id="glassPanel" class="settings-panel" hidden>
     <div class="settings-header">
       <span>玻璃质感</span>
@@ -228,28 +220,19 @@
       </div>
       <div class="settings-row">
         <label>整窗底色</label>
-        <input type="range" id="setGlassBase" min="1" max="100" step="1" />
-        <span class="settings-val" id="valGlassBase">12%</span>
+        <input type="color" id="setGlassTint" class="set-color" value="#26282e" />
+        <span class="settings-val settings-wide" id="valGlassTint">#26282e</span>
       </div>
       <div class="settings-row">
-        <label>顶栏侧栏</label>
-        <input type="range" id="setGlassChrome" min="1" max="100" step="1" />
-        <span class="settings-val" id="valGlassChrome">25%</span>
+        <label></label>
+        <button id="btnTintApply" class="theme-btn">应用</button>
+        <button id="btnTintCancel" class="theme-btn">取消</button>
       </div>
       <div class="settings-row">
-        <label>正文</label>
-        <input type="range" id="setGlassReader" min="1" max="100" step="1" />
-        <span class="settings-val" id="valGlassReader">35%</span>
-      </div>
-      <div class="settings-row">
-        <label>浮层</label>
-        <input type="range" id="setGlassPop" min="1" max="100" step="1" />
-        <span class="settings-val" id="valGlassPop">30%</span>
-      </div>
-      <div class="settings-row">
-        <label>文字</label>
-        <input type="range" id="setGlassText" min="10" max="100" step="1" />
-        <span class="settings-val" id="valGlassText">100%</span>
+        <label>氛围</label>
+        <button id="setAtmosWeak" class="theme-btn">弱</button>
+        <button id="setAtmosMedium" class="theme-btn active">中</button>
+        <button id="setAtmosStrong" class="theme-btn">强</button>
       </div>
     </div>
   </div>
