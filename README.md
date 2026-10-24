@@ -88,7 +88,7 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 > Tracked via `skill://sai-long-project` + `skill://sai-closeout`. Full session log in `docs/CHANGELOG.md`; portfolio card in vps `~/project-portfolio/projects.md`.
 
 - **Status**: active (v1.7.0 收官 2026-10-24 — 竞品差距分析路线图全部落地,装机版已升级)
-- **Latest**: v1.7.0 visual & reading overhaul — typography controls (line width/height/body font), WinUI-style layering + motion tokens, material三选 (none/Acrylic/Mica) with transparency/high-contrast fallback, in-document find, library-wide search, footnotes, code copy + line numbers, focus/immersive modes, export HTML + print, per-display window geometry, UI i18n (zh/en/ja)
+- **Latest**: v1.7.0 visual & reading overhaul — typography controls (line width/height/body font), WinUI-style layering + motion tokens, material三选 (none/Acrylic/Mica) with transparency/high-contrast fallback, in-document find, library-wide search, footnotes, code copy + line numbers, focus/immersive modes, export HTML + print, remembered window geometry (validated against the current monitor work area), UI i18n (zh/en/ja)
 - **Basis**: `docs/2026-10-24-竞品与差距分析.md` (22 competitors × 22 capabilities, 57-item self-audit, 24-point visual checklist)
 - **Open residuals**: 1 first-screen black 2 version number 3 whole-window glass W0→W4 (Mica base + Acrylic chrome) 4 export image inlining 5 library search ranking
 - **Mirrors**: GitHub (SSOT) + Gitea (self-hosted), dual-repo same HEAD (verify with `git ls-remote`)

@@ -470,7 +470,6 @@ body.settings-open #layout { visibility: hidden; }
   --measure: 34em;          /* 正文行宽:34em ≈ 34 个全角字(中文规范 32–38) */
   --line-h: 1.7;             /* 正文行高(中文建议 1.6–1.75) */
   --body-font: var(--sans);  /* 正文家族:无衬线;可切等宽 */
-  --scrim-min: 60;           /* 玻璃通透度下限(%,写在设置页提示与面板钳位) */
   /* v1.7 排版换血:旧的 --sans 首选项是 Maple Mono(等宽),导致中文正文全等宽。
    * 现在 sans 走系统无衬线(Windows 首选 Segoe UI Variable → 雅黑),等宽只留给代码与 body-mono 档。 */
   --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
