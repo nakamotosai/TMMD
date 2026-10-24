@@ -47,6 +47,13 @@
       <symbol id="i-map" viewBox="0 0 24 24"><path d="M6 3v18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2 2"/><circle cx="6" cy="5" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><circle cx="6" cy="19" r="2.2" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M9.5 5H21M9.5 12h7M9.5 19h10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
       <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3.5" y="4" width="17" height="16" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="4.5" y="5" width="5.5" height="14" rx="2" fill="currentColor" opacity=".4"/></symbol>
       <symbol id="i-glass" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="4" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M4 10h16" stroke="currentColor" stroke-width="1.4" opacity=".7"/><circle cx="15.5" cy="16" r="2.4" fill="currentColor" opacity=".85"/></symbol>
+      <symbol id="i-find" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15 15l5 5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15 6.5A2.5 2.5 0 0012.5 4H6a2 2 0 00-2 2v6.5A2.5 2.5 0 006.5 15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+      <symbol id="i-focus" viewBox="0 0 24 24"><path d="M4 9V5.5A1.5 1.5 0 015.5 4H9M15 4h3.5A1.5 1.5 0 0120 5.5V9M20 15v3.5a1.5 1.5 0 01-1.5 1.5H15M9 20H5.5A1.5 1.5 0 014 18.5V15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="12" r="2.2" fill="currentColor" opacity=".85"/></symbol>
+      <symbol id="i-zen" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 9h18" stroke="currentColor" stroke-width="1.4" opacity=".7"/><path d="M7.5 13.5h9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M7.5 16h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" opacity=".6"/></symbol>
+      <symbol id="i-export" viewBox="0 0 24 24"><path d="M12 4v10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M8 10.5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 18h14" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 12h16M12 4c2.4 2.2 3.6 5 3.6 8s-1.2 5.8-3.6 8c-2.4-2.2-3.6-5-3.6-8s1.2-5.8 3.6-8z" fill="none" stroke="currentColor" stroke-width="1.4"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
     </defs>
   </svg>
 
@@ -76,6 +83,9 @@
   <div id="menuFile" class="drawer" hidden>
     <button id="btnOpenFolder" class="menu-item"><svg class="ic"><use href="#i-folder"/></svg><span>打开文件夹</span></button>
     <button id="btnOpenFile" class="menu-item"><svg class="ic"><use href="#i-file"/></svg><span>打开文件</span></button>
+    <div class="drawer-sep"></div>
+    <button id="btnExportHtml" class="menu-item" disabled><svg class="ic"><use href="#i-export"/></svg><span>导出 HTML</span></button>
+    <button id="btnPrint" class="menu-item" disabled><svg class="ic"><use href="#i-export"/></svg><span>打印 / 存 PDF</span></button>
   </div>
   <div id="menuEdit" class="drawer" hidden>
     <button id="btnUndo" class="menu-item" disabled><svg class="ic"><use href="#i-undo"/></svg><span>撤销</span><kbd>Ctrl+Z</kbd></button>
@@ -88,6 +98,11 @@
     <button id="btnTree" class="menu-item"><svg class="ic"><use href="#i-tree"/></svg><span>文件树</span></button>
     <button id="btnToc" class="menu-item"><svg class="ic"><use href="#i-list"/></svg><span>目录大纲</span></button>
     <button id="btnMap" class="menu-item"><svg class="ic"><use href="#i-map"/></svg><span>导读地图</span></button>
+    <button id="btnFindLib" class="menu-item"><svg class="ic"><use href="#i-find"/></svg><span>全文搜索</span></button>
+    <div class="drawer-sep"></div>
+    <button id="btnFindDoc" class="menu-item"><svg class="ic"><use href="#i-find"/></svg><span>文内查找</span><kbd>Ctrl+F</kbd></button>
+    <button id="btnFocus" class="menu-item"><svg class="ic"><use href="#i-focus"/></svg><span>专注模式</span><kbd>Ctrl+Shift+F</kbd></button>
+    <button id="btnZen" class="menu-item"><svg class="ic"><use href="#i-zen"/></svg><span>无干扰模式</span><kbd>F11</kbd></button>
     <div class="drawer-sep"></div>
     <button id="btnSideToggle" class="menu-item"><svg class="ic"><use href="#i-side"/></svg><span>隐藏侧栏</span></button>
     <button id="btnCompact" class="menu-item"><svg class="ic"><use href="#i-list"/></svg><span>精简模式</span></button>
@@ -116,9 +131,10 @@
       <!-- 左侧分类导航（固定 208px） -->
       <nav class="setpage-nav" id="setNav" aria-label="设置分类">
         <button type="button" class="setpage-nav-item active" data-target="sec-read">阅读</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-enhance">阅读增强</button>
         <button type="button" class="setpage-nav-item" data-target="sec-theme">主题外观</button>
         <button type="button" class="setpage-nav-item" data-target="sec-glass">玻璃</button>
-        <button type="button" class="setpage-nav-item" data-target="sec-file">文件关联</button>
+        <button type="button" class="setpage-nav-item" data-target="sec-file">文件与导出</button>
         <button type="button" class="setpage-nav-item" data-target="sec-keys">快捷键</button>
         <button type="button" class="setpage-nav-item" data-target="sec-about">关于</button>
       </nav>
@@ -131,22 +147,49 @@
         <!-- 右侧独立滚动正文 -->
         <div class="setpage-scroll" id="setScroll">
           <div class="set-section" id="sec-read" data-title="阅读">
-            <div class="set-section-title">阅读</div>
+            <div class="set-section-title"><svg class="ic"><use href="#i-list"/></svg>阅读</div>
             <div class="set-row" data-search="字号 font size 标题 正文 代码 阅读 演示 title body code read demo preset 预设">
               <div class="set-row-info"><div class="set-row-title">字号预设</div><div class="set-row-desc" id="valFontPreset">阅读 · 标题1.75em·正文16px·代码14px</div></div>
               <div class="set-row-ctl"><button id="setFontRead" class="theme-btn active">阅读</button><button id="setFontCode" class="theme-btn">代码</button><button id="setFontDemo" class="theme-btn">演示</button></div>
+            </div>
+            <div class="set-row" data-search="正文字体 font sans mono 无衬线 等宽 中文 sans-serif">
+              <div class="set-row-info"><div class="set-row-title">正文字体</div><div class="set-row-desc">中文长文建议无衬线;等宽更"工程感"</div></div>
+              <div class="set-row-ctl"><button id="setBodySans" class="theme-btn active">无衬线</button><button id="setBodyMono" class="theme-btn">等宽</button></div>
+            </div>
+            <div class="set-row" data-search="行宽 measure width 每行 字数 阅读宽度">
+              <div class="set-row-info"><div class="set-row-title">行宽</div><div class="set-row-desc">中文规范 32–38 字/行;当前按 em 折算</div></div>
+              <div class="set-row-ctl"><input type="range" id="setMeasure" min="26" max="52" step="1" /><span class="settings-val" id="valMeasure">34em</span></div>
+            </div>
+            <div class="set-row" data-search="行高 line height 间距 行距 leading">
+              <div class="set-row-info"><div class="set-row-title">行高</div><div class="set-row-desc">正文行距倍数(1.4–2.0)</div></div>
+              <div class="set-row-ctl"><input type="range" id="setLineH" min="1.4" max="2" step="0.05" /><span class="settings-val" id="valLineH">1.70</span></div>
             </div>
             <div class="set-row" data-search="工具栏 toolbar 仅图标 仅文字 模式">
               <div class="set-row-info"><div class="set-row-title">工具栏</div><div class="set-row-desc">顶栏按钮显示模式</div></div>
               <div class="set-row-ctl"><button id="setTbIcon" class="theme-btn active">仅图标</button><button id="setTbText" class="theme-btn">仅文字</button></div>
             </div>
             <div class="set-row" data-search="侧栏宽度 sidebar width 拖拽 宽度说明">
-              <div class="set-row-info"><div class="set-row-title">侧栏宽度</div><div class="set-row-desc">拖拽侧栏分隔条调整（160–480px，自动记忆）</div></div>
+              <div class="set-row-info"><div class="set-row-title">侧栏宽度</div><div class="set-row-desc">拖拽侧栏分隔条调整(160–480px,自动记忆)</div></div>
               <div class="set-row-ctl"><span class="settings-val settings-tip">拖拽调整</span></div>
             </div>
           </div>
+          <div class="set-section" id="sec-enhance" data-title="阅读增强">
+            <div class="set-section-title"><svg class="ic"><use href="#i-focus"/></svg>阅读增强</div>
+            <div class="set-row" data-search="专注模式 focus 聚焦 淡出 沉浸">
+              <div class="set-row-info"><div class="set-row-title">专注模式</div><div class="set-row-desc">鼠标所在段落以外的内容淡出(不隐藏),Ctrl+Shift+F</div></div>
+              <div class="set-row-ctl"><button id="setFocusOn" class="theme-btn">开</button><button id="setFocusOff" class="theme-btn active">关</button></div>
+            </div>
+            <div class="set-row" data-search="无干扰 沉浸 zen 全屏 hide chrome">
+              <div class="set-row-info"><div class="set-row-title">无干扰模式</div><div class="set-row-desc">隐藏顶栏与侧栏,只留正文;Esc 或 F11 退出</div></div>
+              <div class="set-row-ctl"><button id="setZenOn" class="theme-btn">开</button><button id="setZenOff" class="theme-btn active">关</button></div>
+            </div>
+            <div class="set-row" data-search="代码块 行号 code line number ln">
+              <div class="set-row-info"><div class="set-row-title">代码块行号</div><div class="set-row-desc">在代码块左侧显示行号(悬停可复制整块)</div></div>
+              <div class="set-row-ctl"><button id="setCodeLnOn" class="theme-btn active">开</button><button id="setCodeLnOff" class="theme-btn">关</button></div>
+            </div>
+          </div>
           <div class="set-section" id="sec-theme" data-title="主题外观">
-            <div class="set-section-title">主题外观</div>
+            <div class="set-section-title"><svg class="ic"><use href="#i-moon"/></svg>主题外观</div>
             <div class="set-row" data-search="主题 theme 深色 浅色 dark light">
               <div class="set-row-info"><div class="set-row-title">主题</div><div class="set-row-desc">深色 / 浅色切换</div></div>
               <div class="set-row-ctl"><button id="setThemeDark" class="theme-btn active">深色</button><button id="setThemeLight" class="theme-btn">浅色</button></div>
@@ -155,29 +198,57 @@
               <div class="set-row-info"><div class="set-row-title">配色方案</div><div class="set-row-desc">跟随当前主题的可选配色</div></div>
               <div class="set-row-ctl"><div id="paletteSwatches" class="palette-swatches"></div></div>
             </div>
-          </div>
-          <div class="set-section" id="sec-glass" data-title="玻璃">
-            <div class="set-section-title">玻璃</div>
-            <div class="set-row" data-search="玻璃 glass 质感 透明 面板">
-              <div class="set-row-info"><div class="set-row-title">玻璃质感</div><div class="set-row-desc">点工具栏「玻璃」按钮微调透明度与材质</div></div>
-              <div class="set-row-ctl"><span class="settings-val settings-tip">见玻璃面板</span></div>
+            <div class="set-row" data-search="语言 language 中文 english 日本語 i18n locale">
+              <div class="set-row-info"><div class="set-row-title">界面语言</div><div class="set-row-desc">中文 / English / 日本語</div></div>
+              <div class="set-row-ctl lang-switch"><button id="langZh" class="theme-btn active">中文</button><button id="langEn" class="theme-btn">EN</button><button id="langJa" class="theme-btn">日本語</button></div>
             </div>
           </div>
-          <div class="set-section" id="sec-file" data-title="文件关联">
-            <div class="set-section-title">文件关联</div>
+          <div class="set-section" id="sec-glass" data-title="玻璃">
+            <div class="set-section-title"><svg class="ic"><use href="#i-glass"/></svg>玻璃</div>
+            <div class="set-row" data-search="玻璃 glass 质感 透明 面板 材质 亚克力 mica">
+              <div class="set-row-info"><div class="set-row-title">玻璃质感</div><div class="set-row-desc">点工具栏「玻璃」按钮微调材质与整窗底色</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">见玻璃面板</span></div>
+            </div>
+            <div class="set-row" data-search="可读性 保底 对比度 contrast 文字透明度 opacity 下限">
+              <div class="set-row-info"><div class="set-row-title">可读性保底</div><div class="set-row-desc">文字整体透明度下限 70%;代码块/图片/卡片始终不透明(白字直压模糊底实测仅 3.95:1)</div></div>
+              <div class="set-row-ctl"><span class="settings-val" id="glassFloorVal">70%</span></div>
+            </div>
+            <div class="set-row" data-search="系统 透明效果 高对比 transparency high contrast 回落">
+              <div class="set-row-info"><div class="set-row-title">系统回落</div><div class="set-row-desc">关闭"透明效果"或高对比模式时自动退为实色</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-wide" id="glassSysStateSet">读取中...</span></div>
+            </div>
+          </div>
+          <div class="set-section" id="sec-file" data-title="文件与导出">
+            <div class="set-section-title"><svg class="ic"><use href="#i-export"/></svg>文件与导出</div>
             <div class="set-row" data-search="md 默认打开 file assoc default 默认应用">
               <div class="set-row-info"><div class="set-row-title">MD 默认打开</div><div class="set-row-desc">跳转系统默认应用页设为 TMMD</div></div>
-              <div class="set-row-ctl"><button id="btnFileAssoc" class="theme-btn">设为默认打开…</button></div>
+              <div class="set-row-ctl"><button id="btnFileAssoc" class="theme-btn">设为默认打开...</button></div>
             </div>
             <div class="set-row" data-search="当前默认 current default progid 状态">
               <div class="set-row-info"><div class="set-row-title">当前默认</div><div class="set-row-desc">系统当前 .md 默认程序</div></div>
-              <div class="set-row-ctl"><span class="settings-val settings-wide" id="fileAssocStatus">读取中…</span></div>
+              <div class="set-row-ctl"><span class="settings-val settings-wide" id="fileAssocStatus">读取中...</span></div>
+            </div>
+            <div class="set-row" data-search="导出 html export 分享 打印 pdf">
+              <div class="set-row-info"><div class="set-row-title">导出 / 打印</div><div class="set-row-desc">导出为独立 HTML,再交给浏览器打印成 PDF</div></div>
+              <div class="set-row-ctl"><button id="setExportHtml" class="theme-btn">导出 HTML</button><button id="setPrintDoc" class="theme-btn">打印</button></div>
             </div>
           </div>
           <div class="set-section" id="sec-keys" data-title="快捷键">
-            <div class="set-section-title">快捷键</div>
+            <div class="set-section-title"><svg class="ic"><use href="#i-view"/></svg>快捷键</div>
+            <div class="set-row" data-search="ctrl f 查找 find search 文内">
+              <div class="set-row-info"><div class="set-row-title">Ctrl+F</div><div class="set-row-desc">文内查找(Enter 下一个 / Shift+Enter 上一个)</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+F</span></div>
+            </div>
+            <div class="set-row" data-search="ctrl shift f 专注 focus">
+              <div class="set-row-info"><div class="set-row-title">Ctrl+Shift+F</div><div class="set-row-desc">专注模式开关</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+Shift+F</span></div>
+            </div>
+            <div class="set-row" data-search="f11 无干扰 zen 沉浸">
+              <div class="set-row-info"><div class="set-row-title">F11</div><div class="set-row-desc">无干扰模式开关</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-tip">F11</span></div>
+            </div>
             <div class="set-row" data-search="esc 关闭 escape 关闭面板 快捷键 shortcut key">
-              <div class="set-row-info"><div class="set-row-title">Esc</div><div class="set-row-desc">关闭设置 / 玻璃 / 下拉抽屉</div></div>
+              <div class="set-row-info"><div class="set-row-title">Esc</div><div class="set-row-desc">关闭查找 / 设置 / 玻璃 / 下拉抽屉 / 退出无干扰</div></div>
               <div class="set-row-ctl"><span class="settings-val settings-tip">Esc</span></div>
             </div>
             <div class="set-row" data-search="ctrl w 关闭标签 tab close">
@@ -185,15 +256,19 @@
               <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+W</span></div>
             </div>
             <div class="set-row" data-search="ctrl tab 切换标签 switch">
-              <div class="set-row-info"><div class="set-row-title">Ctrl+Tab</div><div class="set-row-desc">轮切标签页（Shift 反向）</div></div>
+              <div class="set-row-info"><div class="set-row-title">Ctrl+Tab</div><div class="set-row-desc">轮切标签页(Shift 反向)</div></div>
               <div class="set-row-ctl"><span class="settings-val settings-tip">Ctrl+Tab</span></div>
             </div>
           </div>
           <div class="set-section" id="sec-about" data-title="关于">
-            <div class="set-section-title">关于</div>
+            <div class="set-section-title"><svg class="ic"><use href="#i-file"/></svg>关于</div>
             <div class="set-row" data-search="版本 version about 关于 tmmd">
               <div class="set-row-info"><div class="set-row-title">版本</div><div class="set-row-desc">当前应用版本</div></div>
               <div class="set-row-ctl"><span class="settings-val settings-wide" id="settingsVer">TMMD</span></div>
+            </div>
+            <div class="set-row" data-search="报告 report 竞品 分析 docs">
+              <div class="set-row-info"><div class="set-row-title">设计依据</div><div class="set-row-desc">docs/2026-10-24-竞品与差距分析.md</div></div>
+              <div class="set-row-ctl"><span class="settings-val settings-wide">竞品调研 · 24 条视觉检查表</span></div>
             </div>
           </div>
         </div>
@@ -216,9 +291,14 @@
       <div class="settings-row">
         <label>材质</label>
         <select id="setGlassMaterial" class="set-select">
-          <option value="none">直透</option>
-          <option value="acrylic">磨砂</option>
+          <option value="none">直透(不模糊)</option>
+          <option value="acrylic">磨砂(Acrylic)</option>
+          <option value="mica">壁纸色(Mica)</option>
         </select>
+      </div>
+      <div class="settings-row">
+        <label>系统状态</label>
+        <span class="settings-val settings-wide" id="glassSysState">读取中...</span>
       </div>
       <div class="settings-row">
         <label>整窗底色</label>
@@ -265,9 +345,18 @@
         </div>
       </div>
       <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
+      <!-- v1.7 文内查找(Ctrl+F):浮在阅读区右上,不参与正文流 -->
+      <div class="findbar" id="findBar" hidden>
+        <input type="text" id="findInput" class="set-text" placeholder="在本文中查找" autocomplete="off" />
+        <span class="find-count" id="findCount">0/0</span>
+        <button type="button" id="findPrev" class="tb-btn" title="上一个 (Shift+Enter)"><svg class="ic sm"><use href="#i-caret"/></svg></button>
+        <button type="button" id="findNext" class="tb-btn" title="下一个 (Enter)"><svg class="ic sm" style="transform:rotate(180deg)"><use href="#i-caret"/></svg></button>
+        <button type="button" id="findClose" class="tb-btn" title="关闭 (Esc)"><svg class="ic sm"><use href="#i-close"/></svg></button>
+      </div>
     </section>
   </main>
 
   <div class="toast" id="toast" hidden></div>
+  <div class="immersive-hint" id="immersiveHint">按 F11 或 Esc 退出无干扰模式</div>
 </body>
 </html>

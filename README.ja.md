@@ -73,13 +73,12 @@ npm run build     # リリースビルド → NSIS/MSI インストーラが src
 
 ## ステータス・進捗（進捗管理ファイル · 2026-08-08 追記）
 
-> 追跡ルール：`skill://sai-long-project` + `skill://sai-closeout`；詳細は `progress.md`；プロジェクト台帳 vps `~/project-portfolio/projects.md`。
+> 追跡ルール：`skill://sai-long-project` + `skill://sai-closeout`；詳細は `docs/CHANGELOG.md`；プロジェクト台帳 vps `~/project-portfolio/projects.md`。
 
-- **ステータス**：一時完了（2026-08-06 一時収口）
-- **最新**：v1.2.1 リリース済み（ドラッグ・パフォーマンス修正・GH Release・トップページOSS欄掲載・レビュアー 8/8）
-- **未解決残差**：①初画面の黒/編集の食い込み ②バージョン番号 ③透明度 ④背景色 go ⑤ツールバー二方式 ⑥上書き＋版番号自動発行
-- **唯一 next**：ユーザーフィードバック後に残差レビュー
-- **ミラー**：GitHub（SSOT）+ Gitea（セルフホスト）双端同 HEAD（`git ls-remote` で核証）
+- **ステータス**:アクティブ(v1.7.0 完結 2026-10-24 — 競合ギャップ分析のロードマップを全実装:タイポグラフィ/レイヤー/モーション刷新、素材三択(透過/Acrylic/Mica)+システム連動フォールバック、文書内検索、ライブラリ全文検索、脚注、コードコピーと行番号、集中/没入モード、HTML 書き出し+印刷、ウィンドウ位置記憶、UI 言語 zh/en/ja)
+- **根拠**:`docs/2026-10-24-竞品与差距分析.md` · 変更履歴:`docs/CHANGELOG.md`
+- **未解決残差**:1初画面の黒 2全面ガラス W0→W4(Mica ベース + Acrylic クローム) 3画像のインライン書き出し 4ライブラリ検索の並び替え/正規表現 5自動更新
+- **ミラー**:GitHub(SSOT)+ Gitea(セルフホスト)双端同 HEAD(`git ls-remote` で核証)
 
 ---
 

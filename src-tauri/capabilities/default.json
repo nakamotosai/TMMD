@@ -31,6 +31,11 @@
     "allow-save-path",
     "allow-load-roots",
     "allow-save-roots",
-    "allow-pending-open"
+    "allow-pending-open",
+    "allow-system-effects-state",
+    "allow-watch-file",
+    "allow-search-library",
+    "allow-export-file",
+    "allow-open-any"
   ]
 }

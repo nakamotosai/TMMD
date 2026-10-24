@@ -1,6 +1,6 @@
 [package]
 name = "tmmd"
-version = "1.6.0"
+version = "1.7.0"
 description = "TMMD transparent Markdown reader desktop"
 authors = ["Sai"]
 edition = "2021"
@@ -20,6 +20,8 @@ serde_json = "1"
 rfd = "0.15"
 tauri-plugin-single-instance = "2"
 window-vibrancy = "0.8"
+# 外部文件变更监听(watch_file):只跟一个文件的父目录,非递归
+notify = "8"
 # R2-fix 诊断位：直读 DWM 实时 backdrop（DwmGetWindowAttribute），与 window-vibrancy 0.8 同款 0.60 同编
 # R3b Pebrel 配方：legacy AccentPolicy（user32 动态取）+ SetWindowPos 刷 frame
 [target.'cfg(windows)'.dependencies]

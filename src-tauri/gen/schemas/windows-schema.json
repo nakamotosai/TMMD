@@ -219,16 +219,22 @@
           "markdownDescription": "Allow desktop_info command"
         },
         {
+          "description": "Allow export_file (导出 .html/.htm 并返回绝对路径)",
+          "type": "string",
+          "const": "allow-export-file",
+          "markdownDescription": "Allow export_file (导出 .html/.htm 并返回绝对路径)"
+        },
+        {
           "description": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)",
           "type": "string",
           "const": "allow-get-glass-state",
           "markdownDescription": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)"
         },
         {
-          "description": "Allow get_md_default (文件关联状态：只读 HKCU .md UserChoice ProgId)",
+          "description": "Allow get_md_default (文件关联状态:只读 HKCU .md UserChoice ProgId)",
           "type": "string",
           "const": "allow-get-md-default",
-          "markdownDescription": "Allow get_md_default (文件关联状态：只读 HKCU .md UserChoice ProgId)"
+          "markdownDescription": "Allow get_md_default (文件关联状态:只读 HKCU .md UserChoice ProgId)"
         },
         {
           "description": "Allow list_md_tree under registered root",
@@ -241,6 +247,12 @@
           "type": "string",
           "const": "allow-load-roots",
           "markdownDescription": "Allow load_roots from app config"
+        },
+        {
+          "description": "Allow open_any (ShellExecute 打开任意文件/目录,不限扩展名)",
+          "type": "string",
+          "const": "allow-open-any",
+          "markdownDescription": "Allow open_any (ShellExecute 打开任意文件/目录,不限扩展名)"
         },
         {
           "description": "Allow open_default_apps_settings (文件关联按钮：打开系统默认应用设置页，不静默改默认)",
@@ -315,10 +327,28 @@
           "markdownDescription": "Allow save_roots to app config"
         },
         {
+          "description": "Allow search_library (已登记库全文搜索,spawn_blocking 内跑)",
+          "type": "string",
+          "const": "allow-search-library",
+          "markdownDescription": "Allow search_library (已登记库全文搜索,spawn_blocking 内跑)"
+        },
+        {
           "description": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)",
           "type": "string",
           "const": "allow-set-glass-material",
           "markdownDescription": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)"
+        },
+        {
+          "description": "Allow system_effects_state (系统透明/高对比开关只读探针)",
+          "type": "string",
+          "const": "allow-system-effects-state",
+          "markdownDescription": "Allow system_effects_state (系统透明/高对比开关只读探针)"
+        },
+        {
+          "description": "Allow watch_file (外部文件变更监听:父目录非递归 + fs-changed 事件,None 取消)",
+          "type": "string",
+          "const": "allow-watch-file",
+          "markdownDescription": "Allow watch_file (外部文件变更监听:父目录非递归 + fs-changed 事件,None 取消)"
         },
         {
           "description": "Allow write_text under path cage",

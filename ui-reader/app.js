@@ -55,7 +55,7 @@ function migrateGlass(g) {
   if (!(g && typeof g === 'object' && 'tint' in g)) return d;
   const out = { ...d };
   if (typeof g.on === 'boolean') out.on = g.on;
-  out.material = (g.material === 'none' || g.material === 'acrylic') ? g.material : 'acrylic';
+  out.material = (g.material === 'none' || g.material === 'acrylic' || g.material === 'mica') ? g.material : 'acrylic';
   if (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) out.tint = g.tint;
   const num = (v) => (Number.isFinite(+v) ? +v : NaN);
   const avg = (num(g.chrome) + num(g.reader) + num(g.pop)) / 3;
@@ -97,6 +97,17 @@ const S = {
   sideCompact: LS.get('sr_side_compact', false),
   sideBottomH: LS.get('sr_side_bottom_h', 180),
   toolbarMode: LS.get('sr_tb_mode', 'icon'),
+  // v1.7 排版与阅读增强(docs/2026-10-24-竞品与差距分析.md P0/P1)
+  bodyFont: LS.get('sr_body_font', 'sans'),
+  measure: LS.get('sr_measure', 34),
+  lineH: LS.get('sr_line_h', 1.7),
+  codeLn: LS.get('sr_code_ln', true),
+  focusMode: LS.get('sr_focus', false),
+  zen: false,
+  lang: LS.get('sr_lang', null),
+  sysNoEffects: false,
+  find: { q: '', hits: [], idx: -1 },
+  search: { q: '', hits: [], busy: false },
   root: null,
   cur: null,
   // R7 标签页：多 md 并存。tabs 存描述符（持久化只留路径三元组），raw/draft/editing 常驻内存。
@@ -220,12 +231,13 @@ function renderMarkdown(md, absParam) {
   const body = document.createElement('div');
   body.className = 'markdown-body';
   CURRENT_ABS = absParam || null;
-  body.innerHTML = marked.parse(md.replace(/^﻿?---\r?\n[\s\S]*?\r?\n---\r?\n/, ''));
+  body.innerHTML = marked.parse(preprocessFootnotes(md.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n/, '')));
   CURRENT_ABS = null;
   sanitize(body);
   highlightCode(body);
   renderMath(body);
   fixMediaSrc(body);
+  enhanceCodeBlocks(body);   // v1.7:代码块复制按钮 + 行号(必须在 highlightCode 之后)
   wireImgFallback(body);
   S.toc = buildToc(body);
   inner.innerHTML = '';
@@ -505,6 +517,7 @@ function renderEmpty() {
   }
   document.title = 'TMMD';
   markActive(null);
+  try { applyI18n(); } catch { /* v1.7:空态重建后重贴语言 */ }
   if (S.view === 'toc' || S.view === 'map') renderSide();
 }
 function renderTabs() {
@@ -619,9 +632,10 @@ function renderSide() {
   const side = $id('sideBody');
   side.innerHTML = '';
   $id('sideEmpty').hidden = true;
-  $id('btnBackToTree').hidden = (S.view !== 'toc' && S.view !== 'map');
+  $id('btnBackToTree').hidden = (S.view !== 'toc' && S.view !== 'map' && S.view !== 'search');
   if (S.view === 'toc') { renderToc(side); return; }
   if (S.view === 'map') { renderMap(side); return; }
+  if (S.view === 'search') { renderSearch(side); return; }
   renderTree(side);
 }
 function renderTree(side) {
@@ -685,10 +699,10 @@ function renderToc(side) {
   });
   side.appendChild(list);
 }
-const VIEW_BTNS = ['btnTree', 'btnToc', 'btnMap'];
+const VIEW_BTNS = ['btnTree', 'btnToc', 'btnMap', 'btnFindLib'];
 function setView(v) {
   S.view = v;
-  VIEW_BTNS.forEach((id) => { const b = $id(id); if (b) b.classList.toggle('active', id === ({ tree: 'btnTree', toc: 'btnToc', map: 'btnMap' }[v])); });
+  VIEW_BTNS.forEach((id) => { const b = $id(id); if (b) b.classList.toggle('active', id === ({ tree: 'btnTree', toc: 'btnToc', map: 'btnMap', search: 'btnFindLib' }[v])); });
   renderSide();
 }
 
@@ -973,7 +987,7 @@ function applySideWidth(w) {
 }
 // R10a：侧栏开关唯一入口（顶栏常驻按钮＋视图菜单共用；窄窗手动拨过即加锁）
 function toggleSide() {
-  if (window.innerWidth < 780) sideManualLock = true;
+  if (window.innerWidth < 640) sideManualLock = true;   // v1.7:与 autoFoldSide 阈值同源(640)
   sideAutoFolded = false;
   applySideCollapsed(!S.sideCollapsed);
 }
@@ -1061,12 +1075,12 @@ function applySideCompact(c) {
   const b = $id('btnCompact');
   if (b) b.classList.toggle('active', S.sideCompact);
 }
-// 窄窗自动折叠：<780px 自动收（记 auto），回宽自动放；窄窗下手动拨过开关就不再代劳，直到回宽重置。
+// 窄窗自动折叠：<640px 自动收（记 auto），回宽自动放；窄窗下手动拨过开关就不再代劳，直到回宽重置。
 // R12c(c)：自动收/放只在边沿吐一次 toast（靠 sideAutoFolded 状态判定，不骚扰重复 resize）
 let sideManualLock = false;
 let sideAutoFolded = false;
 function autoFoldSide() {
-  const narrow = window.innerWidth < 780;
+  const narrow = window.innerWidth < 640;
   if (!narrow) {
     sideManualLock = false;
     if (sideAutoFolded && S.sideCollapsed) { applySideCollapsed(false); toast('窗口恢复，已展开侧栏'); }
@@ -1137,19 +1151,51 @@ function applySettings() {
   $id('setThemeLight')?.classList.toggle('active', S.theme === 'light');
   // 主题图标 sun/moon 切换
   const tf = $q('#btnTheme use'); if (tf) tf.setAttribute('href', S.theme === 'dark' ? '#i-moon' : '#i-sun');
+  applyTypography();
+}
+
+/* v1.7 排版三件套:行宽 / 行高 / 正文字体。数值只落 CSS 变量,不动结构。 */
+function applyTypography() {
+  const st = document.documentElement.style;
+  const m = Math.min(52, Math.max(26, Number(S.measure) || 34));
+  const lh = Math.min(2, Math.max(1.4, Number(S.lineH) || 1.7));
+  st.setProperty('--measure', m + 'em');
+  st.setProperty('--line-h', String(lh));
+  document.body.classList.toggle('body-mono', S.bodyFont === 'mono');
+  $id('setBodySans')?.classList.toggle('active', S.bodyFont !== 'mono');
+  $id('setBodyMono')?.classList.toggle('active', S.bodyFont === 'mono');
+  const rv = $id('setMeasure'); if (rv) rv.value = String(m);
+  const rvl = $id('valMeasure'); if (rvl) rvl.textContent = m + 'em';
+  const lv = $id('setLineH'); if (lv) lv.value = String(lh);
+  const lvl = $id('valLineH'); if (lvl) lvl.textContent = lh.toFixed(2);
+}
+
+/* v1.7 阅读增强三开关:专注 / 无干扰 / 代码块行号 */
+function applyEnhance() {
+  document.body.classList.toggle('focus-mode', !!S.focusMode);
+  document.body.classList.toggle('immersive', !!S.zen);
+  document.body.classList.toggle('no-code-ln', S.codeLn === false);
+  $id('setFocusOn')?.classList.toggle('active', !!S.focusMode);
+  $id('setFocusOff')?.classList.toggle('active', !S.focusMode);
+  $id('setZenOn')?.classList.toggle('active', !!S.zen);
+  $id('setZenOff')?.classList.toggle('active', !S.zen);
+  $id('setCodeLnOn')?.classList.toggle('active', S.codeLn !== false);
+  $id('setCodeLnOff')?.classList.toggle('active', S.codeLn === false);
 }
 /* R12b 玻璃质感：S.glass 数值恒由氛围预设写入，本函数只负责落 CSS 变量 + 面板回显。
  * opaque=true 强制全不透明（开机首帧用，避开透明窗冷启动合成坑）；平时走存储值。
  * S.glass.tintDraft 为内存草稿（取色器未点应用前），回显优先显示草稿，后端预览见 bindSettings。 */
 function applyGlass(opaque) {
   if (!S.glass || typeof S.glass !== 'object') S.glass = migrateGlass(null);
-  const on = opaque ? false : S.glass.on !== false;
+  const on = opaque ? false : (S.glass.on !== false && !S.sysNoEffects);
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
+  // v1.7:分量滑条已由氛围预设取代(预设刻意做得很透,是产品卖点),这里只对**文字整体透明度**
+  // 设 70% 下限(正文可读性保底,见下一行 text 的 lo=70);代码块/图片/卡片另有不透明底板兜底。
   const base = num(S.glass.base, 12, 1, 100);
   const chrome = num(S.glass.chrome, 25, 1, 100);
   const reader = num(S.glass.reader, 35, 1, 100);
   const pop = num(S.glass.pop, 30, 1, 100);
-  const text = num(S.glass.text, 100, 10, 100);
+  const text = num(S.glass.text, 100, 70, 100);   // v1.7 文字整体透明度下限 70%(再低正文掉对比度)
   const root = document.documentElement.style;
   root.setProperty('--glass-base', (on ? base : 100) + '%');
   root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
@@ -1159,7 +1205,7 @@ function applyGlass(opaque) {
   // 面板控件回显（面板关闭时节点仍在，?. 守无）
   $id('setGlassOn')?.classList.toggle('active', on);
   $id('setGlassOff')?.classList.toggle('active', !on);
-  const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic') ? m : 'acrylic'; }
+  const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic' || m === 'mica') ? m : 'acrylic'; }
   const tintShown = (typeof S.glass.tintDraft === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tintDraft)) ? S.glass.tintDraft : ((typeof S.glass.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tint)) ? S.glass.tint : '#26282e');
   const ti = $id('setGlassTint'); if (ti) ti.value = tintShown;
   const tv = $id('valGlassTint'); if (tv) tv.textContent = tintShown;
@@ -1189,9 +1235,9 @@ function glassDbg(evt) {
 async function applyGlassMaterial(force, tintOverride) {
   if (!invoke) return;
   const g = (S.glass && typeof S.glass === 'object') ? S.glass : {};
-  // 总开关关 = 真直透：无视存档材质，直接 paint_glass(false) 的 state 2 通道
-  let material = g.on === false ? 'none' : (typeof g.material === 'string' ? g.material : 'acrylic');
-  if (material !== 'none' && material !== 'acrylic') material = 'acrylic';
+  // 总开关关 / 系统禁用透明效果 = 真直透:无视存档材质,直接 paint_glass(false) 的 state 2 通道
+  let material = (g.on === false || S.sysNoEffects) ? 'none' : (typeof g.material === 'string' ? g.material : 'acrylic');
+  if (material !== 'none' && material !== 'acrylic' && material !== 'mica') material = 'acrylic';
   const tintSrc = (typeof tintOverride === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintOverride)) ? tintOverride : g.tint;
   const tint = (typeof tintSrc === 'string' && /^#[0-9a-fA-F]{6}$/.test(tintSrc)) ? tintSrc : '#26282e';
   const dark = S.theme !== 'light';
@@ -1533,6 +1579,7 @@ async function boot() {
   }
   refreshFileAssoc();
   wire();
+  initV17();   // v1.7:排版/增强/i18n/查找/搜索/导出/系统回落/文件监听
   // R3 失焦重放（修正版）：blur 时不动手——DWM 失活期写 backdrop 属性会丢渲染，写了也白写；
   // 只在 focus 回来后 300ms 全序列重放一次，等 DWM 走完激活再落 backdrop。直透无材质可丢，不受影响。
   // 非 Tauri 环境静默跳过。
@@ -1567,3 +1614,604 @@ async function boot() {
   } catch {}
 }
 document.addEventListener('DOMContentLoaded', boot);
+
+/* ============================================================================
+ * v1.7.0 · 阅读增强层
+ * 依据:docs/2026-10-24-竞品与差距分析.md
+ *  i18n(zh/en/ja) · 脚注 · 代码块复制与行号 · 文内查找(Ctrl+F) · 库级全文搜索
+ *  专注/无干扰 · 导出 HTML 与打印 · 系统透明效果回落 · 外部文件变更监听
+ * 说明:本段只新增函数;既有函数体仅动 renderMarkdown / renderSide / setView 三处挂点。
+ * ==========================================================================*/
+
+/* ---------------- i18n ---------------- */
+const LANGS = ['zh', 'en', 'ja'];
+// 键 → [中文, English, 日本語]
+const I18N = {
+  'menu.file': ['文件', 'File', 'ファイル'],
+  'menu.edit': ['编辑', 'Edit', '編集'],
+  'menu.view': ['视图', 'View', '表示'],
+  'menu.doc': ['文档', 'Docs', 'ドキュメント'],
+  'menu.theme': ['切换深浅主题', 'Toggle theme', 'テーマ切替'],
+  'menu.settings': ['显示设置', 'Settings', '設定'],
+  'menu.glass': ['玻璃质感(材质/底色)', 'Glass material & tint', 'ガラス素材と色'],
+  'menu.side': ['收起/展开侧栏', 'Toggle sidebar', 'サイドバー切替'],
+  'file.openFolder': ['打开文件夹', 'Open folder', 'フォルダを開く'],
+  'file.openFile': ['打开文件', 'Open file', 'ファイルを開く'],
+  'file.exportHtml': ['导出 HTML', 'Export HTML', 'HTML 書き出し'],
+  'file.print': ['打印 / 存 PDF', 'Print / Save as PDF', '印刷 / PDF 保存'],
+  'edit.undo': ['撤销', 'Undo', '元に戻す'],
+  'edit.redo': ['恢复', 'Redo', 'やり直す'],
+  'edit.edit': ['编辑文档', 'Edit document', '文書を編集'],
+  'edit.refresh': ['从磁盘刷新', 'Reload from disk', 'ディスクから再読込'],
+  'view.tree': ['文件树', 'File tree', 'ファイルツリー'],
+  'view.toc': ['目录大纲', 'Outline', '目次'],
+  'view.map': ['导读地图', 'Reading map', '読書マップ'],
+  'view.search': ['全文搜索', 'Full-text search', '全文検索'],
+  'view.find': ['文内查找', 'Find in document', '文書内検索'],
+  'view.focus': ['专注模式', 'Focus mode', '集中モード'],
+  'view.zen': ['无干扰模式', 'Immersive mode', '没入モード'],
+  'view.hideSide': ['隐藏侧栏', 'Hide sidebar', 'サイドバーを隠す'],
+  'view.compact': ['精简模式', 'Compact mode', 'コンパクト表示'],
+  'doc.fav': ['收藏本文', 'Star this file', 'この文書をスター'],
+  'doc.recent': ['最近打开', 'Recent', '最近'],
+  'doc.favs': ['收藏', 'Starred', 'スター'],
+  'empty.title': ['还没有打开任何文档', 'No document open', 'ドキュメントを開いていません'],
+  'empty.sub': ['轻量本地 Markdown 阅读器', 'A lightweight local Markdown reader', '軽量ローカル Markdown リーダー'],
+  'empty.openFolder': ['打开文件夹', 'Open folder', 'フォルダを開く'],
+  'empty.openFile': ['打开文件', 'Open file', 'ファイルを開く'],
+  'empty.hint': ['也可以把 .md 文件拖进窗口。', 'You can also drop a .md file into the window.', '.md ファイルをドロップしても開けます。'],
+  'side.emptyHtml': ['还没有打开文件夹。|点上方「文件夹」,或把 .md 文件拖进窗口。', 'No folder open.|Use “File → Open folder”, or drop a .md file here.', 'フォルダが未選択です。|「ファイル → フォルダを開く」か .md をドロップ。'],
+  'side.recent': ['最近打开', 'Recent', '最近'],
+  'find.placeholder': ['在本文中查找', 'Find in document', '文書内を検索'],
+  'find.prev': ['上一个 (Shift+Enter)', 'Previous (Shift+Enter)', '前へ (Shift+Enter)'],
+  'find.next': ['下一个 (Enter)', 'Next (Enter)', '次へ (Enter)'],
+  'find.close': ['关闭 (Esc)', 'Close (Esc)', '閉じる (Esc)'],
+  'settings.title': ['设置', 'Settings', '設定'],
+  'glass.title': ['玻璃质感', 'Glass', 'ガラス'],
+  'nav.read': ['阅读', 'Reading', '閲覧'],
+  'nav.enhance': ['阅读增强', 'Reading aids', '閲覧支援'],
+  'nav.theme': ['主题外观', 'Appearance', '外観'],
+  'nav.glass': ['玻璃', 'Glass', 'ガラス'],
+  'nav.file': ['文件与导出', 'Files & export', 'ファイルと書き出し'],
+  'nav.keys': ['快捷键', 'Shortcuts', 'ショートカット'],
+  'nav.about': ['关于', 'About', 'このアプリ'],
+  's.read.preset': ['字号预设', 'Type scale', '文字サイズ'],
+  's.read.font': ['正文字体', 'Body font', '本文フォント'],
+  's.read.measure': ['行宽', 'Line width', '行幅'],
+  's.read.lineH': ['行高', 'Line height', '行間'],
+  's.read.toolbar': ['工具栏', 'Toolbar', 'ツールバー'],
+  's.read.side': ['侧栏宽度', 'Sidebar width', 'サイドバー幅'],
+  's.enh.focus': ['专注模式', 'Focus mode', '集中モード'],
+  's.enh.zen': ['无干扰模式', 'Immersive mode', '没入モード'],
+  's.enh.codeLn': ['代码块行号', 'Code line numbers', 'コード行番号'],
+  's.theme.theme': ['主题', 'Theme', 'テーマ'],
+  's.theme.palette': ['配色方案', 'Palette', '配色'],
+  's.theme.lang': ['界面语言', 'Language', '表示言語'],
+  's.glass.glass': ['玻璃质感', 'Glass material', 'ガラス素材'],
+  's.glass.floor': ['可读性保底', 'Legibility floor', '可読性の下限'],
+  's.glass.sys': ['系统回落', 'System fallback', 'システム連動'],
+  's.file.assoc': ['MD 默认打开', 'Default .md app', '.md 既定アプリ'],
+  's.file.current': ['当前默认', 'Current default', '現在の既定'],
+  's.file.export': ['导出 / 打印', 'Export / Print', '書き出し / 印刷'],
+  's.about.ver': ['版本', 'Version', 'バージョン'],
+  's.about.design': ['设计依据', 'Design basis', '設計根拠'],
+  'sys.ok': ['透明效果可用', 'Transparency available', '透明効果:利用可'],
+  'sys.transOff': ['系统已关闭透明效果 → 已回落实色', 'Transparency disabled by system → solid', 'OS の透明効果が無効 → 単色'],
+  'sys.hc': ['高对比模式 → 已回落实色', 'High contrast → solid', 'ハイコントラスト → 単色'],
+  'sys.reading': ['读取中...', 'Reading…', '読み込み中…'],
+  'search.placeholder': ['搜索所有已注册库(≥2 字)', 'Search all registered libraries', '登録済みライブラリを検索'],
+  'search.hits': ['{n} 条命中', '{n} matches', '{n} 件'],
+  'search.none': ['没有匹配', 'No matches', '一致なし'],
+  'search.hint': ['输入关键词开始搜索', 'Type a keyword to search', 'キーワードを入力'],
+  'toast.exported': ['已导出:{p}', 'Exported: {p}', '書き出しました: {p}'],
+  'toast.exportFail': ['导出失败:{e}', 'Export failed: {e}', '書き出しに失敗: {e}'],
+  'toast.fsReloaded': ['磁盘上的文件已更新,已重新加载', 'File changed on disk — reloaded', 'ディスク上の変更を再読込しました'],
+  'toast.fsEditing': ['磁盘文件已变更(编辑中,未覆盖你的草稿)', 'File changed on disk (editing — draft kept)', 'ディスク上で変更されました(編集中のため保持)'],
+  'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
+  'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
+  'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],
+};
+const I18N_TARGETS = [
+  ['#tbFile', 'menu.file', 'title'], ['#tbEdit', 'menu.edit', 'title'], ['#tbView', 'menu.view', 'title'],
+  ['#tbDoc', 'menu.doc', 'title'], ['#btnTheme', 'menu.theme', 'title'], ['#btnSettings', 'menu.settings', 'title'],
+  ['#btnGlass', 'menu.glass', 'title'], ['#btnSide', 'menu.side', 'title'],
+  ['#btnOpenFolder span', 'file.openFolder'], ['#btnOpenFile span', 'file.openFile'],
+  ['#btnExportHtml span', 'file.exportHtml'], ['#btnPrint span', 'file.print'],
+  ['#btnUndo span', 'edit.undo'], ['#btnRedo span', 'edit.redo'], ['#btnEdit span', 'edit.edit'], ['#btnRefresh span', 'edit.refresh'],
+  ['#btnTree span', 'view.tree'], ['#btnToc span', 'view.toc'], ['#btnMap span', 'view.map'], ['#btnFindLib span', 'view.search'],
+  ['#btnFindDoc span', 'view.find'], ['#btnFocus span', 'view.focus'], ['#btnZen span', 'view.zen'],
+  ['#btnSideToggle span', 'view.hideSide'], ['#btnCompact span', 'view.compact'],
+  ['#btnFavDoc span', 'doc.fav'], ['#menuDoc .drawer-title:first-of-type', 'doc.recent'], ['#menuDoc .drawer-title:last-of-type', 'doc.favs'],
+  ['#readerEmpty h2', 'empty.title'], ['#readerEmpty > p:nth-of-type(1)', 'empty.sub'],
+  ['#emptyOpenFolder', 'empty.openFolder'], ['#emptyOpenFile', 'empty.openFile'], ['#readerEmpty .empty-hint', 'empty.hint'],
+  ['#sideEmpty', 'side.emptyHtml', 'html'], ['#sideBottom .side-bottom-head > span:first-child', 'side.recent'],
+  ['#findInput', 'find.placeholder', 'placeholder'], ['#findPrev', 'find.prev', 'title'], ['#findNext', 'find.next', 'title'], ['#findClose', 'find.close', 'title'],
+  ['#settingsPanel .settings-header span', 'settings.title'], ['#glassPanel .settings-header span', 'glass.title'],
+  ['.setpage-nav-item[data-target="sec-read"]', 'nav.read'], ['.setpage-nav-item[data-target="sec-enhance"]', 'nav.enhance'],
+  ['.setpage-nav-item[data-target="sec-theme"]', 'nav.theme'], ['.setpage-nav-item[data-target="sec-glass"]', 'nav.glass'],
+  ['.setpage-nav-item[data-target="sec-file"]', 'nav.file'], ['.setpage-nav-item[data-target="sec-keys"]', 'nav.keys'],
+  ['.setpage-nav-item[data-target="sec-about"]', 'nav.about'],
+  ['#sec-read .set-section-title', 'nav.read', 'text'], ['#sec-enhance .set-section-title', 'nav.enhance', 'text'],
+  ['#sec-theme .set-section-title', 'nav.theme', 'text'], ['#sec-glass .set-section-title', 'nav.glass', 'text'],
+  ['#sec-file .set-section-title', 'nav.file', 'text'], ['#sec-keys .set-section-title', 'nav.keys', 'text'],
+  ['#sec-about .set-section-title', 'nav.about', 'text'],
+  ['#sec-read .set-row-title', ['s.read.preset', 's.read.font', 's.read.measure', 's.read.lineH', 's.read.toolbar', 's.read.side']],
+  ['#sec-enhance .set-row-title', ['s.enh.focus', 's.enh.zen', 's.enh.codeLn']],
+  ['#sec-theme .set-row-title', ['s.theme.theme', 's.theme.palette', 's.theme.lang']],
+  ['#sec-glass .set-row-title', ['s.glass.glass', 's.glass.floor', 's.glass.sys']],
+  ['#sec-file .set-row-title', ['s.file.assoc', 's.file.current', 's.file.export']],
+  ['#sec-about .set-row-title', ['s.about.ver', 's.about.design']],
+];
+function currentLang() {
+  const l = String(S.lang || (navigator.language || 'zh')).slice(0, 2).toLowerCase();
+  return LANGS.includes(l) ? l : 'zh';
+}
+function t(key, vars) {
+  const row = I18N[key];
+  let s = row ? row[Math.max(0, LANGS.indexOf(currentLang()))] : key;
+  if (vars) Object.keys(vars).forEach((k) => { s = s.split('{' + k + '}').join(String(vars[k])); });
+  return s;
+}
+function applyI18n() {
+  const lang = currentLang();
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
+  I18N_TARGETS.forEach(([sel, key, mode]) => {
+    if (Array.isArray(key)) {
+      $qa(sel).forEach((el, i) => { if (key[i]) el.textContent = t(key[i]); });
+      return;
+    }
+    const list = $qa(sel);
+    list.forEach((el) => {
+      if (mode === 'title' || mode === 'placeholder') el.setAttribute(mode, t(key));
+      else if (mode === 'html') el.innerHTML = t(key).split('|').join('<br/>');
+      else if (mode === 'text') {
+        const svg = el.querySelector('svg');
+        el.textContent = '';
+        if (svg) { el.appendChild(svg); el.appendChild(document.createTextNode(' ')); }
+        el.appendChild(document.createTextNode(t(key)));
+      } else el.textContent = t(key);
+    });
+  });
+  const LANG_BTN = { zh: 'langZh', en: 'langEn', ja: 'langJa' };
+  LANGS.forEach((l) => $id(LANG_BTN[l])?.classList.toggle('active', lang === l));
+  const zh = $id('langZh'); if (zh) zh.textContent = '中文';
+}
+function setLang(l) {
+  if (!LANGS.includes(l)) return;
+  S.lang = l; LS.set('sr_lang', l);
+  applyI18n();
+  renderSide();
+  applySystemEffects();
+}
+
+/* ---------------- 脚注(独立于 marked,零依赖) ---------------- */
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function preprocessFootnotes(src) {
+  const lines = String(src).split(/\r?\n/);
+  const defs = [];
+  const body = [];
+  let fence = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; body.push(line); continue; }
+    if (!fence) {
+      const m = /^\[\^([^\]\s]+)\]:[ \t]*(.*)$/.exec(line);
+      if (m) {
+        let text = m[2];
+        let j = i + 1;
+        while (j < lines.length && /^[ \t]{2,}\S/.test(lines[j])) { text += ' ' + lines[j].trim(); j++; }
+        defs.push({ id: m[1], text });
+        i = j - 1;
+        continue;
+      }
+    }
+    body.push(line);
+  }
+  if (!defs.length) return src;
+  const num = new Map(defs.map((d, i) => [d.id, i + 1]));
+  let fence2 = false;
+  const text = body.map((line) => {
+    if (/^\s*(```|~~~)/.test(line)) { fence2 = !fence2; return line; }
+    if (fence2) return line;
+    return line.replace(/\[\^([^\]\s]+)\]/g, (s, id) => (num.has(id)
+      ? `<sup class="fn-ref" id="fnref-${num.get(id)}"><a href="#fn-${num.get(id)}">${num.get(id)}</a></sup>` : s));
+  }).join('\n');
+  const items = defs.map((d, i) => `<li id="fn-${i + 1}">${escHtml(d.text)} <a class="fn-back" href="#fnref-${i + 1}">↩</a></li>`).join('');
+  return `${text}\n\n<section class="footnotes" data-footnotes="1"><ol>${items}</ol></section>\n`;
+}
+
+/* ---------------- 代码块:复制按钮 + 行号 ---------------- */
+function addCodeLineNumbers(code) {
+  const html = code.innerHTML;
+  if (!html.includes('\n')) return;
+  let open = [];
+  const out = [];
+  html.split('\n').forEach((line, idx) => {
+    const prefix = open.map((c) => `<span class="${c}">`).join('');
+    const opens = [...line.matchAll(/<span[^>]*>/g)].map((m) => {
+      const cm = /class="([^"]*)"/.exec(m[0]);
+      return cm ? cm[1] : '';
+    });
+    const closes = (line.match(/<\/span>/g) || []).length;
+    const stack = open.concat(opens);
+    for (let k = 0; k < closes; k++) stack.pop();
+    const suffix = stack.length ? '</span>'.repeat(stack.length) : '';
+    out.push(`<span class="code-line"><span class="ln">${idx + 1}</span>${prefix}${line}${suffix}</span>`);
+    open = stack;
+  });
+  code.innerHTML = out.join('\n');
+}
+function enhanceCodeBlocks(root) {
+  $qa('pre', root).forEach((pre) => {
+    if (pre.parentElement && pre.parentElement.classList.contains('code-wrap')) return;
+    const code = pre.querySelector('code');
+    if (!code) return;
+    const raw = code.innerText;             // 复制用原文,先取(加行号会污染 innerText)
+    if (S.codeLn !== false) addCodeLineNumbers(code);
+    const wrap = document.createElement('div');
+    wrap.className = 'code-wrap';
+    pre.parentNode.insertBefore(wrap, pre);
+    wrap.appendChild(pre);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'code-copy';
+    btn.title = t('code.copy');
+    btn.innerHTML = '<svg class="ic sm"><use href="#i-copy"/></svg>';
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(raw);
+        btn.classList.add('done');
+        btn.innerHTML = '<svg class="ic sm"><use href="#i-check"/></svg>';
+        setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = '<svg class="ic sm"><use href="#i-copy"/></svg>'; }, 1400);
+      } catch { toast(t('toast.copyFail')); }
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+/* ---------------- 文内查找(Ctrl+F) ---------------- */
+function isFindOpen() { const f = $id('findBar'); return !!(f && !f.hidden); }
+function openFind() {
+  const f = $id('findBar'); if (!f) return;
+  f.hidden = false;
+  const inp = $id('findInput');
+  if (inp) { inp.placeholder = t('find.placeholder'); inp.focus(); inp.select(); }
+  if (inp && inp.value.trim()) runFind(inp.value);
+}
+function closeFind() {
+  const f = $id('findBar'); if (f) f.hidden = true;
+  clearFindMarks();
+  S.find.hits = []; S.find.idx = -1; S.find.q = '';
+  const c = $id('findCount'); if (c) c.textContent = '0/0';
+}
+function clearFindMarks() {
+  const body = $q('.markdown-body'); if (!body) return;
+  $qa('mark.srh-hit', body).forEach((mk) => {
+    const parent = mk.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(mk.textContent), mk);
+    parent.normalize();
+  });
+}
+function runFind(q) {
+  clearFindMarks();
+  S.find.hits = []; S.find.idx = -1; S.find.q = q || '';
+  const body = $q('.markdown-body');
+  const count = $id('findCount');
+  if (!body || !q || q.trim() === '') { if (count) count.textContent = '0/0'; return; }
+  const lq = q.toLowerCase();
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const p = n.parentElement;
+      if (!p || p.closest('pre, code, script, style, .footnotes a.fn-back')) return NodeFilter.FILTER_REJECT;
+      return n.nodeValue.toLowerCase().includes(lq) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  const marks = [];
+  nodes.forEach((node) => {
+    const text = node.nodeValue;
+    const lower = text.toLowerCase();
+    const frag = document.createDocumentFragment();
+    let from = 0;
+    let idx = lower.indexOf(lq, from);
+    while (idx !== -1) {
+      if (idx > from) frag.appendChild(document.createTextNode(text.slice(from, idx)));
+      const mk = document.createElement('mark');
+      mk.className = 'srh-hit';
+      mk.textContent = text.slice(idx, idx + q.length);
+      frag.appendChild(mk);
+      marks.push(mk);
+      from = idx + q.length;
+      idx = lower.indexOf(lq, from);
+    }
+    if (from < text.length) frag.appendChild(document.createTextNode(text.slice(from)));
+    if (marks.length && node.parentNode) node.parentNode.replaceChild(frag, node);
+  });
+  S.find.hits = marks;
+  if (marks.length) gotoFind(0);
+  else if (count) count.textContent = '0/0';
+}
+function gotoFind(i) {
+  const hits = S.find.hits;
+  const count = $id('findCount');
+  if (!hits.length) { if (count) count.textContent = '0/0'; return; }
+  const n = ((i % hits.length) + hits.length) % hits.length;
+  hits.forEach((mk, k) => mk.classList.toggle('now', k === n));
+  S.find.idx = n;
+  if (count) count.textContent = (n + 1) + '/' + hits.length;
+  try { hits[n].scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { hits[n].scrollIntoView(); }
+}
+function findStep(d) { gotoFind((S.find.idx < 0 ? 0 : S.find.idx + d)); }
+
+/* ---------------- 库级全文搜索 ---------------- */
+function renderSearch(side) {
+  const box = document.createElement('div');
+  box.className = 'search-box';
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'set-text'; inp.id = 'libSearchInput';
+  inp.placeholder = t('search.placeholder'); inp.autocomplete = 'off';
+  inp.value = S.search.q || '';
+  box.appendChild(inp);
+  side.appendChild(box);
+  const meta = document.createElement('div');
+  meta.className = 'search-meta'; meta.id = 'libSearchMeta';
+  side.appendChild(meta);
+  const list = document.createElement('div');
+  list.id = 'libSearchList';
+  side.appendChild(list);
+  let timer = 0;
+  inp.addEventListener('input', () => {
+    S.search.q = inp.value;
+    clearTimeout(timer);
+    timer = setTimeout(runLibrarySearch, 280);
+  });
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { clearTimeout(timer); runLibrarySearch(); }
+  });
+  renderSearchResults();
+  setTimeout(() => { try { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); } catch {} }, 30);
+}
+function renderSearchResults() {
+  const meta = $id('libSearchMeta');
+  const list = $id('libSearchList');
+  if (!list) return;
+  list.innerHTML = '';
+  const hits = S.search.hits || [];
+  if (meta) meta.textContent = S.search.q ? (hits.length ? t('search.hits', { n: hits.length }) : t('search.none')) : t('search.hint');
+  hits.forEach((h) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'search-hit';
+    const name = String(h.path || '').split(/[\\/]/).pop();
+    const nm = document.createElement('div');
+    nm.className = 'sh-name';
+    nm.appendChild(document.createTextNode(name));
+    const ln = document.createElement('span');
+    ln.className = 'sh-line'; ln.textContent = 'L' + (h.line || 0);
+    nm.appendChild(ln);
+    const p = document.createElement('div');
+    p.className = 'sh-path'; p.textContent = h.rel || h.path;
+    const sn = document.createElement('div');
+    sn.className = 'sh-snippet'; sn.textContent = (h.text || '').trim();
+    b.appendChild(nm); b.appendChild(p); b.appendChild(sn);
+    b.addEventListener('click', () => jumpToHit(h));
+    list.appendChild(b);
+  });
+}
+async function runLibrarySearch() {
+  const q = String(S.search.q || '').trim();
+  const meta = $id('libSearchMeta');
+  if (!invoke) return;
+  if (!q) { S.search.hits = []; renderSearchResults(); return; }
+  if (meta) meta.textContent = t('sys.reading');
+  try {
+    const hits = await invoke('search_library', { query: q, limit: 200 });
+    S.search.hits = Array.isArray(hits) ? hits : [];
+  } catch (e) {
+    S.search.hits = [];
+    if (meta) meta.textContent = String((e && e.message) || e);
+    return;
+  }
+  if (String(S.search.q).trim() !== q) return;   // 过期结果丢弃
+  renderSearchResults();
+}
+async function jumpToHit(h) {
+  await openExternal(h.path);
+  setTimeout(() => {
+    openFind();
+    const inp = $id('findInput');
+    if (inp) { inp.value = S.search.q; runFind(S.search.q); }
+  }, 420);
+}
+
+/* ---------------- 专注 / 无干扰 ---------------- */
+function setFocusMode(on) {
+  S.focusMode = !!on;
+  LS.set('sr_focus', S.focusMode);
+  applyEnhance();
+}
+function setZenMode(on) {
+  S.zen = !!on;
+  applyEnhance();
+  if (S.zen) toast(t('toast.watchOn') && 'F11 / Esc 退出无干扰');
+}
+function bindFocusTracking() {
+  const reader = $id('reader');
+  if (!reader) return;
+  reader.addEventListener('mousemove', (e) => {
+    if (!S.focusMode) return;
+    const el = e.target instanceof Element ? e.target.closest('.markdown-body > *') : null;
+    $qa('.markdown-body > .focus-now').forEach((n) => { if (n !== el) n.classList.remove('focus-now'); });
+    if (el && !el.classList.contains('focus-now')) el.classList.add('focus-now');
+  });
+}
+
+/* ---------------- 导出 HTML / 打印 ---------------- */
+async function readAssetText(url) {
+  try { const r = await fetch(url); return r.ok ? await r.text() : ''; } catch { return ''; }
+}
+function assetUrlToLocalPath(src) {
+  const m = /^(?:https?:\/\/asset\.localhost\/|asset:\/\/localhost\/)(.*)$/i.exec(src || '');
+  if (!m) return null;
+  let p = m[1];
+  try { p = decodeURIComponent(p); } catch { /* 原样 */ }
+  if (/^\/[A-Za-z]:/.test(p)) p = p.slice(1);
+  return p.replace(/\//g, '\\');
+}
+function relativize(fromDir, abs) {
+  const a = fromDir.replace(/[\\/]+$/, '').toLowerCase();
+  const b = abs.toLowerCase();
+  if (b.startsWith(a + '\\')) return abs.slice(fromDir.replace(/[\\/]+$/, '').length + 1).replace(/\\/g, '/');
+  return null;
+}
+async function buildStandaloneHtml() {
+  const cur = getTab(S.cur);
+  if (!cur) return null;
+  const inner = $id('readerInner');
+  const clone = inner.cloneNode(true);
+  $qa('mark.srh-hit', clone).forEach((mk) => { mk.parentNode.replaceChild(document.createTextNode(mk.textContent), mk); });
+  $qa('.code-copy', clone).forEach((b) => b.remove());
+  $qa('.code-line .ln', clone).forEach((n) => n.remove());
+  const docDir = String(cur.abs || '').replace(/[\\/][^\\/]*$/, '');
+  $qa('img,video,source', clone).forEach((el) => {
+    const src = el.getAttribute('src') || '';
+    const p = assetUrlToLocalPath(src);
+    if (!p) return;
+    const rel = relativize(docDir, p);
+    el.setAttribute('src', rel || 'file:///' + p.replace(/\\/g, '/'));
+  });
+  const css = [await readAssetText('app.css'), await readAssetText('vendor/katex.min.css'), await readAssetText('vendor/hljs-atom-one-dark.min.css')].join('\n');
+  const fallback = 'html,body{background:#1d2021;color:#ebdbb2;font:16px/1.7 system-ui,"Microsoft YaHei UI",sans-serif;margin:0}main{max-width:34em;margin:0 auto;padding:40px 24px}pre{background:#282828;padding:12px;border-radius:6px;overflow:auto}table{border-collapse:collapse}th,td{border:1px solid #3c3836;padding:6px 12px}img{max-width:100%}';
+  const theme = currentLang() && document.body.dataset.theme === 'light' ? 'light' : 'dark';
+  return `<!DOCTYPE html>
+<html lang="${document.documentElement.lang}" data-theme="${theme}" data-palette="${document.documentElement.dataset.palette || 'gruvbox'}">
+<head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>${escHtml((cur.abs || '').split(/[\\/]/).pop() || 'TMMD')}</title>
+<style>${css || fallback}
+body{background:transparent}main.reader-inner{max-width:var(--measure,34em)}
+@media print{@page{margin:18mm}body{background:#fff;color:#111}}
+</style></head>
+<body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
+}
+async function exportCurrentHtml() {
+  const cur = getTab(S.cur);
+  if (!cur) { toast(t('empty.title')); return null; }
+  const html = await buildStandaloneHtml();
+  if (!html) return null;
+  const out = String(cur.abs).replace(/\.(md|markdown)$/i, '') + '.export.html';
+  try {
+    const p = await invoke('export_file', { path: out, content: html });
+    toast(t('toast.exported', { p: p || out }));
+    return p || out;
+  } catch (e) {
+    toast(t('toast.exportFail', { e: (e && e.message) || e }));
+    return null;
+  }
+}
+async function printCurrent() {
+  const p = await exportCurrentHtml();
+  if (!p) return;
+  try { await invoke('open_any', { path: p }); } catch (e) { toast(String((e && e.message) || e)); }
+}
+
+/* ---------------- 系统透明效果回落 ---------------- */
+async function applySystemEffects() {
+  if (!invoke) return;
+  let st = null;
+  try { st = await invoke('system_effects_state'); } catch { return; }
+  const disable = !!st && (st.transparency_enabled === false || st.high_contrast === true);
+  S.sysNoEffects = disable;
+  document.body.classList.toggle('no-effects', disable);
+  const txt = disable ? (st.high_contrast ? t('sys.hc') : t('sys.transOff')) : t('sys.ok');
+  [$id('glassSysState'), $id('glassSysStateSet')].forEach((el) => { if (el) el.textContent = txt; });
+  applyGlass(false);
+  applyGlassMaterial(true);
+}
+
+/* ---------------- 外部文件变更监听 ---------------- */
+async function syncWatch() {
+  if (!invoke) return;
+  const cur = getTab(S.cur);
+  try { await invoke('watch_file', { path: cur ? cur.abs : null }); } catch { /* 后端未支持则静默 */ }
+}
+async function onFsChanged(p) {
+  const tab = getTab(p);
+  if (!tab) return;
+  if (Date.now() - (tab.lastFs || 0) < 800) return;
+  tab.lastFs = Date.now();
+  if (S.cur === p && S.editing) { toast(t('toast.fsEditing')); return; }
+  if (S.cur === p) { await refreshCurrent(); toast(t('toast.fsReloaded')); }
+  else toast(t('toast.fsReloaded'));
+}
+
+/* ---------------- v1.7 绑定 ---------------- */
+function initV17() {
+  applyI18n();
+  applyEnhance();
+  bindFocusTracking();
+  const on = (sel, ev, fn) => { const el = $id(sel); if (el) el.addEventListener(ev, fn); };
+  // 视图 / 模式
+  on('btnFindLib', 'click', () => setView('search'));
+  on('btnFindDoc', 'click', () => openFind());
+  on('btnFocus', 'click', () => setFocusMode(!S.focusMode));
+  on('btnZen', 'click', () => setZenMode(!S.zen));
+  on('setFocusOn', 'click', () => setFocusMode(true));
+  on('setFocusOff', 'click', () => setFocusMode(false));
+  on('setZenOn', 'click', () => setZenMode(true));
+  on('setZenOff', 'click', () => setZenMode(false));
+  on('setCodeLnOn', 'click', () => { S.codeLn = true; LS.set('sr_code_ln', true); applyEnhance(); if (S.cur) refreshCurrent(); });
+  on('setCodeLnOff', 'click', () => { S.codeLn = false; LS.set('sr_code_ln', false); applyEnhance(); if (S.cur) refreshCurrent(); });
+  // 排版
+  on('setBodySans', 'click', () => { S.bodyFont = 'sans'; LS.set('sr_body_font', 'sans'); applyTypography(); });
+  on('setBodyMono', 'click', () => { S.bodyFont = 'mono'; LS.set('sr_body_font', 'mono'); applyTypography(); });
+  on('setMeasure', 'input', (e) => { S.measure = Number(e.target.value); LS.set('sr_measure', S.measure); applyTypography(); });
+  on('setLineH', 'input', (e) => { S.lineH = Number(e.target.value); LS.set('sr_line_h', S.lineH); applyTypography(); });
+  // 语言
+  on('langZh', 'click', () => setLang('zh'));
+  on('langEn', 'click', () => setLang('en'));
+  on('langJa', 'click', () => setLang('ja'));
+  // 导出
+  on('btnExportHtml', 'click', () => { closeDrawersSafe(); exportCurrentHtml(); });
+  on('setExportHtml', 'click', () => exportCurrentHtml());
+  on('btnPrint', 'click', () => { closeDrawersSafe(); printCurrent(); });
+  on('setPrintDoc', 'click', () => printCurrent());
+  // 查找栏
+  const fi = $id('findInput');
+  if (fi) {
+    fi.addEventListener('input', () => runFind(fi.value));
+    fi.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); findStep(e.shiftKey ? -1 : 1); }
+    });
+  }
+  on('findNext', 'click', () => findStep(1));
+  on('findPrev', 'click', () => findStep(-1));
+  on('findClose', 'click', () => closeFind());
+  // 全局快捷键:只在非编辑态生效(Ctrl+F/F11/F3/Esc)
+  document.addEventListener('keydown', (e) => {
+    const k = (e.key || '').toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'f' && !e.shiftKey) {
+      if (S.editing) return; // 编辑态留给原生
+      e.preventDefault(); openFind(); return;
+    }
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && k === 'f') { e.preventDefault(); setFocusMode(!S.focusMode); return; }
+    if (k === 'f11') { e.preventDefault(); setZenMode(!S.zen); return; }
+    if (k === 'f3') { e.preventDefault(); if (!isFindOpen()) openFind(); else findStep(e.shiftKey ? -1 : 1); return; }
+    if (k === 'escape') {
+      if (isFindOpen()) { closeFind(); return; }
+      if (S.zen) { setZenMode(false); return; }
+    }
+  });
+  // 外部变更监听(后端支持则生效)
+  try {
+    if (listen) listen('fs-changed', (e) => { const p = e && e.payload; if (typeof p === 'string') onFsChanged(p); });
+  } catch { /* 非 Tauri 环境 */ }
+  syncWatch();
+  applySystemEffects();
+  // 标签切走/切回时重挂监听目标
+  const _renderTabs = renderTabs;
+  renderTabs = function () { const r = _renderTabs.apply(this, arguments); try { syncWatch(); } catch {} return r; };
+}
+function closeDrawersSafe() { try { closeDrawers(); } catch { /* 忽略 */ } }

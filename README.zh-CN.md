@@ -73,13 +73,12 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 
 ## 状态与进度（进度主文件 · 2026-08-08 补节）
 
-> 追踪规则：`skill://sai-long-project` + `skill://sai-closeout`；长流水见 `progress.md`；项目本卡 vps `~/project-portfolio/projects.md`。
+> 追踪规则：`skill://sai-long-project` + `skill://sai-closeout`；长流水见 `docs/CHANGELOG.md`；项目本卡 vps `~/project-portfolio/projects.md`。
 
-- **状态**：暂时完结（2026-08-06 暂收口）
-- **最新**：v1.2.1 已发（拖动/性能已修·GH Release·主页开源已上·reviewer 8/8）
-- **残差**：①第一屏黑/编辑遮挡 ②版本号 ③透明度 ④背景色 go ⑤工具栏两模式 ⑥覆盖+版号自动
-- **唯一 next**：等用户反馈后复核残差
-- **双仓**：GitHub（SSOT）+ Gitea（备份）双端同 HEAD（核 `git ls-remote`）
+- **状态**:活跃(v1.7.0 收官 2026-10-24 — 竞品差距分析路线图全部落地:排版/层级/动效换血、材质三选(直透/Acrylic/Mica)+系统回落、文内查找、库级全文搜索、脚注、代码块复制与行号、专注/无干扰、导出 HTML+打印、窗口几何记忆、界面语言 zh/en/ja)
+- **依据**:`docs/2026-10-24-竞品与差距分析.md` · 变更记录:`docs/CHANGELOG.md`
+- **残差**:1第一屏黑 2整窗玻璃 W0→W4(Mica 打底 + Acrylic 铬层) 3导出图片内联 4库搜索排序/正则 5自动更新
+- **双仓**:GitHub(SSOT)+ Gitea(备份)双端同 HEAD(核 `git ls-remote`)
 
 ---
 

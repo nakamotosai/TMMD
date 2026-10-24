@@ -1,8 +1,8 @@
-// r12d-full.mjs — R12d 发版前全量验收：67 断言 CDP 可重跑脚本。
+// r12d-full.mjs — 发版前全量验收:81 断言 CDP 可重跑脚本(A01–A67 旧 UI 回归 + V01–V14 v1.7 新能力)。
 // 来源：分身会话 ses_f5129617cffedaVeqTVugDajH6 的 transcript 经 session_read /
 //   session_search 仅返回工具名摘要、未暴露脚本原文（见 e2e/README.md），故本文件
-//   67 断言全部按 feature_list.json F315–F318 how 字段＋R12d 收口报告＋progress.md
-//   R12d 初判修正留痕补写，无一行原文还原。
+//   81 断言(原始 67 条按 feature_list.json F315–F318 how 字段+R12d 收口报告+R12d 初判修正留痕补写,
+//   无一行原文还原;v1.7 追加 V01–V14)。
 // 手法：复用 scripts/cdp-eval.mjs 的 WS 直连（Node22 原生 WebSocket，零第三方包）。
 // 用法：先起调试实例（见 README 前置），再跑 node e2e/r12d-full.mjs [--port=9223]
 // 安全：开头只检查 CDP 连通性，不通则 exit 2，不自动起实例；用户数据 23 键快照、
@@ -80,6 +80,7 @@ function mkTmp(name, content) {
 const fA = mkTmp('a', '# A\n\nhello a\n');
 const fB = mkTmp('b', '# B\n\nhello b\n');
 const fC = mkTmp('c', '# C\n\nhello c\n');
+const fD = mkTmp('d', '# D\n\npara with hello word and hello again\n\n```js\nconst x = 1;\nconsole.log(x);\n```\n\nfoot[^1]\n\n[^1]: a note\n');
 const js = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 // ---------- 4) 独立计分跑道 ----------
@@ -131,7 +132,8 @@ await T('A13', '侧栏 宽拖 260→300', async () => (await val(`(() => { apply
 await T('A14', '侧栏 宽拖钳位 480（超限 clamp）', async () => (await val(`(() => { applySideWidth(Math.min(480, Math.max(160, 900))); return S.sideW; })()`)) === 480);
 // 真 id 是 #side（index.html L242），#sidebar 不存在；applySideCompact(c) 必须带参
 // （无参会把 S.sideCompact 重置为 false，app.js L1053-1054）；精简宽 190（L1058）
-await T('A15', '侧栏 精简 190 恢复（开→关回 S.sideW）', async () => (await val(`(() => { applySideWidth(260); applySideCompact(true); const a = document.getElementById('side').getBoundingClientRect().width; applySideCompact(false); const b = document.getElementById('side').getBoundingClientRect().width; return a < 200 && b >= 260; })()`)) === true);
+// 前置:侧栏若被窄窗自动折起,宽度恒 0 会让本测失真(测的是精简档,不是折叠态)→ 先展开
+await T('A15', '侧栏 精简 190 恢复(开→关回 S.sideW)', async () => (await val(`(() => { applySideCollapsed(false); applySideWidth(260); applySideCompact(true); const a = document.getElementById('side').getBoundingClientRect().width; applySideCompact(false); const b = document.getElementById('side').getBoundingClientRect().width; return a < 200 && b >= 260; })()`)) === true);
 // ===== 空态 A16–A17 =====
 // 空态按钮只在零标签时渲染（有页时 readerInner 被正文替换，renderEmpty L494）；
 // 有页则验空态正确隐藏（S.cur 非空），两分支都是空态语义的真实断言
@@ -145,9 +147,9 @@ await T('A20', '设置 单 Esc 双向全关', async () => (await val(`(() => { s
 await T('A21', '设置 整页几何：全宽＋顶 38', async () => (await val(`(() => { showPanel('settings'); return document.getElementById('settingsPanel').getBoundingClientRect().width; })()`)) !== undefined && near(await val(`(() => document.getElementById('settingsPanel').getBoundingClientRect().width)()`), await val(`window.innerWidth`), 2));
 await T('A22', '设置 导航宽 208', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-nav').getBoundingClientRect().width; })()`), 208, 4));
 await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-search').getBoundingClientRect().height; })()`), 74, 6));
-// 真类名 .set-row/.set-section（index.html L132-197）；12 行 6 区；过滤走 #setSearch→filterSettings（app.js L1248）
-await T('A24', '设置 过滤：有结果行（玻璃命中1行藏语义）', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
-await T('A25', '设置 清空还原 12 行 6 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '12/6');
+// 真类名 .set-row/.set-section;v1.7 起 26 行 7 区(新增阅读增强/文件与导出,行内加排版与语言控件)
+await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
+await T('A25', '设置 清空还原 26 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '26/7');
 await T('A26', '设置 开设置藏底文（visibility:hidden 语义，CSS 设计如此）', async () => (await val(`(() => { showPanel('settings'); const v = getComputedStyle(document.getElementById('layout')).visibility; return v; })()`)) === 'hidden');
 // 面板底色 var(--bg)＝#1d2021（app.css L9/L289-292）
 await T('A27', '设置 面板不透明（底色非透）', async () => (await val(`(() => { showPanel('settings'); return getComputedStyle(document.getElementById('settingsPanel')).backgroundColor; })()`)).includes('29, 32, 33'));
@@ -221,11 +223,11 @@ await T('A61', '关联 点击开系统页指引（toast＋无错）', async () =
 // onResize() 不存在；真函数 autoFoldSide() 读 window.innerWidth（app.js L1067），
 // resize 监听 120ms 防抖后调 layoutToolbar＋autoFoldSide（L1499-1501）；本测用可配
 // innerWidth 影子值驱动同一函数（同一判定代码路径），跑完删影子属性还原
-await T('A62', '窄窗 687 自折＋toast', async () => (await val(`(() => { Object.defineProperty(window, 'innerWidth', { configurable: true, value: 687 }); autoFoldSide(); return S.sideCollapsed === true; })()`)) === true);
+await T('A62', '窄窗 600 自折+toast', async () => (await val(`(() => { Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 }); autoFoldSide(); return S.sideCollapsed === true; })()`)) === true);
 // 真锁名是顶层 let sideManualLock（app.js L1065），S.sideLock 不存在
 await T('A63', '窄窗 手动锁：手动展后不清 auto 误报恢复 toast', async () => (await val(`(() => { toggleSide(); return sideManualLock === true || S.sideCollapsed === false; })()`)) === true);
 // 真自动回路：解锁→窄窗重折（立 auto 旗）→回宽自展＋恢复 toast
-await T('A64', '窄窗 回宽归位自展＋恢复 toast（纯自动回路）', async () => (await val(`(() => { sideManualLock = false; Object.defineProperty(window, 'innerWidth', { configurable: true, value: 687 }); autoFoldSide(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 987 }); autoFoldSide(); const ok = S.sideCollapsed === false; delete window.innerWidth; return ok; })()`)) === true);
+await T('A64', '窄窗 回宽归位自展+恢复 toast(纯自动回路)', async () => (await val(`(() => { sideManualLock = false; Object.defineProperty(window, 'innerWidth', { configurable: true, value: 600 }); autoFoldSide(); Object.defineProperty(window, 'innerWidth', { configurable: true, value: 987 }); autoFoldSide(); const ok = S.sideCollapsed === false; delete window.innerWidth; return ok; })()`)) === true);
 // ===== 溢出 A65 =====
 // tbFits 量的是真实 layout（clientWidth，app.js L898-909），影子 innerWidth 骗不了它，
 // 无物理改窗尺寸就验不出搬移动作；此处不断言搬移，只验溢出容器与重排入口就绪
@@ -234,7 +236,32 @@ await T('A65', '溢出容器 #docMore 就绪（重排入口无错）', async () 
 // ===== 引导 A66–A67 =====
 // TB_GUIDE_TEXT 不存在；真原文 toast（app.js L1531）＋一次性旗 sr_tb_guide_seen（L1529-1530）
 await T('A66', '引导 toast 原文可读', async () => (await val(`(() => { const ts = [...document.querySelectorAll('.toast')].map((t) => t.textContent).join('|'); return ts.includes('纯图标模式') || localStorage.getItem('sr_tb_guide_seen') === '1' || 'no-guide-evidence'; })()`)) === true);
-await T('A67', '引导 旗一次性（sr_tb_guide_seen 落盘不再弹）', async () => (await val(`(() => localStorage.getItem('sr_tb_guide_seen') === '1')()`)) === true);
+await T('A67', '引导 旗一次性(sr_tb_guide_seen 落盘不再弹)', async () => (await val(`(() => localStorage.getItem('sr_tb_guide_seen') === '1')()`)) === true);
+// ===== v1.7 阅读增强 V01–V14 =====
+// 场景页:含代码块与脚注的 tmp 文件(绝不动用户真实文档)
+await T('V01', 'v1.7 预览页可开(代码块+脚注样本)', async () => (await val(`(async () => { if (S.editing && S.editDirty) await saveEdit(); await openExternal('${js(fD)}'); for (let i = 0; i < 50; i++) { if (getTab('${js(fD)}') && document.querySelector('.markdown-body')) break; await new Promise((r) => setTimeout(r, 100)); } return !!getTab('${js(fD)}') && !!document.querySelector('.markdown-body'); })()`, 30000)) === true);
+// 脚注:零依赖前置处理产 sup 角标 + 文末脚注区
+await T('V02', '脚注 渲染角标+脚注区', async () => (await val(`(() => { const sup = document.querySelector('.markdown-body sup.fn-ref'); const sec = document.querySelector('.markdown-body section.footnotes[data-footnotes="1"]'); return !!sup && !!sec && sec.textContent.includes('a note'); })()`)) === true);
+// 代码块:复制按钮 + 行号列(两行代码 → 两个 .code-line)
+await T('V03', '代码块 复制按钮+行号', async () => (await val(`(() => { const wrap = document.querySelector('.markdown-body .code-wrap'); const btn = wrap && wrap.querySelector('.code-copy'); const ln = document.querySelectorAll('.markdown-body .code-line .ln').length; return !!btn && ln >= 2; })()`)) === true);
+// 行号可关(S.codeLn=false → body.no-code-ln → 行号 display:none)
+await T('V04', '代码块 行号可关(no-code-ln)', async () => (await val(`(() => { S.codeLn = false; applyEnhance(); const ln = document.querySelector('.markdown-body .code-line .ln'); const hidden = !ln || getComputedStyle(ln).display === 'none'; S.codeLn = true; applyEnhance(); return hidden; })()`)) === true);
+// 文内查找:开→命中计数→高亮→关闭清场
+await T('V05', '文内查找 打开+命中计数', async () => (await val(`(() => { openFind(); const inp = document.getElementById('findInput'); inp.value = 'hello'; runFind('hello'); return !document.getElementById('findBar').hidden && S.find.hits.length >= 2 && /^1\\/\\d+$/.test(document.getElementById('findCount').textContent); })()`)) === true);
+await T('V06', '文内查找 当前命中加 now 标记', async () => (await val(`(() => { findStep(1); return document.querySelectorAll('mark.srh-hit.now').length <= 1 && S.find.idx === 1; })()`)) === true);
+await T('V07', '文内查找 关闭清理高亮', async () => (await val(`(() => { closeFind(); return document.querySelectorAll('mark.srh-hit').length === 0 && document.getElementById('findBar').hidden === true; })()`)) === true);
+// 库级搜索:侧栏视图 + 输入框就绪
+await T('V08', '库搜索 侧栏视图与输入框就绪', async () => (await val(`(() => { setView('search'); const inp = document.getElementById('libSearchInput'); const ok = !!inp && !!document.getElementById('libSearchList'); setView('tree'); return ok; })()`)) === true);
+// 排版:行宽/行高落 CSS 变量(数值只进变量,不动结构)
+await T('V09', '排版 行宽行高写变量', async () => (await val(`(() => { const m0 = S.measure, l0 = S.lineH; S.measure = 40; S.lineH = 1.9; applyTypography(); const m = getComputedStyle(document.documentElement).getPropertyValue('--measure').trim(); const l = getComputedStyle(document.documentElement).getPropertyValue('--line-h').trim(); S.measure = m0; S.lineH = l0; applyTypography(); return m === '40em' && l === '1.9'; })()`)) === true);
+await T('V10', '排版 正文字体可切等宽', async () => (await val(`(() => { const f0 = S.bodyFont; S.bodyFont = 'mono'; applyTypography(); const on = document.body.classList.contains('body-mono'); S.bodyFont = f0 || 'sans'; applyTypography(); return on === true && document.body.classList.contains('body-mono') === false; })()`)) === true);
+// 材质三选(含 mica)与文字透明度下限
+await T('V11', '材质 三选含 mica', async () => (await val(`(() => { const opts = [...document.querySelectorAll('#setGlassMaterial option')].map((o) => o.value); return opts.includes('none') && opts.includes('acrylic') && opts.includes('mica'); })()`)) === true);
+await T('V12', '玻璃 文字透明度下限 70%', async () => (await val(`(() => { const t0 = S.glass.text; S.glass.text = 10; applyGlass(false); const v = Number(getComputedStyle(document.documentElement).getPropertyValue('--text-opa')); S.glass.text = t0; applyGlass(false); return v >= 0.7; })()`)) === true);
+// i18n:切英文→静态界面换语→切回中文
+await T('V13', 'i18n 切英文再切回', async () => { await val(`(() => { setLang('en'); return true; })()`); const en = await val(`(() => document.querySelector('#btnOpenFolder span').textContent)()`); await val(`(() => { setLang('zh'); return true; })()`); const zh = await val(`(() => document.querySelector('#btnOpenFolder span').textContent)()`); return en === 'Open folder' && zh === '打开文件夹'; });
+// 模式:专注 / 无干扰(开→class 生效→关)
+await T('V14', '模式 专注与无干扰开关', async () => (await val(`(() => { setFocusMode(true); setZenMode(true); const on = document.body.classList.contains('focus-mode') && document.body.classList.contains('immersive'); setFocusMode(false); setZenMode(false); return on && !document.body.classList.contains('immersive'); })()`)) === true);
 } finally {
 // ---------- 5) 恢复用户数据＋清污染 ----------
 // 真函数 applySideWidth（app.js L967）；setSideW 不存在（前轮 ReferenceError 根因）；
@@ -248,5 +275,5 @@ ws.close();
 
 // ---------- 6) 计分＋exit code ----------
 const total = pass + fails.length;
-console.log(`\n==== R12d 67断言：${pass}/${total} 通过，失败 ${fails.length} ====`);
+console.log(`\n==== TMMD e2e:${pass}/${total} 通过,失败 ${fails.length} ====`);
 if (fails.length) { console.log('失败清单：' + fails.join(', ')); process.exit(1); }

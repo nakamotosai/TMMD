@@ -451,3 +451,162 @@ body.settings-open #layout { visibility: hidden; }
   border: 1px solid var(--border); border-radius: var(--radius);
 }
 .set-text:focus { outline: none; border-color: var(--accent); }
+
+/* ============================================================================
+ * v1.7.0 · 层级 / 排版 / 动效 / 搜索 / 专注
+ * 设计依据:docs/2026-10-24-竞品与差距分析.md
+ *  - 层级抄 WinUI elevation(Card 8 / Flyout 32 / Window 128),描边统一 1px
+ *  - 圆角收敛到 4/6/8/12/16 五档
+ *  - 中文正文默认无衬线,行宽 34em(≈34 全角字),行高可调
+ *  - 代码块/图片给不透明底板,避免落在玻璃上掉对比度
+ *  - 动效统一 120/160/220ms + cubic-bezier(.2,0,0,1);尊重 prefers-reduced-motion
+ * ==========================================================================*/
+:root {
+  --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px;
+  --elev-card: 0 1px 2px rgba(0, 0, 0, .28);
+  --elev-flyout: 0 10px 40px rgba(0, 0, 0, .42);
+  --dur-fast: 120ms; --dur: 160ms; --dur-slow: 220ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  --measure: 34em;          /* 正文行宽:34em ≈ 34 个全角字(中文规范 32–38) */
+  --line-h: 1.7;             /* 正文行高(中文建议 1.6–1.75) */
+  --body-font: var(--sans);  /* 正文家族:无衬线;可切等宽 */
+  --scrim-min: 60;           /* 玻璃通透度下限(%,写在设置页提示与面板钳位) */
+  /* v1.7 排版换血:旧的 --sans 首选项是 Maple Mono(等宽),导致中文正文全等宽。
+   * 现在 sans 走系统无衬线(Windows 首选 Segoe UI Variable → 雅黑),等宽只留给代码与 body-mono 档。 */
+  --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 1ms; --dur: 1ms; --dur-slow: 1ms; }
+  .markdown-body { animation: none !important; }
+}
+
+/* —— 排版:行宽 / 行高 / 正文家族 —— */
+.reader { position: relative; }
+.reader-inner { max-width: var(--measure); }
+.markdown-body { font-family: var(--body-font); line-height: var(--line-h); }
+.markdown-body h1 { letter-spacing: -.011em; }
+.markdown-body h2, .markdown-body h3, .markdown-body h4 { letter-spacing: -.006em; }
+.markdown-body p { margin: .85em 0; }
+body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
+
+/* 代码块:底板强制不透明(α≈1),避免落在半透明层上掉对比度 */
+.markdown-body pre { background-color: var(--code-bg); background-image: none; }
+.markdown-body pre code { background: transparent; }
+/* 图片/媒体:1px 描边 + 不透明底板,防边缘与玻璃糊成一片 */
+.markdown-body img, .markdown-body video { border: 1px solid var(--border); background: var(--bg2); }
+
+/* —— 层级与圆角收敛 —— */
+.drawer, .ctxmenu { border-radius: var(--r-md); box-shadow: var(--elev-flyout); }
+.settings-panel { border-radius: var(--r-lg); box-shadow: var(--elev-flyout); }
+.tab, .tb-btn.active, .menu-item, .tree-item, .side-recent, .drawer-item { border-radius: var(--r-sm); }
+.tab { border-radius: var(--r-sm); }
+
+/* —— 动效统一(短、稳、只做反馈) —— */
+.tab, .tb-btn, .menu-item, .tree-item, .theme-btn, .side-recent, .drawer-item, .setpage-nav-item, .win-btn {
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+html { transition: background-color var(--dur-slow) var(--ease); }
+.markdown-body { animation: sr-doc-in var(--dur-slow) var(--ease); }
+@keyframes sr-doc-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.toast { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+/* 玻璃开关的"结霜"过渡:底色变量变化时按 220ms 缓动 */
+.layout, .side, .topbar { transition: background-color var(--dur-slow) var(--ease); }
+body.no-effects { --glass-base: 100%; --glass-chrome: 100%; --glass-reader: 100%; --glass-pop: 100%; }
+
+/* —— 空态:强调色文字必须有渣底,不许直接压玻璃 —— */
+.empty {
+  max-width: 520px; margin: 13vh auto 0; padding: 34px 28px 30px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-xl);
+  box-shadow: var(--elev-card);
+}
+.empty h2 { color: var(--accent); margin: 0 0 6px; }
+
+/* —— 设置页卡片化 —— */
+/* 宽窗下把内容列居中(1040px),避免卡片左贴、右侧大片空白 */
+.setpage-search { max-width: 1040px; width: 100%; margin: 0 auto; }
+.setpage-scroll { max-width: 1040px; width: 100%; margin: 0 auto; padding: 10px 22px 48px; }
+.set-section {
+  max-width: 100%; margin: 0 0 14px; padding: 4px 16px 12px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-lg);
+  box-shadow: var(--elev-card);
+}
+.set-section-title {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 0 6px; font-size: 13px; font-weight: 600; color: var(--fg);
+  letter-spacing: .02em;
+}
+.set-section-title .ic { width: 15px; height: 15px; color: var(--accent); }
+.set-row { padding: 9px 0; border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.set-row:first-of-type { border-top: none; }
+.set-row-ctl input[type=range] { max-width: 190px; }
+
+/* —— 代码块:行号 + 复制按钮 —— */
+.code-wrap { position: relative; }
+.code-wrap > pre { margin: 0; padding-right: 44px; }
+.code-copy {
+  position: absolute; top: 8px; right: 8px; z-index: 2;
+  width: 26px; height: 24px; padding: 0; display: flex; align-items: center; justify-content: center;
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r-xs);
+  color: var(--fg-dim); opacity: 0; transition: opacity var(--dur) var(--ease), color var(--dur-fast) var(--ease);
+}
+.code-wrap:hover .code-copy, .code-copy.done { opacity: 1; }
+.code-copy.done { color: var(--green); border-color: var(--green); }
+.code-line { display: block; }
+.code-line .ln {
+  display: inline-block; width: 2.2em; margin-right: 12px; text-align: right;
+  color: var(--fg-faint); user-select: none; -webkit-user-select: none;
+}
+body.no-code-ln .code-line .ln { display: none; }
+
+/* —— 脚注 —— */
+sup.fn-ref { font-size: .72em; line-height: 0; }
+sup.fn-ref a { text-decoration: none; color: var(--accent2); padding: 0 2px; }
+.footnotes { margin-top: 2.6em; padding-top: 10px; border-top: 1px solid var(--border); font-size: .92em; color: var(--fg-dim); }
+.footnotes ol { padding-left: 1.5em; }
+.footnotes li:target, .footnotes li.fn-hit { color: var(--fg); }
+
+/* —— 文内搜索 —— */
+/* 注意:.reader 是滚动容器,absolute 会跟着内容滚走;这里用 fixed 钉在窗口右上,
+ * 顶栏高约 40px,故 top:48px;无干扰模式顶栏收起,改 14px。 */
+.findbar {
+  position: fixed; top: 48px; right: 18px; z-index: 70;
+  display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--elev-flyout);
+}
+body.immersive .findbar { top: 14px; }
+body.settings-open .findbar { display: none; }
+.findbar .set-text { width: 190px; flex: 0 0 auto; }
+.findbar .find-count { font-size: 12px; color: var(--fg-faint); min-width: 44px; text-align: center; }
+.findbar .tb-btn { width: 26px; height: 24px; padding: 0; justify-content: center; }
+mark.srh-hit { background: color-mix(in srgb, var(--accent2) 42%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+mark.srh-hit.now { background: var(--accent); color: #1d2021; }
+
+/* —— 侧栏:全文搜索视图 —— */
+.search-box { padding: 8px 10px 6px; }
+.search-meta { padding: 4px 10px 8px; font-size: 11px; color: var(--fg-faint); }
+.search-hit {
+  display: block; width: 100%; text-align: left; padding: 6px 10px; margin: 0 0 2px;
+  background: transparent; border: none; border-radius: var(--r-sm); cursor: pointer;
+}
+.search-hit:hover { background: var(--bg3); }
+.search-hit .sh-name { font-size: 12px; color: var(--fg); display: flex; gap: 6px; align-items: baseline; }
+.search-hit .sh-name .sh-line { color: var(--accent2); font-size: 11px; }
+.search-hit .sh-path { font-size: 11px; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-hit .sh-snippet { font-size: 12px; color: var(--fg-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* —— 专注模式(其余淡出,不隐藏)/ 无干扰模式 —— */
+body.focus-mode .markdown-body > * { opacity: .3; transition: opacity var(--dur) var(--ease); }
+body.focus-mode .markdown-body > .focus-now { opacity: 1; }
+body.immersive .topbar { height: 0; min-height: 0; padding: 0; border-bottom: none; overflow: hidden; opacity: 0; }
+body.immersive .side, body.immersive .side-resizer { display: none; }
+.immersive-hint {
+  position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 400;
+  padding: 5px 14px; font-size: 12px; color: var(--fg-dim);
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: 999px;
+  opacity: 0; transition: opacity var(--dur-slow) var(--ease); pointer-events: none;
+}
+body.immersive .immersive-hint { opacity: .9; }
+
+/* —— 语言切换 —— */
+.lang-switch { display: flex; gap: 6px; flex-wrap: wrap; }
