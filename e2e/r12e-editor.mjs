@@ -45,6 +45,17 @@ async function val(expr, ms) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const results = { pass: 0, fail: 0, fails: [] };
+/* 沙箱护栏(2026-10-25 血泪):脚本只允许在 os.tmpdir 下的测试文件上进入编辑/保存。
+ * 事故:早前的临时脚本没做这个检查,当时活动标签是仓库 README.md,于是"输入 + 保存"把
+ * 真 README 写成了一行 "plain text edited",还被一起提交推送。 */
+const SAFE_FILE_RE = /tmmd-e2e-editor|tmmd-edit-test|tmmd-ext-test|tmmd-conflict-probe|tmmd-del-root/i;
+async function guardSandbox() {
+  const cur = String(await val(`S.cur ? S.cur.abs : ''`, 2000) || '');
+  if (cur && !SAFE_FILE_RE.test(cur)) {
+    await val(`(() => { try { leaveEdit(); } catch (e) {} S.cur = null; S.activeKey = null; S.tabs = []; return 1; })()`, 2000);
+    throw new Error(`护栏拦下:活动文件不在沙箱内(${cur}),已清空标签拒绝继续`);
+  }
+}
 /* 每条断言前只做一件事:关掉可能残留的弹窗。
  * 为什么必须有:守卫(关窗/切标签/换库)会在"上一条断言留下的脏草稿"上弹窗,
  * 后面的断言就会卡在那个弹窗上超时 —— 那是测试卫生问题,不是产品缺陷。
@@ -62,6 +73,7 @@ async function settle() {
 }
 async function check(id, desc, fn) {
   await settle();
+  await guardSandbox();
   try {
     const ok = await fn();
     if (ok === true) { results.pass++; console.log(`PASS ${id} ${desc}`); }

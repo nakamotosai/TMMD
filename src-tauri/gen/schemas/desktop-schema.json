@@ -315,6 +315,30 @@
           "markdownDescription": "Allow system_effects_state (系统透明/高对比开关只读探针)"
         },
         {
+          "description": "Allow update_check (自研更新器:取发布清单,24h 节流)",
+          "type": "string",
+          "const": "allow-update-check",
+          "markdownDescription": "Allow update_check (自研更新器:取发布清单,24h 节流)"
+        },
+        {
+          "description": "Allow update_download (下载更新包 + SHA-256 强校验)",
+          "type": "string",
+          "const": "allow-update-download",
+          "markdownDescription": "Allow update_download (下载更新包 + SHA-256 强校验)"
+        },
+        {
+          "description": "Allow update_install (静默安装并重启到新版)",
+          "type": "string",
+          "const": "allow-update-install",
+          "markdownDescription": "Allow update_install (静默安装并重启到新版)"
+        },
+        {
+          "description": "Allow update_note (记录 跳过/稍后)",
+          "type": "string",
+          "const": "allow-update-note",
+          "markdownDescription": "Allow update_note (记录 跳过/稍后)"
+        },
+        {
           "description": "Allow watch_file (外部文件变更监听:父目录非递归 + fs-changed 事件,None 取消)",
           "type": "string",
           "const": "allow-watch-file",

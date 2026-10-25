@@ -1310,7 +1310,85 @@ function layoutToolbar() {
   if (drawerOpen === 'menuMore' && !box.children.length) closeDrawers();
 }
 
-/* ==================== 拖放（Tauri webview 事件拿磁盘路径） ==================== */
+/* ==================== 自研更新器(2026-10-25,用户定调:程序内部自己更新) ====================
+ * 后端命令:update_check / update_download / update_install / update_note。
+ * 这里只负责"问一句 + 显示进度 + 放行关窗";信任链(SHA-256、URL 前缀)全在后端。 */
+function setUpdateStatus(s) {
+  const el = $id('updState');
+  if (el) el.textContent = s;
+}
+async function checkUpdate(force) {
+  if (!invoke) return null;
+  setUpdateStatus(t('upd.checking'));
+  try {
+    const m = await invoke('update_check', { force: !!force });
+    if (!m) { setUpdateStatus(t('upd.latest')); return null; }
+    setUpdateStatus(t('upd.available', { v: m.version }));
+    return m;
+  } catch (e) {
+    setUpdateStatus(t('upd.fail') + ((e && e.message) || e));
+    return null;
+  }
+}
+async function runUpdate(m) {
+  let off = null;
+  setUpdateStatus(t('upd.downloading', { p: 0 }));
+  try {
+    if (listen) {
+      off = await listen('update-progress', (e) => {
+        const p = (e && e.payload) || {};
+        const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0;
+        setUpdateStatus(t('upd.downloading', { p: pct }));
+      });
+    }
+  } catch { off = null; }
+  try {
+    const path = await invoke('update_download', { manifest: m });
+    setUpdateStatus(t('upd.installing'));
+    await invoke('update_install', { path });
+    toast(t('upd.byebye'));
+    setTimeout(() => { invoke('allow_close').catch(() => {}); }, 700);
+  } catch (e) {
+    const msg = (e && e.message) || String(e);
+    setUpdateStatus(t('upd.fail') + msg);
+    toast(t('upd.fail') + msg);
+  } finally {
+    if (off) { try { off(); } catch { /* 解绑失败忽略 */ } }
+  }
+}
+async function promptUpdate(m) {
+  const mb = (Number(m.size || 0) / 1048576).toFixed(1);
+  const r = await openDialog({
+    title: t('upd.title', { v: m.version }),
+    sub: t('upd.sub', { size: mb }) + (m.notes ? '\n\n' + m.notes : ''),
+    primary: 'install',
+    buttons: [
+      { label: t('upd.install'), a: 'install', primary: true },
+      { label: t('upd.later'), a: 'later' },
+      { label: t('upd.skip'), a: 'skip' },
+    ],
+  });
+  if (r.action === 'later' || r.action === 'skip') {
+    invoke('update_note', { version: m.version, action: r.action }).catch(() => {});
+    setUpdateStatus(r.action === 'skip' ? t('upd.latest') : t('upd.available', { v: m.version }));
+    return;
+  }
+  if (r.action === 'install') await runUpdate(m);
+}
+/* 启动后台检查:不抢流程,4 秒后静默问一次;有新版才提示。 */
+function scheduleUpdateCheck() {
+  if (!invoke) return;
+  setTimeout(async () => {
+    const m = await checkUpdate(false);
+    if (m) toast(t('upd.available', { v: m.version }));
+  }, 4000);
+}
+/* 更新器:文案与状态自检(供 e2e 与肉眼核对,不改状态) */
+function updateDebugInfo() {
+  return { hasRow: !!$id('updState'), statusText: $id('updState') ? $id('updState').textContent : null };
+}
+
+/* ==================== 拖放(Tauri webview 事件拿磁盘路径) ==================== */
 /* 可打开/可编辑的扩展名(前端唯一真源,必须与后端 DOC_EXTS + TEXT_EXTS 一致:
  * lib.rs 的 is_openable)。拖放、文件对话框、树过滤都走它,避免"树里有、点开报错"。 */
 const DOC_EXT_RE = /\.(md|markdown|mdx|txt|html|htm)$/i;
@@ -1834,6 +1912,12 @@ function wire() {
   $id('btnSaveAs')?.addEventListener('click', () => { closeDrawersSafe(); saveAsDoc(); });
   $id('btnRenameDoc')?.addEventListener('click', () => { closeDrawersSafe(); renameDoc(); });
   $id('btnDeleteDoc')?.addEventListener('click', () => { closeDrawersSafe(); deleteDoc(); });
+  // 自研更新器:设置页手动检查(force 跳过节流)+ 启动后台静默检查
+  $id('btnCheckUpdate')?.addEventListener('click', async () => {
+    const m = await checkUpdate(true);
+    if (m) await promptUpdate(m);
+  });
+  scheduleUpdateCheck();
   $id('btnEdit')?.addEventListener('click', () => { if (!S.cur) return; if (S.editing) saveEdit(); else enterEdit(); });
   $id('btnUndo')?.addEventListener('click', () => { if (S.editing) doUndo(); });
   $id('btnRedo')?.addEventListener('click', () => { if (S.editing) doRedo(); });
@@ -2179,6 +2263,21 @@ const I18N = {
   'toast.noDoc': ['还没有打开文档', 'No document open', 'ドキュメントが開かれていません'],
   'toast.renameOutOfRoot': ['这个文件不在已登记的文件夹内,暂不支持重命名', 'Not inside a registered folder — rename unavailable', '登録フォルダ外のファイルは名前変更できません'],
   'toast.deleteOutOfRoot': ['这个文件不在已登记的文件夹内,请在资源管理器里删', 'Not inside a registered folder — delete it in Explorer', '登録フォルダ外はエクスプローラーで削除してください'],
+  'upd.row': ['自动更新', 'Updates', '自動更新'],
+  'upd.rowDesc': ['从官方发布取新版,在应用内下载并安装', 'Fetch, download and install inside the app', '公式リリースから取得し、アプリ内で導入します'],
+  'upd.check': ['检查更新', 'Check now', '更新を確認'],
+  'upd.checking': ['检查中…', 'Checking…', '確認中…'],
+  'upd.latest': ['已是最新版本', 'Up to date', '最新版です'],
+  'upd.available': ['发现新版 {v}', 'Version {v} available', '新しいバージョン {v}'],
+  'upd.title': ['发现新版本 {v}', 'Version {v} is available', '新しいバージョン {v} があります'],
+  'upd.sub': ['大小约 {size} MB。下载后先校验 SHA-256,再静默安装并重启到新版。', 'About {size} MB. It verifies SHA-256, installs silently, then restarts into the new version.', '約 {size} MB。SHA-256 検証後にサイレントインストールして再起動します。'],
+  'upd.install': ['下载并安装', 'Download and install', 'ダウンロードして導入'],
+  'upd.later': ['稍后', 'Later', '後で'],
+  'upd.skip': ['跳过此版本', 'Skip this version', 'このバージョンをスキップ'],
+  'upd.downloading': ['下载中 {p}%', 'Downloading {p}%', 'ダウンロード中 {p}%'],
+  'upd.installing': ['正在安装,应用即将重启…', 'Installing — the app will restart…', 'インストール中。まもなく再起動します…'],
+  'upd.byebye': ['正在退出以完成安装…', 'Closing to finish the update…', '更新のため終了します…'],
+  'upd.fail': ['更新失败:', 'Update failed: ', '更新に失敗: '],
   'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
   'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
   'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],

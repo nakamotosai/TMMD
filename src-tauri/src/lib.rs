@@ -1221,6 +1221,291 @@ fn open_any(path: String) -> Result<(), String> {
     }
 }
 
+// ───────────────────────── 自研更新器(2026-10-25,用户定调) ─────────────────────────
+// 要求原话:"自动更新要自研版本,要在程序内部能自己更新"(不跳浏览器、不装别人的更新框架)。
+// 信任链:HTTPS + 清单里的 SHA-256(下载后强校验,不符即删)+ URL 必须落在受信任前缀内。
+// 没有 Authenticode 代码签名,所以"清单从哪来"就是唯一信任根 —— 默认只认本仓 release 资产。
+// 测试缝:`TMMD_UPDATE_ENDPOINT` 覆盖清单地址(此时放行 http://127.0.0.1 与本机路径,
+// 用来在不动线上仓库的前提下跑通整条链路)。
+const UPDATE_FILE: &str = "update_state.json";
+const UPDATE_CHECK_INTERVAL: u64 = 24 * 3600; // 自动检查节流:一天一次
+const UPDATE_TRUSTED: [&str; 2] = [
+    "https://github.com/nakamotosai/TMMD/releases/download/",
+    "https://github.com/nakamotosai/TMMD/releases/latest/download/",
+];
+const UPDATE_MANIFEST_URL: &str =
+    "https://github.com/nakamotosai/TMMD/releases/latest/download/latest.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateManifest {
+    pub version: String,
+    pub asset: String,
+    pub url: String,
+    pub sha256: String,
+    pub size: u64,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UpdateState {
+    #[serde(default)]
+    pub last_checked: Option<u64>,
+    #[serde(default)]
+    pub last_prompted: Option<String>,
+    #[serde(default)]
+    pub skipped_version: Option<String>,
+    #[serde(default)]
+    pub remind_after: Option<u64>,
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn update_state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    config_path(app, UPDATE_FILE)
+}
+
+fn read_update_state(app: &tauri::AppHandle) -> UpdateState {
+    update_state_path(app)
+        .ok()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default()
+}
+
+fn write_update_state(app: &tauri::AppHandle, st: &UpdateState) {
+    if let Ok(p) = update_state_path(app) {
+        if let Ok(raw) = serde_json::to_string_pretty(st) {
+            let _ = fs::write(p, raw);
+        }
+    }
+}
+
+/// 版本比较:按点分段数值比(v1.8.0 > 1.7.9);非数字段当 0,不 panic。
+fn version_key(v: &str) -> Vec<u64> {
+    v.trim_start_matches(['v', 'V'])
+        .split(['.', '-', '+'])
+        .map(|s| s.parse::<u64>().unwrap_or(0))
+        .collect()
+}
+
+fn is_newer(remote: &str, local: &str) -> bool {
+    let (a, b) = (version_key(remote), version_key(local));
+    let n = a.len().max(b.len());
+    for i in 0..n {
+        let x = a.get(i).copied().unwrap_or(0);
+        let y = b.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x > y;
+        }
+    }
+    false
+}
+
+/// 清单 URL 是否可信。设了 TMMD_UPDATE_ENDPOINT(测试缝)时额外放行本机地址。
+fn update_url_trusted(url: &str) -> bool {
+    if UPDATE_TRUSTED.iter().any(|p| url.starts_with(p)) {
+        return true;
+    }
+    if std::env::var("TMMD_UPDATE_ENDPOINT").is_ok() {
+        return url.starts_with("http://127.0.0.1") || url.starts_with("file://");
+    }
+    false
+}
+
+/// 检查更新。返回 None = 已是最新(或被跳过/未到节流窗口)。
+/// force=true 跳过 24h 节流与"跳过此版本"(设置页手动点用)。
+#[tauri::command]
+fn update_check(app: tauri::AppHandle, force: Option<bool>) -> Result<Option<UpdateManifest>, String> {
+    let force = force.unwrap_or(false);
+    let mut st = read_update_state(&app);
+    let now = now_secs();
+    if !force {
+        if let Some(last) = st.last_checked {
+            if now.saturating_sub(last) < UPDATE_CHECK_INTERVAL {
+                return Ok(None);
+            }
+        }
+        if let Some(ra) = st.remind_after {
+            if now < ra {
+                return Ok(None);
+            }
+        }
+    }
+    let url = std::env::var("TMMD_UPDATE_ENDPOINT").unwrap_or_else(|_| UPDATE_MANIFEST_URL.to_string());
+    let body = ureq::get(&url)
+        .call()
+        .map_err(|e| format!("取更新清单失败: {e}"))?
+        .into_body()
+        .read_to_string()
+        .map_err(|e| format!("读更新清单失败: {e}"))?;
+    let m: UpdateManifest =
+        serde_json::from_str(&body).map_err(|e| format!("更新清单格式不对: {e}"))?;
+    st.last_checked = Some(now);
+    if m.sha256.len() != 64 || !m.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("更新清单里的 sha256 不合法".into());
+    }
+    if !update_url_trusted(&m.url) {
+        return Err(format!("更新包来源不可信: {}", m.url));
+    }
+    if !is_newer(&m.version, env!("CARGO_PKG_VERSION")) {
+        write_update_state(&app, &st);
+        return Ok(None);
+    }
+    if !force && st.skipped_version.as_deref() == Some(m.version.as_str()) {
+        write_update_state(&app, &st);
+        return Ok(None);
+    }
+    write_update_state(&app, &st);
+    Ok(Some(m))
+}
+
+/// 下载更新包到配置目录的 updates/,边下边算 SHA-256,完成后比对;不符直接删掉并报错。
+/// 进度通过 `update-progress` 事件回前端({received,total})。
+#[tauri::command]
+fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    if !update_url_trusted(&manifest.url) {
+        return Err("更新包来源不可信".into());
+    }
+    if manifest.size > 512 * 1024 * 1024 {
+        return Err("更新包体积异常".into());
+    }
+    let dir = config_path(&app, "updates")?;
+    fs::create_dir_all(&dir).map_err(|e| format!("建更新目录失败: {e}"))?;
+    let dest = dir.join(&manifest.asset);
+    let part = dir.join(format!("{}.part", manifest.asset));
+    let mut resp = ureq::get(&manifest.url)
+        .call()
+        .map_err(|e| format!("下载失败: {e}"))?;
+    let total = resp
+        .headers()
+        .get("content-length")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(manifest.size);
+    let mut reader = resp.body_mut().as_reader();
+    let mut file = fs::File::create(&part).map_err(|e| format!("建临时文件失败: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut received: u64 = 0;
+    let mut last_emit = std::time::Instant::now();
+    loop {
+        let n = std::io::Read::read(&mut reader, &mut buf).map_err(|e| format!("读下载流失败: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        std::io::Write::write_all(&mut file, &buf[..n]).map_err(|e| format!("写盘失败: {e}"))?;
+        hasher.update(&buf[..n]);
+        received += n as u64;
+        if last_emit.elapsed() >= Duration::from_millis(200) {
+            last_emit = std::time::Instant::now();
+            let _ = app.emit(
+                "update-progress",
+                serde_json::json!({ "received": received, "total": total }),
+            );
+        }
+    }
+    drop(file);
+    let got = format!("{:x}", hasher.finalize());
+    if !got.eq_ignore_ascii_case(&manifest.sha256) {
+        let _ = fs::remove_file(&part);
+        return Err(format!(
+            "校验失败(下载内容与清单不符),已丢弃:\n期望 {}\n实际 {}",
+            manifest.sha256, got
+        ));
+    }
+    let _ = fs::remove_file(&dest);
+    fs::rename(&part, &dest).map_err(|e| format!("落位失败: {e}"))?;
+    let _ = app.emit(
+        "update-progress",
+        serde_json::json!({ "received": received, "total": total, "done": true }),
+    );
+    Ok(dest.to_string_lossy().to_string())
+}
+
+/// 安装:写一个临时 PS 脚本(等本进程退出 → 静默装 → 自删),隐藏窗口起它,然后由前端放行关窗。
+/// 为什么不等自己退出:*安装包要覆盖正在运行的 exe*,必须先让本进程走。
+#[tauri::command]
+fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
+    let p = Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("更新包不存在: {path}"));
+    }
+    let pid = std::process::id();
+    let dir = std::env::temp_dir();
+    let script = dir.join(format!("tmmd-update-{pid}.ps1"));
+    let log = dir.join("tmmd-update.log");
+    let q = |s: &str| format!("'{}'", s.replace('\'', "''"));
+    // .exe 直接静默装(NSIS /S);其它后缀(测试替身 / 自定义脚本)交给 cmd /c
+    let launch = if path.to_ascii_lowercase().ends_with(".exe") {
+        format!("Start-Process -FilePath {} -ArgumentList '/S'", q(&path))
+    } else {
+        format!(
+            "Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', {}, '/S' -WindowStyle Hidden",
+            q(&path)
+        )
+    };
+    let body = format!(
+        "$ErrorActionPreference='SilentlyContinue'\r\n\
+         $log = {log}\r\n\
+         Add-Content -LiteralPath $log -Value ((Get-Date).ToString('s') + ' helper start pid={pid} target={path}')\r\n\
+         Start-Sleep -Milliseconds 800\r\n\
+         Wait-Process -Id {pid} -Timeout 120\r\n\
+         Add-Content -LiteralPath $log -Value 'app exited, launching installer'\r\n\
+         {launch}\r\n\
+         Add-Content -LiteralPath $log -Value ('launch returned ' + $LASTEXITCODE)\r\n\
+         Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\r\n",
+        log = q(&log.to_string_lossy()),
+        pid = pid,
+        path = path,
+        launch = launch,
+    );
+    fs::write(&script, body).map_err(|e| format!("写安装脚本失败: {e}"))?;
+    std::process::Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-WindowStyle",
+            "Hidden",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
+        .arg(&script)
+        .spawn()
+        .map_err(|e| format!("起安装脚本失败: {e}"))?;
+    // 记一笔:装完之后"已提示过这个版本"
+    let mut st = read_update_state(&app);
+    st.last_prompted = Some(env!("CARGO_PKG_VERSION").to_string());
+    write_update_state(&app, &st);
+    Ok(())
+}
+
+/// 记录用户的选择(跳过此版本 / 稍后提醒)。
+#[tauri::command]
+fn update_note(app: tauri::AppHandle, version: String, action: String) -> Result<(), String> {
+    let mut st = read_update_state(&app);
+    st.last_prompted = Some(version.clone());
+    match action.as_str() {
+        "skip" => {
+            st.skipped_version = Some(version);
+            st.remind_after = None;
+        }
+        "later" => {
+            st.remind_after = Some(now_secs() + 3 * 24 * 3600);
+        }
+        _ => {}
+    }
+    write_update_state(&app, &st);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1310,6 +1595,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_info,
             allow_close,
+            update_check,
+            update_download,
+            update_install,
+            update_note,
             create_file,
             rename_file,
             delete_file,

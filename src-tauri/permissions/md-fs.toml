@@ -104,6 +104,26 @@ description = "Allow allow_close (关窗守卫放行:前端确认无未保存内
 commands.allow = ["allow_close"]
 
 [[permission]]
+identifier = "allow-update-check"
+description = "Allow update_check (自研更新器:取发布清单,24h 节流)"
+commands.allow = ["update_check"]
+
+[[permission]]
+identifier = "allow-update-download"
+description = "Allow update_download (下载更新包 + SHA-256 强校验)"
+commands.allow = ["update_download"]
+
+[[permission]]
+identifier = "allow-update-install"
+description = "Allow update_install (静默安装并重启到新版)"
+commands.allow = ["update_install"]
+
+[[permission]]
+identifier = "allow-update-note"
+description = "Allow update_note (记录 跳过/稍后)"
+commands.allow = ["update_note"]
+
+[[permission]]
 identifier = "allow-open-any"
 description = "Allow open_any (ShellExecute 打开任意文件/目录,不限扩展名)"
 commands.allow = ["open_any"]

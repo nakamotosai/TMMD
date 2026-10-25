@@ -22,6 +22,8 @@ tauri-plugin-single-instance = "2"
 window-vibrancy = "0.8"
 # 外部文件变更监听(watch_file):只跟一个文件的父目录,非递归
 notify = "8"
+ureq = { version = "3.2.1", features = ["rustls", "gzip", "json"] }
+sha2 = "0.10.9"
 # R2-fix 诊断位：直读 DWM 实时 backdrop（DwmGetWindowAttribute），与 window-vibrancy 0.8 同款 0.60 同编
 # R3b Pebrel 配方：legacy AccentPolicy（user32 动态取）+ SetWindowPos 刷 frame
 [target.'cfg(windows)'.dependencies]
