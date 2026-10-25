@@ -232,6 +232,10 @@
               <div class="set-row-info"><div class="set-row-title">可读性保底</div><div class="set-row-desc">文字整体透明度下限 70%;代码块/图片/卡片始终不透明(白字直压模糊底实测仅 3.95:1)</div></div>
               <div class="set-row-ctl"><span class="settings-val" id="glassFloorVal">70%</span></div>
             </div>
+            <div class="set-row" data-search="文字 阴影 光晕 halo shadow 可读性 对比">
+              <div class="set-row-info"><div class="set-row-title">文字阴影</div><div class="set-row-desc">给文字一圈局部对比,亮背景也读得清;拖动条在玻璃面板</div></div>
+              <div class="set-row-ctl"><span class="settings-val" id="glassHaloVal">55%</span></div>
+            </div>
             <div class="set-row" data-search="系统 透明效果 高对比 transparency high contrast 回落">
               <div class="set-row-info"><div class="set-row-title">系统回落</div><div class="set-row-desc">关闭"透明效果"或高对比模式时自动退为实色</div></div>
               <div class="set-row-ctl"><span class="settings-val settings-wide" id="glassSysStateSet">读取中...</span></div>
@@ -338,6 +342,11 @@
         <button id="setAtmosWeak" class="theme-btn">弱</button>
         <button id="setAtmosMedium" class="theme-btn active">中</button>
         <button id="setAtmosStrong" class="theme-btn">强</button>
+      </div>
+      <div class="settings-row">
+        <label>文字阴影</label>
+        <input type="range" id="setHalo" min="0" max="100" step="5" value="55" />
+        <span class="settings-val" id="valHalo">55%</span>
       </div>
     </div>
   </div>

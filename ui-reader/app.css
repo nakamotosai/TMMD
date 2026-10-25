@@ -67,10 +67,14 @@
    * "字 vs 紧邻像素"立刻回到 4.5:1 以上。落在实色背景上这层晕几乎不可见(暗晕压暗底、亮晕压亮底),
    * 所以实色模式观感不变;text-shadow 烘进文字合成层,滚动只合成不重绘(帧率断言 G2/G3 盯着)。 */
   /* 强度是扫出来的(同一亮壁纸底、A/B 量"字心 vs 紧邻最暗"局部对比):
-   *   无晕 4.89 → +1px环 5.90 → **紧三档 6.48(采用)** → 紧+宽 7.15(偏重,正文小字会显糊)。
-   * 远景对比不随晕变化(那是背景亮度决定的,只有压暗表面才能改 —— 那会动用户拍板的 40% 浓度,不做)。 */
-  --text-halo: 0 0 1px rgba(0, 0, 0, .95), 0 1px 2px rgba(0, 0, 0, .9), 0 2px 8px rgba(0, 0, 0, .85);
-  --title-halo: 0 0 1px rgba(0, 0, 0, .95), 0 1px 2px rgba(0, 0, 0, .92), 0 2px 10px rgba(0, 0, 0, .88), 0 0 4px rgba(0, 0, 0, .9);
+   *   无晕 4.89 → +1px环 5.90 → **紧三档 6.48** → 紧+宽 7.15(偏重,正文小字会显糊)。
+   * 2026-10-25 用户:"晕太重,有点丑" → 强度改成可调(--halo-k,玻璃面板的「文字阴影」拖动条,默认 55):
+   *   浓度**与半径一起**缩 —— 只缩透明度会留下"宽而淡的灰云",那才是"重"的来源。
+   *   实测(亮底合成样本,字外 1–3px 环的平均压暗):0.55 档拿到全强度的 64%、0.35 档 45%,
+   *   而分块局部对比几乎不降(1.05→1.04 一档量级)→ 取 55 是"少一半丑、几乎不丢可读"的点。 */
+  --halo-k: .55;
+  --text-halo: 0 0 1px rgb(0 0 0 / calc(.9 * var(--halo-k))), 0 1px 2px rgb(0 0 0 / calc(.8 * var(--halo-k))), 0 2px calc(2px + 6px * var(--halo-k)) rgb(0 0 0 / calc(.75 * var(--halo-k)));
+  --title-halo: 0 0 1px rgb(0 0 0 / calc(.95 * var(--halo-k))), 0 1px 2px rgb(0 0 0 / calc(.92 * var(--halo-k))), 0 2px calc(2px + 8px * var(--halo-k)) rgb(0 0 0 / calc(.88 * var(--halo-k))), 0 0 calc(1px + 3px * var(--halo-k)) rgb(0 0 0 / calc(.9 * var(--halo-k)));
 }
 
 /* 配色预设（R9：三个主题——深炭灰/暖纸浅/gruvbox 原生；旧款已删，存档旧值自动回落 gruvbox） */
@@ -88,9 +92,9 @@
   --accent: #af3a03; --accent2: #b57614; --border: #d5c4a1;
   --green: #79740e; --blue: #076678; --red: #9d0006; --ink: #3c3836;
   /* 浅色主题的晕要**反相**(亮晕):深色字配暗晕只会烘成一团黑边,叠在亮壁纸上更糊。
-   * 几何与深色同档(紧三档),只换颜色。 */
-  --text-halo: 0 0 1px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .92), 0 2px 8px rgba(255, 255, 255, .88);
-  --title-halo: 0 0 1px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .95), 0 2px 10px rgba(255, 255, 255, .9), 0 0 4px rgba(255, 255, 255, .9);
+   * 几何与深色同档,强度同样由 --halo-k 缩(见 :root 注释)。 */
+  --text-halo: 0 0 1px rgb(255 255 255 / calc(.95 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.92 * var(--halo-k))), 0 2px calc(2px + 6px * var(--halo-k)) rgb(255 255 255 / calc(.88 * var(--halo-k)));
+  --title-halo: 0 0 1px rgb(255 255 255 / calc(.95 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.95 * var(--halo-k))), 0 2px calc(2px + 8px * var(--halo-k)) rgb(255 255 255 / calc(.9 * var(--halo-k))), 0 0 calc(1px + 3px * var(--halo-k)) rgb(255 255 255 / calc(.9 * var(--halo-k)));
 }
 :root[data-theme="light"][data-palette="paper"] {
   --bg: #f5f0e8; --bg2: #ece4d4; --bg3: #ded2ba;

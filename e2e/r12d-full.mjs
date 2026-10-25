@@ -179,7 +179,7 @@ await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { sh
 // 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行(打字机模式 + 导出 PDF 相关)→ 28 行 7 区,
 // v1.8.4 再加 1 行(行内代码样式四档)→ 29 行 7 区。数字是真在数行数,别改代码不改这里。
 await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
-await T('A25', '设置 清空还原 29 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '29/7');
+await T('A25', '设置 清空还原 30 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '30/7');   // 30 = 原 29 + v1.8.9 的「文字阴影」行
 // v1.8.4 起设置页是**右侧抽屉**:阅读区不再被藏起来/盖住,而是重排到左边(改外观能立刻看见正文)
 await T('A26', '设置 开设置时阅读区收窄到左侧(不遮挡)', async () => (await val(`(() => {
   showPanel('settings');

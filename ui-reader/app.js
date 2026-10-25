@@ -47,6 +47,7 @@ const SWATCH_COLORS = {
  * 所以滑条留着:嫌淡就往上推(strong=70)。 */
 // 单一浓度的唯一 SSOT:预设 / 兜底 / 回显全用它,别再散写字面量(此前 3 处兜底写 45,与预设 40 打架)。
 const GLASS_CONC_DEFAULT = 40;
+const HALO_DEFAULT = 55;   // 文字晕默认强度(%);--halo-k 与它的关系见 app.css
 const ATMOS_PRESETS = {
   weak: { conc: 20, text: 100 },
   medium: { conc: GLASS_CONC_DEFAULT, text: 100 },
@@ -59,12 +60,15 @@ const FONT_PRESETS = {
 };
 // R12b 旧存档前迁：on/material/tint 原样保留；铬/正文/浮层三路均值就近落氛围档(>=45 强，<=18 弱，其余中)；数值按档重写
 function migrateGlass(g) {
-  const d = { on: true, material: 'acrylic', tint: '#26282e', atmos: 'medium', ...ATMOS_PRESETS.medium };
+  // halo = 文字晕强度 0–100(玻璃面板「文字阴影」拖动条)。2026-10-25 用户"晕太重,有点丑" → 提成可调,默认 55。
+  const d = { on: true, material: 'acrylic', tint: '#26282e', atmos: 'medium', halo: HALO_DEFAULT, ...ATMOS_PRESETS.medium };
   if (!(g && typeof g === 'object' && 'tint' in g)) return d;
   const out = { ...d };
   if (typeof g.on === 'boolean') out.on = g.on;
   out.material = (g.material === 'none' || g.material === 'acrylic' || g.material === 'mica') ? g.material : 'acrylic';
   if (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) out.tint = g.tint;
+  // 老存档没有 halo 键 → 落新默认(与 conc 不同:这个键没有"用户真调过"的历史包袱)
+  out.halo = Math.min(100, Math.max(0, Number.isFinite(+g.halo) ? +g.halo : HALO_DEFAULT));
   const num = (v) => (Number.isFinite(+v) ? +v : NaN);
   // v1.8.1:老存档**就是旧默认档**时(12/25/35/30,说明用户从没动过浓度滑条),直接落新默认
   // (medium = 40);否则按正文区实际浓淡折算 —— 用户真调过的值不能被我覆盖。
@@ -1806,9 +1810,15 @@ function applyGlass(opaque) {
   const root = document.documentElement.style;
   root.setProperty('--glass', (on ? glassSplit(conc).css : 100) + '%');
   root.setProperty('--text-opa', String(on ? text / 100 : 1));
+  // 文字晕强度:实色模式(玻璃关)不需要晕 —— 那里文字直接压在实色底上,晕只会显脏。
+  const halo = num(S.glass.halo, HALO_DEFAULT, 0, 100);
+  root.setProperty('--halo-k', String(on ? halo / 100 : 0));
   // 面板控件回显（面板关闭时节点仍在，?. 守无）
   $id('setGlassOn')?.classList.toggle('active', on);
   $id('setGlassOff')?.classList.toggle('active', !on);
+  const hs = $id('setHalo'); if (hs) hs.value = String(halo);
+  const hv = $id('valHalo'); if (hv) hv.textContent = (on ? halo : 0) + '%';
+  const hg = $id('glassHaloVal'); if (hg) hg.textContent = (on ? halo : 0) + '%';
   const mm = $id('setGlassMaterial'); if (mm) { const m = (typeof S.glass.material === 'string' ? S.glass.material : 'acrylic'); mm.value = (m === 'none' || m === 'acrylic' || m === 'mica') ? m : 'acrylic'; }
   const tintShown = (typeof S.glass.tintDraft === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tintDraft)) ? S.glass.tintDraft : ((typeof S.glass.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(S.glass.tint)) ? S.glass.tint : '#26282e');
   const ti = $id('setGlassTint'); if (ti) ti.value = tintShown;
@@ -1999,6 +2009,12 @@ function bindSettings() {
     applyGlassMaterial(true); // 按已提交值重放，洗掉预览残留
   });
   // R2 材质下拉：切换即持久化并直驱后端；总开关关时切材质只记档不碰 DWM（开时重放生效）
+  // 拖动条只落 CSS 变量,不动 DWM → 不调 applyGlassMaterial(避免每帧打后端)
+  $id('setHalo')?.addEventListener('input', (e) => {
+    glassOn().halo = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+    LS.set('sr_glass', persistGlass());
+    applyGlass(false);
+  });
   $id('setGlassMaterial')?.addEventListener('change', (e) => { glassOn().material = e.target.value; LS.set('sr_glass', persistGlass()); applyGlassMaterial(); });
   // 玻璃独立面板：工具栏按钮经单例路由直达，与设置页互斥
   $id('btnGlass')?.addEventListener('click', () => {
@@ -2935,6 +2951,7 @@ async function buildStandaloneHtml() {
 <title>${escHtml((cur.abs || '').split(/[\\/]/).pop() || 'TMMD')}</title>
 <style>${css || fallback}
 body{background:transparent}main.reader-inner{max-width:var(--measure,34em)}
+:root{--halo-k:0}
 @media print{@page{margin:18mm}:root,[data-theme="light"]{--text-halo:none;--title-halo:none}body{background:#fff;color:#111}}
 </style></head>
 <body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;

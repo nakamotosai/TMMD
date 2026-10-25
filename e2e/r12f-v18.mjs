@@ -439,12 +439,17 @@ async function reset() {
  * 控件与 placeholder 全量;深浅主题各验极性(深色不许出现白色晕、浅色必须全是亮晕)。 */
 {
   console.log('-- I 文字阴影覆盖 --');
+  // 先钉基线:默认强度 + 玻璃开(别吃前面组留下的状态)
+  await val(`(() => { if (S.glass && typeof S.glass === 'object') { S.glass.on = true; S.glass.halo = 55; } if (typeof applyGlass === 'function') applyGlass(false); return 1; })()`, 8000);
   const AUDIT = `(() => {
+    // v1.8.9:强度提成可调(--halo-k,默认 55),判据改成"有几何 + 默认档落在带内":
+    // 下限 0.3 = 还能当局部对比用;上限 0.6 = 不许悄悄回到用户否掉的"重口"(全强度 0.9,滑块拉满才到)。
     const usable = (ts) => {
       if (!ts || ts === 'none') return false;
       const layers = ts.split(/,(?![^(]*\\))/).length;
       const alphas = [...ts.matchAll(/rgba?\\(([^)]+)\\)/g)].map((m) => { const p = m[1].split(',').map((s) => parseFloat(s)); return p.length === 4 ? p[3] : 1; });
-      return layers >= 2 && alphas.length > 0 && Math.max(...alphas) >= 0.5 && /\\d+(\\.\\d+)?px/.test(ts);
+      const k = alphas.length ? Math.max(...alphas) : 0;
+      return layers >= 2 && k >= 0.3 && k <= 0.6 && /\\d+(\\.\\d+)?px/.test(ts);
     };
     const isWhite = (ts) => /255, 255, 255/.test(ts);
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
@@ -488,6 +493,36 @@ async function reset() {
   const light = await audit('light');
   ok('I4 浅色:全部文本 + 控件 + placeholder 都是反相亮晕,坏数 0', light && light.badCount === 0 && light.ctlBad.length === 0 && light.phBad.length === 0 && light.okNodes > 0 && light.whiteNodes === light.okNodes, light);
   await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
+  // I5–I8:拖动条(--halo-k 的驱动链)。用户 2026-10-25 要求"做成拖动条" → 断言要盯**真实链路**:
+  // 直接给 input 派发 input 事件(和用户拖动同一条路径),而不是绕过监听器手改 S.glass。
+  const HX = `(() => {
+    const el = document.getElementById('setHalo');
+    const root = document.documentElement;
+    const peak = () => { const ts = getComputedStyle(document.body).textShadow;
+      return [...ts.matchAll(/rgba?\\(([^)]+)\\)/g)].map((x) => x[1].split(',').map(Number)).map((p) => (p.length === 4 ? p[3] : 1)); };
+    const mx = (v) => (v.length ? Math.max(...v) : 1);
+    const drag = (v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); return mx(peak()); };
+    const inPanel = !!el && !!el.closest('#glassPanel');
+    const value0 = el ? el.value : null;
+    const z = drag(0); const kz = root.style.getPropertyValue('--halo-k');
+    const saved0 = (JSON.parse(localStorage.getItem('sr_glass') || '{}') || {}).halo;
+    const f = drag(100);
+    const b = drag(55);
+    const saved55 = (JSON.parse(localStorage.getItem('sr_glass') || '{}') || {}).halo;
+    S.glass.on = false; applyGlass(false);
+    const off = mx(peak()); const kOff = root.style.getPropertyValue('--halo-k');
+    S.glass.on = true; applyGlass(false); drag(55);
+    const valText = (document.getElementById('valHalo') || {}).textContent;
+    return JSON.stringify({ inPanel, value0, z, f, b, off, kz, kOff, saved0, saved55, valText });
+  })()`
+  const hx = JSON.parse((await val(HX, 20000)) || '{}');
+  ok('I5 玻璃面板里有「文字阴影」拖动条,默认落在 55%', hx.inPanel === true && hx.value0 === '55', hx);
+  ok('I6 拖动条真的驱动晕:0% 无晕(α≤0.05)、100% 明显更强(α≥0.8)、回 55% 落在默认带 0.3–0.6',
+    hx.z <= 0.05 && hx.f >= 0.8 && hx.b >= 0.3 && hx.b <= 0.6, hx);
+  ok('I7 拖动条落盘:拖到 0 时存档读 0、回 55 时读 55(走 input 事件=用户同一条路径)',
+    hx.saved0 === 0 && hx.saved55 === 55, hx && { saved0: hx.saved0, saved55: hx.saved55 });
+  ok('I7b 面板读数回显跟着走(valHalo = 55%)', hx.valText === '55%', hx && { valText: hx.valText });
+  ok('I8 玻璃关掉(实色)不画晕:--halo-k=0 且 α≤0.05(实色底上不该留灰边)', hx.kOff === '0' && hx.off <= 0.05, hx && { kOff: hx.kOff, off: hx.off });
 }
 
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
@@ -555,7 +590,8 @@ async function reset() {
     return JSON.stringify(out);
   })()`;
   const auditJ = async (theme) => {
-    await val(`(() => { S.theme = ${JSON.stringify(theme)}; S.glass = 40; applySettings(); S.codeStyle = 'plate'; applyEnhance(); return 1; })()`, 12000);
+    await val(`(() => { S.theme = ${JSON.stringify(theme)}; if (S.glass && typeof S.glass === 'object') S.glass.conc = 40;
+      applySettings(); S.codeStyle = 'plate'; applyEnhance(); return 1; })()`, 12000);
     return JSON.parse((await val(AUDIT_J, 20000)) || '{}');
   };
   const dJ = await auditJ('dark');

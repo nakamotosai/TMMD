@@ -8,6 +8,7 @@
 | `capture-secondary.ps1` | 抓副屏**真实合成像素**(含 DWM 材料),可顺带出亮度/对比/高频统计 |
 | `contrast-bands.py` | **量尺**:按横条算"窗内最亮壁纸带"的中位/最坏对比度(遮蔽掉不透明配图);CHANGELOG 里的对比度数字由它产出 |
 | `code-style-shots.mjs` | 出"行内代码画法"对照截图:五档(旧版/荧光笔/下划线/无痕/薄底)各截一张页面真截图,`--backdrop <png>` 时把壁纸底贴进页面 → 截出来就是真合成 |
+| `halo-strength.mjs` | 文字晕**强度分档**取样:同一段正文只改 `--halo-k`,出 RGBA 页面层截图(配套 Python 合成 + 量"字外 1–3px 环被压暗多少") |
 | `code-style-preview.py` | 把上面那批截图拼成一张带标签的对照图(拍板用);`--backdrop-out` 可只导出"无文字边缘取样 + 拉伸模糊"的壁纸底 |
 | `stopall.ps1` | 收尾:按命令行指纹杀净本流程起的进程 + 清临时脚本 |
 
@@ -31,7 +32,7 @@ node tools/verify/probe.mjs --port=9225 "(async()=>{await openExternal('F:\\proj
 # 3) 跑自动化跑道(顺序即依赖:每条自己收尾,别乱序)
 node e2e/r12d-full.mjs     --port=9225     # 81 条全量回归
 node e2e/r12e-editor.mjs   --port=9225     # 25 条编辑链
-node e2e/r12f-v18.mjs      --port=9225     # 57 条 v1.8(含 i18n 覆盖度/大文件/帧率/文字晕/内容板)
+node e2e/r12f-v18.mjs      --port=9225     # 61 条 v1.8(含 i18n 覆盖度/大文件/帧率/文字晕+拖动条/内容板)
 node e2e/r12g-visual24.mjs --port=9225     # 24 条视觉检查表
 
 # 4) 排障:一行读运行态(不弹窗、不改文件)
@@ -134,3 +135,19 @@ node tools/verify/surface-schemes.mjs --port=9243 --doc=<沙箱.md> --out=$env:T
 三个实测坑:`clip` 取的是**CSS 像素**,截图是 `CSS × devicePixelRatio`(225% 屏上差 2.25 倍,取样会全错位);
 `captureBeyondViewport:false` 只能截到**可视区**,表格在折叠线以下时截出来是空的(脚本先把 pre 顶推到 y≈60);
 `SCHEMES` 里插入新档时别用 Python f-string —— `${...}` 会原样落进 JS(踩过一次)。
+
+## 量"文字晕该多淡"(2026-10-25 加)
+
+晕是**局部对比**(亮背景上字要靠它才读得清),但太重会显脏 —— 两侧都要量,只凭眼睛调会来回摆。
+
+```powershell
+node tools/verify/halo-strength.mjs --port=9243 --doc=<md> --out=%TEMP%\tmmd-halo\shots
+#   → k0 / k0p35 / k0p55 / k0p7 / k1 五张 RGBA 截图 + meta.json(含 clip 与每档 computed text-shadow)
+# 合成 + 指标(PIL):
+#   ① 字形掩膜:拿 k=0 那一档的**亮度**切(暗底上字 ~235 / 底 ~35),再腐蚀=字心、膨胀 7 减字形=紧邻环
+#   ② 指标:紧邻环的平均压暗 ΔL(相对 k=0)= "晕有多重";同档的 环被压暗 / 全强度被压暗 = "拿到几成收益"
+#   ★ 别用 alpha 通道切字形:页面层整幅都被 body 玻璃画过,alpha 到处都是 1(2026-10-25 踩过,数字全错)
+```
+
+实测(亮底合成样本,紧邻环平均压暗):0%/0.35/0.55/0.7/1.0 → 0 / 1.62 / **2.34(默认)** / 2.76 / 3.55 ΔL，
+即 55% 拿到 66% 的收益。合成脚本同上一节;`--halo-k` 要**连 token 定义一起注入**（装机版里的 --text-halo 是写死 alpha 的字面量,只塞变量不生效）。
