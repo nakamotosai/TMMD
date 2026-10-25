@@ -1310,6 +1310,43 @@ function layoutToolbar() {
   if (drawerOpen === 'menuMore' && !box.children.length) closeDrawers();
 }
 
+/* ==================== 打字机模式(2026-10-25,v1.8 队列) ====================
+ * 阅读侧的"其余淡出"已由专注模式覆盖;这里补**编辑侧**:打字时让光标所在行停在视口
+ * 偏上位置(经典打字机滚动),省得写到屏幕底部才回滚一次。
+ * 实现要点:textarea 无法只给某一行加样式,所以只做"滚动跟随 + 平滑";
+ * 行高靠计算样式读,不写死(字号/行高都可调)。 */
+function typewriterLineHeight(ed) {
+  const cs = getComputedStyle(ed);
+  const lh = parseFloat(cs.lineHeight);
+  if (Number.isFinite(lh) && lh > 0) return lh;
+  const fs = parseFloat(cs.fontSize) || 14;
+  return fs * 1.7;
+}
+function typewriterFollow() {
+  if (!S.editorTypewriter || !S.editing) return;
+  const ed = $id('editor');
+  if (!ed || ed.hidden) return;
+  const lh = typewriterLineHeight(ed);
+  const before = ed.value.slice(0, ed.selectionStart || 0);
+  const line = before.split('\n').length - 1;             // 0 基行号
+  const caretY = (line + 0.5) * lh;
+  const want = caretY - ed.clientHeight * 0.38;           // 目标:光标行落在 38% 高度处
+  const max = Math.max(0, ed.scrollHeight - ed.clientHeight);
+  const target = Math.max(0, Math.min(max, want));
+  if (Math.abs(target - ed.scrollTop) < lh * 0.5) return; // 小抖动不动,避免逐字抖屏
+  ed.scrollTop = target;
+}
+function applyTypewriter(on) {
+  S.editorTypewriter = !!on;
+  LS.set('sr_typewriter', S.editorTypewriter ? '1' : '0');
+  document.body.classList.toggle('typewriter', S.editorTypewriter);
+  const b = $id('setTypewriterOn');
+  const b2 = $id('setTypewriterOff');
+  b?.classList.toggle('active', S.editorTypewriter);
+  b2?.classList.toggle('active', !S.editorTypewriter);
+  if (S.editorTypewriter) typewriterFollow();
+}
+
 /* ==================== 自研更新器(2026-10-25,用户定调:程序内部自己更新) ====================
  * 后端命令:update_check / update_download / update_install / update_note。
  * 这里只负责"问一句 + 显示进度 + 放行关窗";信任链(SHA-256、URL 前缀)全在后端。 */
@@ -1917,6 +1954,10 @@ function wire() {
     const m = await checkUpdate(true);
     if (m) await promptUpdate(m);
   });
+  // 打字机模式(编辑侧滚动跟随)
+  $id('setTypewriterOn')?.addEventListener('click', () => applyTypewriter(true));
+  $id('setTypewriterOff')?.addEventListener('click', () => applyTypewriter(false));
+  applyTypewriter(LS.get('sr_typewriter') === '1');
   scheduleUpdateCheck();
   $id('btnEdit')?.addEventListener('click', () => { if (!S.cur) return; if (S.editing) saveEdit(); else enterEdit(); });
   $id('btnUndo')?.addEventListener('click', () => { if (S.editing) doUndo(); });
@@ -1957,10 +1998,13 @@ function wire() {
     else if (k === 'h') { e.preventDefault(); openEditFind(); } // 编辑态查找替换(阅读态的 Ctrl+F 是另一套)
   });
   $id('editor')?.addEventListener('input', () => {
-    if (histLock) return; // doUndo/doRedo 编程赋值不记历史（防栈污染/弹跳）
+    if (histLock) return; // doUndo/doRedo 编程赋值不记历史(防栈污染/弹跳)
     S.editDirty = true; pushUndo(prevEditValue); prevEditValue = $id('editor').value;
-    renderTabs();   // R7：即时点亮 tab 脏点
+    renderTabs();   // R7:即时点亮 tab 脏点
+    typewriterFollow();
   });
+  // 光标移动(点选/方向键/回车)也要跟随:打字机模式下这几条路径同样会跑出视口
+  ['keyup', 'click', 'select'].forEach((ev) => $id('editor')?.addEventListener(ev, () => typewriterFollow()));
   $id('btnSideToggle').addEventListener('click', toggleSide);
   $id('btnSide')?.addEventListener('click', toggleSide);
   $id('btnCompact')?.addEventListener('click', () => applySideCompact(!S.sideCompact));
@@ -2278,6 +2322,8 @@ const I18N = {
   'upd.installing': ['正在安装,应用即将重启…', 'Installing — the app will restart…', 'インストール中。まもなく再起動します…'],
   'upd.byebye': ['正在退出以完成安装…', 'Closing to finish the update…', '更新のため終了します…'],
   'upd.fail': ['更新失败:', 'Update failed: ', '更新に失敗: '],
+  'search.hitsFiles': ['{f} 个文件 · {n} 处命中', '{n} hits in {f} files', '{f} ファイル / {n} 件'],
+  'search.rows': ['{n} 处', '{n} hits', '{n} 件'],
   'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
   'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
   'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],
@@ -2552,25 +2598,46 @@ function renderSearchResults() {
   if (!list) return;
   list.innerHTML = '';
   const hits = S.search.hits || [];
-  if (meta) meta.textContent = S.search.q ? (hits.length ? t('search.hits', { n: hits.length }) : t('search.none')) : t('search.hint');
+  // 按文件归组:后端已按相关度排好序,这里保持"首次出现的文件在前",组内按行号升序
+  const groups = new Map();
   hits.forEach((h) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'search-hit';
-    const name = String(h.path || '').split(/[\\/]/).pop();
-    const nm = document.createElement('div');
-    nm.className = 'sh-name';
-    nm.appendChild(document.createTextNode(name));
-    const ln = document.createElement('span');
-    ln.className = 'sh-line'; ln.textContent = 'L' + (h.line || 0);
-    nm.appendChild(ln);
-    const p = document.createElement('div');
-    p.className = 'sh-path'; p.textContent = h.rel || h.path;
-    const sn = document.createElement('div');
-    sn.className = 'sh-snippet'; sn.textContent = (h.text || '').trim();
-    b.appendChild(nm); b.appendChild(p); b.appendChild(sn);
-    b.addEventListener('click', () => jumpToHit(h));
-    list.appendChild(b);
+    const key = h.path || h.rel || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(h);
+  });
+  if (meta) {
+    meta.textContent = S.search.q
+      ? (hits.length ? t('search.hitsFiles', { f: groups.size, n: hits.length }) : t('search.none'))
+      : t('search.hint');
+  }
+  groups.forEach((rows, key) => {
+    rows.sort((a, b) => (a.line || 0) - (b.line || 0));
+    const head = document.createElement('div');
+    head.className = 'search-file';
+    const name = String(key).split(/[\\/]/).pop();
+    const count = document.createElement('span');
+    count.className = 'sh-count';
+    count.textContent = t('search.rows', { n: rows.length });
+    head.appendChild(document.createTextNode(name));
+    head.appendChild(count);
+    list.appendChild(head);
+    rows.forEach((h) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'search-hit';
+      const nm = document.createElement('div');
+      nm.className = 'sh-name';
+      const ln = document.createElement('span');
+      ln.className = 'sh-line'; ln.textContent = 'L' + (h.line || 0);
+      nm.appendChild(ln);
+      const p = document.createElement('div');
+      p.className = 'sh-path'; p.textContent = h.rel || h.path;
+      const sn = document.createElement('div');
+      sn.className = 'sh-snippet'; sn.textContent = (h.text || '').trim();
+      b.appendChild(nm); b.appendChild(p); b.appendChild(sn);
+      b.addEventListener('click', () => jumpToHit(h));
+      list.appendChild(b);
+    });
   });
 }
 async function runLibrarySearch() {

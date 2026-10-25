@@ -21,6 +21,8 @@ const WIN_SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
 const FS_DEBOUNCE: Duration = Duration::from_millis(300);
 const SEARCH_LIMIT_DEFAULT: usize = 200;
 const SEARCH_TEXT_MAX: usize = 300;
+/// 单文件最多返回多少条命中(库级搜索排序用:防一个文件刷满整屏)
+const SEARCH_PER_FILE: usize = 8;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1012,6 +1014,10 @@ pub struct SearchHit {
     pub line: u32,
     /// 命中行文本(去首尾空白,截到 300 字符)
     pub text: String,
+    /// 相关度得分(**后端排序用**,前端可忽略):文件名命中 > 一级标题命中 > 行号靠前。
+    /// 排序在 search_library 里做完再截断,前端拿到就是"最相关的在前"。
+    #[serde(default)]
+    pub score: i64,
 }
 
 /// 按字符截断(不会切坏多字节字符)。
@@ -1064,25 +1070,51 @@ fn search_file(full: &Path, root: &Path, needle: &str, limit: usize, hits: &mut 
     let abs = full.to_string_lossy().into_owned();
     let rel = rel_posix(root, full);
     let root_s = root.to_string_lossy().into_owned();
+    // 相关度信号:文件名命中(最像"我要找这个文件")> 一级标题命中 > 行号靠前
+    let stem_lc = full
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let stem_hit = !stem_lc.is_empty() && stem_lc.contains(needle);
+    let mut title_hit = false;
+    let mut file_hits = 0usize;
     for (idx, line) in text.lines().enumerate() {
-        if hits.len() >= limit {
+        if hits.len() >= limit || file_hits >= SEARCH_PER_FILE {
             return;
+        }
+        let line_no = (idx + 1) as u32;
+        if line_no == 1 {
+            let first = line.trim_start();
+            title_hit = first.starts_with('#') && first.to_lowercase().contains(needle);
         }
         if line.len() < needle.len() || !line.to_lowercase().contains(needle) {
             continue;
         }
+        let mut score: i64 = 0;
+        if stem_hit {
+            score += 1000;
+        }
+        if title_hit {
+            score += 300;
+        }
+        score += 200 - i64::from(line_no.min(200)); // 越靠前越相关
         hits.push(SearchHit {
             path: abs.clone(),
             rel: rel.clone(),
             root: root_s.clone(),
-            line: (idx + 1) as u32,
+            line: line_no,
             text: truncate_chars(line.trim(), SEARCH_TEXT_MAX),
+            score,
         });
+        file_hits += 1;
     }
 }
 
 /// 库级全文搜索:扫 roots.json 全部根(is_doc + skip_dir_name 过滤,>8MB 文件跳过,
-/// 非 UTF-8 读不出就跳过),大小写不敏感子串匹配,命中即收,到 limit(默认 200)提前结束。
+/// 非 UTF-8 读不出就跳过),大小写不敏感子串匹配。
+/// **排序(2026-10-25 加)**:先按放大池子收集(名字命中/标题命中/行号靠前得分),
+/// 再按得分降序 → 行号升序 → 路径升序 排好,**最后**才截到 limit —— 这样"最相关的在前",
+/// 而不是"目录遍历最先撞上的在前"。单文件最多 SEARCH_PER_FILE 条,防一个文件刷满屏。
 /// 全程跑在 spawn_blocking,不占主线程。
 #[tauri::command]
 async fn search_library(query: String, limit: Option<usize>) -> Vec<SearchHit> {
@@ -1102,13 +1134,21 @@ async fn search_library(query: String, limit: Option<usize>) -> Vec<SearchHit> {
             return vec![];
         };
         let mut hits: Vec<SearchHit> = Vec::new();
+        let pool = cap.saturating_mul(6).clamp(600, 3000);
         for r in roots {
-            if hits.len() >= cap {
+            if hits.len() >= pool {
                 break;
             }
             let root = PathBuf::from(&r.path);
-            search_dir(&root, &root, &needle, cap, 0, &mut hits);
+            search_dir(&root, &root, &needle, pool, 0, &mut hits);
         }
+        hits.sort_by(|a, b| {
+            b.score
+                .cmp(&a.score)
+                .then(a.line.cmp(&b.line))
+                .then(a.path.cmp(&b.path))
+        });
+        hits.truncate(cap);
         hits
     })
     .await

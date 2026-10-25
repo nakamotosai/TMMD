@@ -622,6 +622,13 @@ mark.srh-hit.now { background: var(--accent); color: #1d2021; }
   background: transparent; border: none; border-radius: var(--r-sm); cursor: pointer;
 }
 .search-hit:hover { background: var(--surface-plate); }
+/* 库搜索按文件分组:组头(文件名 + 命中数) */
+.search-file {
+  display: flex; align-items: baseline; gap: 6px; padding: 8px 10px 4px;
+  font-size: 12px; font-weight: 600; color: var(--accent);
+  border-top: 1px solid var(--border); background: transparent;
+}
+.search-file .sh-count { font-weight: 400; color: var(--fg-faint); font-size: 11px; }
 .search-hit .sh-name { font-size: 12px; color: var(--fg); display: flex; gap: 6px; align-items: baseline; }
 .search-hit .sh-name .sh-line { color: var(--accent2); font-size: 11px; }
 .search-hit .sh-path { font-size: 11px; color: var(--fg-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
