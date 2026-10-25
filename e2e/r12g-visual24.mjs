@@ -238,10 +238,16 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('20', '字体栈含 Windows 字体(Segoe UI / Microsoft YaHei UI)', /Segoe UI|Microsoft YaHei UI/.test(String(r)), r);
 }
 
-/* 21 代码块 α≥0.9(比整窗浓 40 个点,压住代码对比度) */
+/* 21 v1.8.8 换口径:代码块 = **半透明暖板**,不再要求"实心灰板"。
+ * 旧断言(α≥0.9)正是用户这次吐槽的那块灰(纯灰 C=0),所以连口径一起换掉,不是放宽:
+ * 现在要求 α≤0.5(真玻璃)+ 板色是暖色(C≥12 且 r>b)——"灰"再也过不去。 */
 {
-  const r = await val(`(() => { const pre = document.querySelector('.markdown-body pre'); if (!pre) return { no: true }; const bg = getComputedStyle(pre).backgroundColor; const m = String(bg).match(/([\\d.]+)\\s*\\)$/); const a = m ? parseFloat(m[1]) : 1; return { bg, alpha: a }; })()`);
-  ok('21', '代码块底色 α≥0.9', r && r.alpha >= 0.9, r);
+  const r = await val(`(() => { const pre = document.querySelector('.markdown-body pre'); if (!pre) return { no: true };
+    const c = getComputedStyle(pre).backgroundColor;
+    const cv = document.createElement('canvas').getContext('2d'); cv.fillStyle = c; cv.fillRect(0, 0, 1, 1);
+    const d = cv.getImageData(0, 0, 1, 1).data;
+    return { c, a: Math.round(d[3] / 255 * 100) / 100, C: Math.max(d[0], d[1], d[2]) - Math.min(d[0], d[1], d[2]), warm: d[0] > d[2] }; })()`);
+  ok('21', '代码块底:半透明暖板(α≤0.5 且 C≥12 且 r>b)', r && r.a > 0 && r.a <= 0.5 && r.C >= 12 && r.warm === true, r);
 }
 
 /* 22 玻璃仅 hover 态:正文内元素不做玻璃(交互元素悬停才有反馈) */

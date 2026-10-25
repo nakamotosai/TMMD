@@ -31,7 +31,7 @@ node tools/verify/probe.mjs --port=9225 "(async()=>{await openExternal('F:\\proj
 # 3) 跑自动化跑道(顺序即依赖:每条自己收尾,别乱序)
 node e2e/r12d-full.mjs     --port=9225     # 81 条全量回归
 node e2e/r12e-editor.mjs   --port=9225     # 25 条编辑链
-node e2e/r12f-v18.mjs      --port=9225     # 45 条 v1.8(含 i18n 覆盖度/大文件/帧率)
+node e2e/r12f-v18.mjs      --port=9225     # 57 条 v1.8(含 i18n 覆盖度/大文件/帧率/文字晕/内容板)
 node e2e/r12g-visual24.mjs --port=9225     # 24 条视觉检查表
 
 # 4) 排障:一行读运行态(不弹窗、不改文件)
@@ -114,5 +114,23 @@ node tools/verify/code-style-shots.mjs --port=9237 --out=$env:TEMP\code-shots --
 python tools/verify/code-style-preview.py --shots $env:TEMP\code-shots --wallpaper <用户截图.png> --out docs/preview/code-styles.png
 ```
 
-两个实测坑:①`--port/--out/--backdrop` 只认 `--k=v`(空格形式会被当默认值,静默跑错目录);
-②隐藏桌面上合成器有节流,注入背景后**要先空截一帧**(脚本里已做)否则前一两张会缺那层底。
+两个实测坑:1`--port/--out/--backdrop` 只认 `--k=v`(空格形式会被当默认值,静默跑错目录);
+2隐藏桌面上合成器有节流,注入背景后**要先空截一帧**(脚本里已做)否则前一两张会缺那层底。
+
+## 出"正文内容板画法"对照图(拍板用,2026-10-25 加)
+
+内容板 = 表格底 / 行内码芯片 / 代码块底。这一档换方案时(`--surface-plate-strong` → `--well`),
+只凭 computed 值会骗人:`rgba` 明明带暖意,合成到壁纸上还是灰 —— **必须先合成再判**。
+
+```powershell
+# 1) 隔离实例 + CDP 端口(同上一节)
+# 2) 壁纸底要从用户截图**无文字边缘**取一条(脚本自己拉伸 + 高斯模糊)
+# 3) 一次出多档 + 主题矩阵(computed 板色 / 合成后彩度 / 字对板对比)
+node tools/verify/surface-schemes.mjs --port=9243 --doc=<沙箱.md> --out=$env:TEMP\tmmd-lab\shots
+#    → 每档一张 RGBA 页面层截图 + metrics.json(clip/几何/dpr);脚本里 SCHEMES 是候选画法清单
+# 4) 用 PIL 把 RGBA 截图 alpha_composite 到壁纸底上 → 对照图(这一步是"真合成")
+```
+
+三个实测坑:`clip` 取的是**CSS 像素**,截图是 `CSS × devicePixelRatio`(225% 屏上差 2.25 倍,取样会全错位);
+`captureBeyondViewport:false` 只能截到**可视区**,表格在折叠线以下时截出来是空的(脚本先把 pre 顶推到 y≈60);
+`SCHEMES` 里插入新档时别用 Python f-string —— `${...}` 会原样落进 JS(踩过一次)。

@@ -493,6 +493,87 @@ async function reset() {
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
 // 为什么必须:r12d 的 A16/A17 验的是"空态(没有任何文档)里那两个按钮",而 G 段开的 5000 行文档
 // 会一直挂在标签栏上 → 空态不渲染 → 后面那条跑道假失败(2026-10-25 实测踩到)。
+/* ═══════════ J) 正文内容板:不许再是中性灰块(v1.8.8 换方案的核验契约)═══════════
+ * 用户实拍 2026-10-25:表头带 / 行内码芯片 / 代码块都是"中性灰块"。灰的判据不是形容词,是**彩度 C**:
+ *   旧值实测板色 rgb(50,50,44) C=6、代码块 rgb(40,40,40) C=0(纯灰),合成到壁纸上 C≈1~3。
+ * 新契约:① 表格去板:表头无填充、单元格只留上发丝线(左/右/下 = 0px);
+ *        ② 代码块底 = 半透明暖板(α ≤ 0.5、C ≥ 12、r > b);
+ *        ③ 行内码板要压得住壁纸(α ≥ 0.3),合成到用户壁纸底(31,32,31)后字对板 ≥ 4.5:1。
+ * 已知边界(别当成漏判):浅色主题的**浅**板压在**暗**壁纸上时,板本身对深字不足 4.5:1 ——
+ *   那里靠 I 组的反相亮晕兜底(与正文同口径),所以 J4 只查"暖 + 半透明 + 去板",不查合成对比度。 */
+{
+  console.log('-- J 内容板(灰块 → 暖板)--');
+  const mdJ = join(ROOT, 'j-content.md');
+  writeFileSync(mdJ, ['# J 内容板', '',
+    '行内码 `socks5://100.113.241.22:41005` 与 `161.153.47.182` 各一枚。', '',
+    '```yaml', '8-原生-美国rNN:', '  type: socks5', '  server: 100.113.241.22', '```', '',
+    '| # | 代号 | 当前出口 IP | 直连写法 |', '|---|---|---|---|',
+    '| 1 | us-r00 | `161.153.47.182` | `socks5://100.113.241.22:41005` |',
+    '| 2 | us-r01 | `161.153.80.31` | `socks5://100.113.241.22:41006` |', ''].join('\n'), 'utf8');
+  await val(`(async () => { try { leaveEdit(); } catch (e) {}
+    await openTab({ abs: ${JSON.stringify(winPath(mdJ))}, kind: 'ext' });
+    await new Promise((r) => setTimeout(r, 800)); return 1; })()`, 25000);
+  const AUDIT_J = `(() => {
+    // 直接**解析 computed 字符串**,不要过 canvas:canvas 的 alpha 读回实测偏大(0.36 读成 0.60),
+    // 而且 fillStyle 赋值失败时会静默保留上一次的值 → 结论全是错的(2026-10-25 踩过)。
+    // 这段住在模板串里:带反斜杠的正则(\s / \d)会被 JS 先吃掉一层转义,所以**一律不用带反斜杠的正则**。
+    const toSrgb = (s) => {
+      if (s.indexOf('color(srgb') === 0) {
+        const inner = s.slice(11, s.indexOf(')')).split('/');
+        const rgb = inner[0].trim().split(' ').filter(Boolean).map(Number).map((v) => Math.round(v * 255));
+        return { rgb, a: inner[1] ? Number(inner[1].trim()) : 1 };
+      }
+      if (s.indexOf('rgb') === 0) {
+        const q = s.slice(s.indexOf('(') + 1, s.indexOf(')')).split(',').map((v) => Number(v.trim()));
+        return { rgb: [q[0], q[1], q[2]], a: q.length > 3 ? q[3] : 1 };
+      }
+      return { rgb: [0, 0, 0], a: 0 };
+    };
+    const C = (p) => Math.max(p[0], p[1], p[2]) - Math.min(p[0], p[1], p[2]);
+    const lum = (p) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }; return 0.2126 * f(p[0]) + 0.7152 * f(p[1]) + 0.0722 * f(p[2]); };
+    const cr = (a, b) => Math.round(((Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)) * 100) / 100;
+    const comp = (c, a, bd) => c.map((v, i) => Math.round(a * v + (1 - a) * bd[i]));
+    const prev = S.codeStyle; S.codeStyle = 'plate'; applyEnhance();
+    const th = document.querySelector('.markdown-body th'), td = document.querySelector('.markdown-body td');
+    const rows = document.querySelectorAll('.markdown-body tbody tr');
+    const td2 = rows[1] ? rows[1].cells[0] : td;   // 第二条数据行:行间发丝线长在这里
+    const pre = document.querySelector('.markdown-body pre');
+    const inline = [...document.querySelectorAll('.markdown-body code')].find((e) => !e.closest('pre'));
+    const bw = (el, side) => parseFloat(getComputedStyle(el)['border' + side + 'Width']);
+    const fg = toSrgb(getComputedStyle(document.body).color).rgb;
+    const plate = toSrgb(getComputedStyle(inline).backgroundColor), well = toSrgb(getComputedStyle(pre).backgroundColor);
+    const out = {
+      glass: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim(),
+      found: { th: !!th, td: !!td, pre: !!pre, inline: !!inline },
+      table: { thBg: getComputedStyle(th).backgroundColor, thBottom: bw(th, 'Bottom'), tdTop: bw(td, 'Top'),
+        td2Top: bw(td2, 'Top'), tdLeft: bw(td, 'Left'), tdRight: bw(td, 'Right'), tdBottom: bw(td, 'Bottom') },
+      plate: { rgb: plate.rgb, a: plate.a, C: C(plate.rgb), warm: plate.rgb[0] > plate.rgb[2],
+        vsWall: cr(fg, comp(plate.rgb, plate.a, [31, 32, 31])) },
+      well: { rgb: well.rgb, a: well.a, C: C(well.rgb), warm: well.rgb[0] > well.rgb[2] },
+    };
+    S.codeStyle = prev; applyEnhance();
+    return JSON.stringify(out);
+  })()`;
+  const auditJ = async (theme) => {
+    await val(`(() => { S.theme = ${JSON.stringify(theme)}; S.glass = 40; applySettings(); S.codeStyle = 'plate'; applyEnhance(); return 1; })()`, 12000);
+    return JSON.parse((await val(AUDIT_J, 20000)) || '{}');
+  };
+  const dJ = await auditJ('dark');
+  ok('J1 深色:表格去板(表头无填充、首行无上框、第二行有上发丝线、四边竖线/下线为 0)',
+    dJ && dJ.table && dJ.table.thBg === 'rgba(0, 0, 0, 0)' && dJ.table.thBottom > 0 && dJ.table.tdTop === 0 &&
+    dJ.table.td2Top > 0 && dJ.table.tdLeft === 0 && dJ.table.tdRight === 0 && dJ.table.tdBottom === 0, dJ && dJ.table);
+  ok('J2 深色:代码块底是半透明暖板(α≤0.5、C≥12、r>b),不再是实心灰',
+    dJ && dJ.well && dJ.well.a > 0 && dJ.well.a <= 0.5 && dJ.well.C >= 12 && dJ.well.warm === true, dJ && dJ.well);
+  ok('J3 深色:行内码板压得住壁纸(α≥0.3、C≥12、暖),合成到用户壁纸底后字对板 ≥4.5:1',
+    dJ && dJ.plate && dJ.plate.a >= 0.3 && dJ.plate.C >= 12 && dJ.plate.warm === true && dJ.plate.vsWall >= 4.5, dJ && dJ.plate);
+  const lJ = await auditJ('light');
+  ok('J4 浅色:同一套 token 也过(表去板 + 半透明暖板 + 行内码板 α≥0.3)',
+    lJ && lJ.table && lJ.table.thBg === 'rgba(0, 0, 0, 0)' && lJ.table.thBottom > 0 && lJ.table.td2Top > 0 &&
+    lJ.table.tdLeft === 0 && lJ.well && lJ.well.a <= 0.5 && lJ.well.C >= 12 && lJ.well.warm === true &&
+    lJ.plate && lJ.plate.a >= 0.3 && lJ.plate.C >= 12, lJ);
+  await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
+}
+
 await val(`(async () => {
   try { leaveEdit(); } catch (e) {}
   const root = ${JSON.stringify(winPath(ROOT))}.toLowerCase();

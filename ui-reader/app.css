@@ -1,5 +1,5 @@
 /* TMMD（透明MD） · 轻量本地 Markdown 阅读器（Tauri 2）
- * 视觉规范：DESIGN.md（Maple Mono NF CN / 正文 16px / 隐形滚动条 / Gruvbox 实色）
+ * 视觉规范:docs/2026-10-25-验证清单.md + docs/preview/(Maple Mono NF CN / 正文 16px / 隐形滚动条 / Gruvbox)
  * v1.1.0：统一 SVG 线性图标 / 工具栏分组+响应式溢出 / 实色背景层（修滚动色变）
  *        历史与收藏合并 / 侧栏折叠按钮置左 / 主题降级 / 配色一致
  * W2 玻璃分层：只加变量和表面切换，不改布局（见 :root --glass-* / --surface-*）。
@@ -18,7 +18,6 @@
   --green: #b8bb26;
   --blue: #83a598;
   --red: #fb4934;
-  --code-bg: #282828;
   --radius: var(--r-sm);   /* 兼容别名:新代码请用 --r-xs/sm/md/lg */
   --ink: #ebdbb2;
   --sans: "Maple Mono NF CN", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
@@ -36,19 +35,26 @@
   --glass: 100%;
   --glass-pop-boost: 12%;
   --glass-plate-boost: 22%;
-  --glass-plate-strong-boost: 40%;
   --surface-base: color-mix(in srgb, var(--bg) var(--glass), transparent);
   --surface-chrome: transparent;
   --surface-reader: transparent;
   --surface-pop: color-mix(in srgb, var(--bg2) calc(var(--glass) + var(--glass-pop-boost)), transparent);
   --surface-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) + var(--glass-plate-boost)), transparent);
-  --surface-plate-strong: color-mix(in srgb, var(--code-bg) max(90%, calc(var(--glass) + var(--glass-plate-strong-boost))), transparent);
-  /* 正文里的**行内代码/引用**表面(设置 → 阅读增强 → 行内代码样式),与上面三块 UI 小板分开取值。
-   * 上面 20 多处 --surface-plate 是**控件反馈**(按钮 hover / 树项 / 导航),该跟着浓度走;
-   * 正文里的灰块是"压在文字上的板":40% 浓度下算出来是 62% 的 bg3 —— 在照片壁纸上就是一块
-   * 几乎不透明的灰,跟"透明风格"直接打架。所以解耦:正文表面只留"托底"级浓度(glass × .45),
-   * 浓淡仍随滑条走(滑满自然变实)。 */
-  --code-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) * .45), transparent);
+  /* v1.8.8 正文**内容板**换方案(用户实拍 2026-10-25:表头带 / 行内码芯片 / 代码块都是"中性灰块",
+   * 压在照片壁纸上就是一块灰)。旧值两个真原因:
+   *   --surface-plate-strong = --code-bg 的 90% 不透明 → 实心灰板(就是被吐槽那块);
+   *   --code-plate 只有 glass×.45 → 40% 浓度下 18% 不透明度,**板色被壁纸盖过**,暖色也会被中和成灰。
+   * 新方案三条:① 板色改"暖板" —— 由 bg2 混 26% 强调色(脱离灰阶族,色相跟着主题走);
+   *            ② 浓度提到 glass×.9 —— 板色要压得住壁纸,否则再暖也合成成灰(实测深色板 rgb(91,64,47) C44,
+   *               合成到用户壁纸底上仍 C16,旧的灰板是 C6/C0);
+   *            ③ 表格去板 —— 表头灰带与整格网格全删,只留横向发丝线。 */
+  --well: color-mix(in oklab, var(--bg2) 74%, var(--accent) 26%);
+  --well-deep: color-mix(in oklab, var(--bg) 72%, var(--accent) 28%);
+  --rule: color-mix(in srgb, var(--border) 70%, transparent);
+  --rule-strong: color-mix(in oklab, var(--accent) 24%, var(--border));
+  /* 行内代码/引用板(设置 → 阅读增强 → 行内代码样式):与三块 UI 小板分开取值 —— 那 20 多处
+   * --surface-plate 是**控件反馈**(按钮 hover / 树项 / 导航),该跟着浓度走。 */
+  --code-plate: color-mix(in srgb, var(--well) calc(var(--glass) * .9), transparent);
   --code-wash: color-mix(in oklab, var(--accent) 20%, transparent);
   --code-rule: color-mix(in oklab, var(--accent) 45%, transparent);
   /* W8 文字整体透明度:只作用正文与侧栏内容容器(顶栏控件不受影响,保证按钮可读)。
@@ -72,7 +78,7 @@
   --bg: #242628; --bg2: #2c2f31; --bg3: #35393c;
   --fg: #e8e6e3; --fg-dim: #a9abae; --fg-faint: #7e8083;
   --accent: #e0a458; --accent2: #9ec1cf; --border: #3a3e41;
-  --code-bg: #2c2f31; --ink: #e8e6e3; --green: #9ec49a; --blue: #9ec1cf; --red: #d98c8c;
+  --ink: #e8e6e3; --green: #9ec49a; --blue: #9ec1cf; --red: #d98c8c;
 }
 
 /* 配色预设(light) */
@@ -80,7 +86,7 @@
   --bg: #fbf1c7; --bg2: #f2e5bc; --bg3: #ebdbb2;
   --fg: #3c3836; --fg-dim: #7c6f64; --fg-faint: #928374;
   --accent: #af3a03; --accent2: #b57614; --border: #d5c4a1;
-  --green: #79740e; --blue: #076678; --red: #9d0006; --code-bg: #f2e5bc; --ink: #3c3836;
+  --green: #79740e; --blue: #076678; --red: #9d0006; --ink: #3c3836;
   /* 浅色主题的晕要**反相**(亮晕):深色字配暗晕只会烘成一团黑边,叠在亮壁纸上更糊。
    * 几何与深色同档(紧三档),只换颜色。 */
   --text-halo: 0 0 1px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .92), 0 2px 8px rgba(255, 255, 255, .88);
@@ -90,7 +96,7 @@
   --bg: #f5f0e8; --bg2: #ece4d4; --bg3: #ded2ba;
   --fg: #2e2b26; --fg-dim: #57534a; --fg-faint: #7d7462;
   --accent: #b3541e; --accent2: #7a8c5f; --border: #d9cdb4;
-  --code-bg: #ece4d4; --ink: #2e2b26; --green: #6d8a4e; --blue: #4a7d96; --red: #a8442a;
+  --ink: #2e2b26; --green: #6d8a4e; --blue: #4a7d96; --red: #a8442a;
 }
 
 * { box-sizing: border-box; }
@@ -436,8 +442,9 @@ body.settings-open #layout { margin-right: var(--settings-w); }
  * box-decoration-break: clone 让换行时的行内码每一段都拿到同样的下划线/色带(长路径常用得到)。 */
 .markdown-body code { font-family: var(--mono); font-size: var(--code-size); background: none; padding: 0; border-radius: 0;
   box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.markdown-body code:hover { background-color: color-mix(in srgb, var(--bg3) 16%, transparent); border-radius: var(--r-xs); }
-.markdown-body pre { background: var(--surface-plate-strong); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; overflow: auto; }
+.markdown-body code:hover { background-color: color-mix(in srgb, var(--well) calc(var(--glass) * .55), transparent); border-radius: var(--r-xs); }
+.markdown-body pre { background: color-mix(in srgb, var(--well-deep) calc(var(--glass) * .95), transparent);
+  border: 1px solid var(--rule-strong); border-radius: var(--radius); padding: 12px 14px; overflow: auto; }
 .markdown-body pre code { background: none; padding: 0; color: var(--fg); font-size: var(--code-size); }
 .markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: none; }
 .markdown-body a { color: var(--blue); text-decoration: none; }
@@ -456,7 +463,7 @@ body.code-wash .markdown-body code { background-image: linear-gradient(to top, v
 body.code-wash .markdown-body blockquote { background-image: linear-gradient(to top, var(--code-wash) 0 26%, transparent 26%); }
 body.code-underline .markdown-body code { border-bottom: 1px solid var(--code-rule); padding-bottom: 1px; }
 body.code-bare .markdown-body code { color: color-mix(in oklab, var(--fg) 88%, var(--accent)); }
-/* 代码块内部的 code 不吃行内码的画法:它归 pre 的那块板管(α≥0.9,压住长代码的对比度)。
+/* 代码块内部的 code 不吃行内码的画法:它归 pre 的那块板管(暖阱 + 文字晕一起压住长代码的对比度)。
  * color 也要显式提回来 —— bare 档的唯一画法就是 color,不写回来会把代码块里**不在 token span 内**
  * 的纯文本一起染色(2026-10-25 由只读核验抓到:0,2,2 压过 .markdown-body pre code 的 0,1,2)。
  * 选择器用四个具体类而不是 [class*="code-"]:后者会顺带命中 no-code-ln,将来改档位名会静默失效。 */
@@ -473,9 +480,13 @@ body.code-bare .markdown-body pre code {
 }
 .markdown-body video, .markdown-body audio { max-width: 100%; display: block; margin: 1.2em auto; border-radius: var(--radius); }
 .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+/* 表格:v1.8.8 去板 —— 旧版是"表头灰带 + 单元格 1px 全网格",在玻璃上就是一块灰色表格皮;
+ * 现在只留横向发丝线(表头一条暖线),竖线全删。 */
 .markdown-body table { border-collapse: collapse; margin: 1em 0; width: auto; }
-.markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 6px 12px; }
-.markdown-body th { background: var(--surface-plate); }
+.markdown-body th, .markdown-body td { border: 0; padding: 7px 12px; }
+.markdown-body th { background: none; border-bottom: 1px solid var(--rule-strong); font-weight: 600; }
+.markdown-body td { border-top: 1px solid var(--rule); }
+.markdown-body tbody tr:first-child td { border-top: 0; }
 .markdown-body .katex { font-size: 1.05em; }
 
 /* ==================== v1.3.0 · 导读地图 + AI 章节卡 ==================== */
@@ -571,8 +582,8 @@ body.code-bare .markdown-body pre code {
 .markdown-body p { margin: .85em 0; }
 body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
 
-/* 代码块:不再强制不透明 —— 走 --surface-plate-strong(比整窗浓 40 个点,够压住代码对比度,但仍是玻璃) */
-.markdown-body pre { background-color: var(--surface-plate-strong); background-image: none; }
+/* 代码块:不再强制不透明 —— 走 --well-deep(比板再深一档的暖色),压在壁纸上是"暖板"而不是灰板 */
+.markdown-body pre { background-color: color-mix(in srgb, var(--well-deep) calc(var(--glass) * .95), transparent); background-image: none; }
 .markdown-body pre code { background: transparent; }
 /* 图片/媒体:1px 描边 + 同款玻璃底板 */
 .markdown-body img, .markdown-body video { border: 1px solid var(--border); background: var(--surface-plate); }
