@@ -528,16 +528,19 @@ async function reset() {
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
 // 为什么必须:r12d 的 A16/A17 验的是"空态(没有任何文档)里那两个按钮",而 G 段开的 5000 行文档
 // 会一直挂在标签栏上 → 空态不渲染 → 后面那条跑道假失败(2026-10-25 实测踩到)。
-/* ═══════════ J) 正文内容板:不许再是中性灰块(v1.8.8 换方案的核验契约)═══════════
- * 用户实拍 2026-10-25:表头带 / 行内码芯片 / 代码块都是"中性灰块"。灰的判据不是形容词,是**彩度 C**:
- *   旧值实测板色 rgb(50,50,44) C=6、代码块 rgb(40,40,40) C=0(纯灰),合成到壁纸上 C≈1~3。
- * 新契约:① 表格去板:表头无填充、单元格只留上发丝线(左/右/下 = 0px);
- *        ② 代码块底 = 半透明暖板(α ≤ 0.5、C ≥ 12、r > b);
- *        ③ 行内码板要压得住壁纸(α ≥ 0.3),合成到用户壁纸底(31,32,31)后字对板 ≥ 4.5:1。
+/* ═══════════ J) 正文内容板:中性玻璃(不许再是实心灰块,也不许是掺了强调色的脏棕)═══════════
+ * 用户实拍 2026-10-25:表头带 / 行内码芯片 / 代码块都是"中性灰块"→ v1.8.8 改成"暖板"(强调色掺底色);
+ * 用户实拍 2026-10-26:「还行,但这橙色代码块和玻璃质感完全不配」→ v1.8.11 改成**中性玻璃**。
+ * 口径换了三次,判据一直是**像素**,不是形容词:灰/棕/蓝都靠**合成之后的彩度 C** 拦下来。
+ * 新契约:1 表格去板:表头无填充、单元格只留上发丝线(左/右/下 = 0px);
+ *        2 代码块底 = 玻璃凹槽:0<α≤0.5、合成到中性灰(40,40,40)后 C≤6、发丝边 α≥0.12、
+ *          合成到用户壁纸底(34,38,43)后字对板 ≥4.5:1;
+ *        3 行内码板 = 玻璃薄片:0<α≤0.35、合成中性灰后 C≤8(ink 抬升自带一点暖,放宽到 8)、
+ *          合成壁纸底后字对板 ≥4.5:1。
  * 已知边界(别当成漏判):浅色主题的**浅**板压在**暗**壁纸上时,板本身对深字不足 4.5:1 ——
- *   那里靠 I 组的反相亮晕兜底(与正文同口径),所以 J4 只查"暖 + 半透明 + 去板",不查合成对比度。 */
+ *   那里靠 I 组的反相亮晕兜底(与正文同口径),所以 J4 只查"中性 + 半透明 + 去板",不查合成对比度。 */
 {
-  console.log('-- J 内容板(灰块 → 暖板)--');
+  console.log('-- J 内容板(灰块 → 暖板 → 中性玻璃)--');
   const mdJ = join(ROOT, 'j-content.md');
   writeFileSync(mdJ, ['# J 内容板', '',
     '行内码 `socks5://100.113.241.22:41005` 与 `161.153.47.182` 各一枚。', '',
@@ -583,8 +586,12 @@ async function reset() {
       table: { thBg: getComputedStyle(th).backgroundColor, thBottom: bw(th, 'Bottom'), tdTop: bw(td, 'Top'),
         td2Top: bw(td2, 'Top'), tdLeft: bw(td, 'Left'), tdRight: bw(td, 'Right'), tdBottom: bw(td, 'Bottom') },
       plate: { rgb: plate.rgb, a: plate.a, C: C(plate.rgb), warm: plate.rgb[0] > plate.rgb[2],
-        vsWall: cr(fg, comp(plate.rgb, plate.a, [31, 32, 31])) },
-      well: { rgb: well.rgb, a: well.a, C: C(well.rgb), warm: well.rgb[0] > well.rgb[2] },
+        vsWall: cr(fg, comp(plate.rgb, plate.a, [34, 38, 43])),
+        Cn: C(comp(plate.rgb, plate.a, [40, 40, 40])) },
+      well: { rgb: well.rgb, a: well.a, C: C(well.rgb), warm: well.rgb[0] > well.rgb[2],
+        line: toSrgb(getComputedStyle(pre).borderTopColor).a,
+        vsWall: cr(fg, comp(well.rgb, well.a, [34, 38, 43])),
+        Cn: C(comp(well.rgb, well.a, [40, 40, 40])) },
     };
     S.codeStyle = prev; applyEnhance();
     return JSON.stringify(out);
@@ -598,15 +605,16 @@ async function reset() {
   ok('J1 深色:表格去板(表头无填充、首行无上框、第二行有上发丝线、四边竖线/下线为 0)',
     dJ && dJ.table && dJ.table.thBg === 'rgba(0, 0, 0, 0)' && dJ.table.thBottom > 0 && dJ.table.tdTop === 0 &&
     dJ.table.td2Top > 0 && dJ.table.tdLeft === 0 && dJ.table.tdRight === 0 && dJ.table.tdBottom === 0, dJ && dJ.table);
-  ok('J2 深色:代码块底是半透明暖板(α≤0.5、C≥12、r>b),不再是实心灰',
-    dJ && dJ.well && dJ.well.a > 0 && dJ.well.a <= 0.5 && dJ.well.C >= 12 && dJ.well.warm === true, dJ && dJ.well);
-  ok('J3 深色:行内码板压得住壁纸(α≥0.3、C≥12、暖),合成到用户壁纸底后字对板 ≥4.5:1',
-    dJ && dJ.plate && dJ.plate.a >= 0.3 && dJ.plate.C >= 12 && dJ.plate.warm === true && dJ.plate.vsWall >= 4.5, dJ && dJ.plate);
+  ok('J2 深色:代码块底 = 玻璃凹槽(0<α≤0.5、合成中性灰后 C≤6、发丝边 α≥0.12、字对板 ≥4.5:1)',
+    dJ && dJ.well && dJ.well.a > 0 && dJ.well.a <= 0.5 && dJ.well.Cn <= 6 && dJ.well.line >= 0.12 && dJ.well.vsWall >= 4.5,
+    dJ && dJ.well);
+  ok('J3 深色:行内码板 = 玻璃薄片(0<α≤0.35、合成中性灰后 C≤8、合成壁纸底后字对板 ≥4.5:1)',
+    dJ && dJ.plate && dJ.plate.a > 0 && dJ.plate.a <= 0.35 && dJ.plate.Cn <= 8 && dJ.plate.vsWall >= 4.5, dJ && dJ.plate);
   const lJ = await auditJ('light');
-  ok('J4 浅色:同一套 token 也过(表去板 + 半透明暖板 + 行内码板 α≥0.3)',
+  ok('J4 浅色:同一套 token 也过(表去板 + 凹槽/薄片都中性半透明;合成对比度由反相亮晕兜,见段首已知边界)',
     lJ && lJ.table && lJ.table.thBg === 'rgba(0, 0, 0, 0)' && lJ.table.thBottom > 0 && lJ.table.td2Top > 0 &&
-    lJ.table.tdLeft === 0 && lJ.well && lJ.well.a <= 0.5 && lJ.well.C >= 12 && lJ.well.warm === true &&
-    lJ.plate && lJ.plate.a >= 0.3 && lJ.plate.C >= 12, lJ);
+    lJ.table.tdLeft === 0 && lJ.well && lJ.well.a <= 0.5 && lJ.well.Cn <= 6 && lJ.well.line >= 0.12 &&
+    lJ.plate && lJ.plate.a <= 0.35 && lJ.plate.Cn <= 8, lJ);
   await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
 }
 

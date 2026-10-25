@@ -40,21 +40,22 @@
   --surface-reader: transparent;
   --surface-pop: color-mix(in srgb, var(--bg2) calc(var(--glass) + var(--glass-pop-boost)), transparent);
   --surface-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) + var(--glass-plate-boost)), transparent);
-  /* v1.8.8 正文**内容板**换方案(用户实拍 2026-10-25:表头带 / 行内码芯片 / 代码块都是"中性灰块",
-   * 压在照片壁纸上就是一块灰)。旧值两个真原因:
-   *   --surface-plate-strong = --code-bg 的 90% 不透明 → 实心灰板(就是被吐槽那块);
-   *   --code-plate 只有 glass×.45 → 40% 浓度下 18% 不透明度,**板色被壁纸盖过**,暖色也会被中和成灰。
-   * 新方案三条:① 板色改"暖板" —— 由 bg2 混 26% 强调色(脱离灰阶族,色相跟着主题走);
-   *            ② 浓度提到 glass×.9 —— 板色要压得住壁纸,否则再暖也合成成灰(实测深色板 rgb(91,64,47) C44,
-   *               合成到用户壁纸底上仍 C16,旧的灰板是 C6/C0);
-   *            ③ 表格去板 —— 表头灰带与整格网格全删,只留横向发丝线。 */
-  --well: color-mix(in oklab, var(--bg2) 74%, var(--accent) 26%);
-  --well-deep: color-mix(in oklab, var(--bg) 72%, var(--accent) 28%);
+  /* v1.8.11 正文**内容板**再换一次(用户实拍 2026-10-26:代码块是一块脏橙棕,原话"和我们玻璃质感完全不配")。
+   * v1.8.8 的"暖板"是把强调色 26–28% 掺进底色 —— 橙强调色掺暗底 = 脏棕(实测板色 rgb(54,46,43),r>b),
+   * 而且是 α≈0.38 的**大块实板**,压在照片壁纸上像贴了张牛皮纸。这次口径是**中性玻璃**,色相不再由强调色决定:
+   *   1 代码块 = **玻璃凹槽**:纯黑按 glass×.42 压暗 —— 壁纸亮就沉下去、暗就几乎隐形,永远跟随环境,
+   *     配中性发丝边(ink 18%)+ 1px 顶部内高光(玻璃片的边);
+   *   2 行内码 / 引用板 = **玻璃薄片**:ink(fg)按 glass×.22 抬升 —— 深色主题抬亮、浅色主题压暗,自动跟随主题;
+   *   3 强调色只留在**线与控件**上(引用左侧条、焦点环、按钮态),不再当板色。
+   * 断言口径同步换(视觉表 #21):半透明 α≤0.5 + 合成到中性灰后彩度 ≤6(板色不许带自己的色相)
+   * + 字/板对比 ≥4.5:1 + 有发丝边界 —— 四条的像素证据见 docs/CHANGELOG.md v1.8.11。 */
+  --plate-sink: color-mix(in srgb, #000 calc(var(--glass) * .42), transparent);
+  --plate-lift: color-mix(in srgb, var(--ink) calc(var(--glass) * .22), transparent);
+  --hair-strong: color-mix(in srgb, var(--ink) 18%, transparent);
   --rule: color-mix(in srgb, var(--border) 70%, transparent);
-  --rule-strong: color-mix(in oklab, var(--accent) 24%, var(--border));
   /* 行内代码/引用板(设置 → 阅读增强 → 行内代码样式):与三块 UI 小板分开取值 —— 那 20 多处
    * --surface-plate 是**控件反馈**(按钮 hover / 树项 / 导航),该跟着浓度走。 */
-  --code-plate: color-mix(in srgb, var(--well) calc(var(--glass) * .9), transparent);
+  --code-plate: var(--plate-lift);
   --code-wash: color-mix(in oklab, var(--accent) 20%, transparent);
   --code-rule: color-mix(in oklab, var(--accent) 45%, transparent);
   /* W8 文字整体透明度:只作用正文与侧栏内容容器(顶栏控件不受影响,保证按钮可读)。
@@ -192,8 +193,11 @@ body.tb-text .tb-btn .ic { display: none; }
   padding: 6px 2px; overflow-x: auto; overflow-y: hidden; user-select: none; scrollbar-width: none; }
 .tabbar::-webkit-scrollbar { display: none; }
 .tabbar[hidden] { display: none; }
-.topbar .actions { flex: 0 1 auto; min-width: 148px; }   /* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽；保底 ⋮＋两三个图标，顶栏永不只剩一个按钮 */
-.brand { display: inline-flex; align-items: center; margin-left: auto; }   /* T1b：品牌字靠右对齐（最小化钮左）；margin 撑在 brand 上，无 tab 时也不塌回左边 */
+/* R7b：空间先紧工具栏（溢出进 ⋮），标签页优先保宽；保底 ⋮＋两三个图标，顶栏永不只剩一个按钮。
+ * 2026-10-26：auto 边距从 .brand 挪到 .actions —— 标签栏不再吃空余（见 .tabbar）之后，空余全落在
+ * actions 与 brand 之间，工具栏被顶去了左边；现在空余落在**标签栏与工具栏之间**，工具栏贴着品牌字靠右。 */
+.topbar .actions { flex: 0 1 auto; min-width: 148px; margin-left: auto; }
+.brand { display: inline-flex; align-items: center; flex-shrink: 0; }   /* T1b：品牌字靠右对齐（最小化钮左）；margin 撑在 brand 上，无 tab 时也不塌回左边 */
 .tab { display: flex; align-items: center; gap: 6px; max-width: 200px; min-width: 60px; flex: 0 1 auto;
   height: 26px; padding: 0 6px 0 10px; font-size: 13px; color: var(--fg-dim); white-space: nowrap;
   background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
@@ -448,9 +452,12 @@ body.settings-open #layout { margin-right: var(--settings-w); }
  * box-decoration-break: clone 让换行时的行内码每一段都拿到同样的下划线/色带(长路径常用得到)。 */
 .markdown-body code { font-family: var(--mono); font-size: var(--code-size); background: none; padding: 0; border-radius: 0;
   box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-.markdown-body code:hover { background-color: color-mix(in srgb, var(--well) calc(var(--glass) * .55), transparent); border-radius: var(--r-xs); }
-.markdown-body pre { background: color-mix(in srgb, var(--well-deep) calc(var(--glass) * .95), transparent);
-  border: 1px solid var(--rule-strong); border-radius: var(--radius); padding: 12px 14px; overflow: auto; }
+.markdown-body code:hover { background-color: color-mix(in srgb, var(--plate-lift) 55%, transparent); border-radius: var(--r-xs); }
+/* 代码块 = 玻璃凹槽:纯黑按 glass 压暗(色相跟随环境)+ 中性发丝边 + 1px 顶部内高光。
+ * 为什么不用强调色掺板:v1.8.8 掺 28% 橙得到的 rgb(54,46,43) 压在照片壁纸上就是一块脏棕(用户实拍吐槽)。 */
+.markdown-body pre { background: var(--plate-sink);
+  border: 1px solid var(--hair-strong); border-radius: var(--radius); padding: 12px 14px; overflow: auto;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%); }
 .markdown-body pre code { background: none; padding: 0; color: var(--fg); font-size: var(--code-size); }
 .markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: none; }
 .markdown-body a { color: var(--blue); text-decoration: none; }
@@ -490,7 +497,7 @@ body.code-bare .markdown-body pre code {
  * 现在只留横向发丝线(表头一条暖线),竖线全删。 */
 .markdown-body table { border-collapse: collapse; margin: 1em 0; width: auto; }
 .markdown-body th, .markdown-body td { border: 0; padding: 7px 12px; }
-.markdown-body th { background: none; border-bottom: 1px solid var(--rule-strong); font-weight: 600; }
+.markdown-body th { background: none; border-bottom: 1px solid var(--hair-strong); font-weight: 600; }
 .markdown-body td { border-top: 1px solid var(--rule); }
 .markdown-body tbody tr:first-child td { border-top: 0; }
 .markdown-body .katex { font-size: 1.05em; }
@@ -588,8 +595,6 @@ body.code-bare .markdown-body pre code {
 .markdown-body p { margin: .85em 0; }
 body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
 
-/* 代码块:不再强制不透明 —— 走 --well-deep(比板再深一档的暖色),压在壁纸上是"暖板"而不是灰板 */
-.markdown-body pre { background-color: color-mix(in srgb, var(--well-deep) calc(var(--glass) * .95), transparent); background-image: none; }
 .markdown-body pre code { background: transparent; }
 /* 图片/媒体:1px 描边 + 同款玻璃底板 */
 .markdown-body img, .markdown-body video { border: 1px solid var(--border); background: var(--surface-plate); }

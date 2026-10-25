@@ -238,16 +238,31 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('20', '字体栈含 Windows 字体(Segoe UI / Microsoft YaHei UI)', /Segoe UI|Microsoft YaHei UI/.test(String(r)), r);
 }
 
-/* 21 v1.8.8 换口径:代码块 = **半透明暖板**,不再要求"实心灰板"。
- * 旧断言(α≥0.9)正是用户这次吐槽的那块灰(纯灰 C=0),所以连口径一起换掉,不是放宽:
- * 现在要求 α≤0.5(真玻璃)+ 板色是暖色(C≥12 且 r>b)——"灰"再也过不去。 */
+/* 21 v1.8.11 再换口径:代码块 = **中性玻璃凹槽**。
+ * v1.8.8 那版要求"暖板(C≥12 且 r>b)"—— 那是把强调色掺进底色的做法,橙掺暗底 = 脏棕,
+ * 2026-10-26 用户实拍吐槽"和我们玻璃质感完全不配"。新口径量的是**合成之后**的板:
+ *   ① 半透明(0<α≤0.5,是真玻璃不是实板)
+ *   ② 合成到中性灰上彩度 ≤6 —— 板色**不许带自己的色相**(暖棕、灰、蓝都过不去,只有中性/跟随环境才行)
+ *   ③ 有发丝边界(边 α≥0.12,不然板会飘在壁纸里)
+ *   ④ 字/板对比 ≥4.5:1(压在用户那条暗壁纸上的真合成值;亮壁纸那档由文字晕兜,见 --text-halo) */
 {
   const r = await val(`(() => { const pre = document.querySelector('.markdown-body pre'); if (!pre) return { no: true };
-    const c = getComputedStyle(pre).backgroundColor;
-    const cv = document.createElement('canvas').getContext('2d'); cv.fillStyle = c; cv.fillRect(0, 0, 1, 1);
-    const d = cv.getImageData(0, 0, 1, 1).data;
-    return { c, a: Math.round(d[3] / 255 * 100) / 100, C: Math.max(d[0], d[1], d[2]) - Math.min(d[0], d[1], d[2]), warm: d[0] > d[2] }; })()`);
-  ok('21', '代码块底:半透明暖板(α≤0.5 且 C≥12 且 r>b)', r && r.a > 0 && r.a <= 0.5 && r.C >= 12 && r.warm === true, r);
+    const cv = document.createElement('canvas').getContext('2d');
+    const rgba = (c) => { cv.fillStyle = c; cv.fillRect(0, 0, 1, 1); const d = cv.getImageData(0, 0, 1, 1).data;
+      return [d[0], d[1], d[2], Math.round(d[3] / 255 * 100) / 100]; };
+    const plate = rgba(getComputedStyle(pre).backgroundColor);
+    const line = rgba(getComputedStyle(pre).borderTopColor);
+    const fg = rgba(getComputedStyle(pre.querySelector('code') || pre).color).slice(0, 3);
+    const over = (b) => plate.slice(0, 3).map((v, i) => Math.round(plate[3] * v + (1 - plate[3]) * b[i]));
+    const C = (p) => Math.max(p[0], p[1], p[2]) - Math.min(p[0], p[1], p[2]);
+    const lum = (p) => { const f = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+      return .2126 * f(p[0]) + .7152 * f(p[1]) + .0722 * f(p[2]); };
+    const cr = (a, b) => { const l1 = lum(a), l2 = lum(b); return Math.round(((Math.max(l1, l2) + .05) / (Math.min(l1, l2) + .05)) * 100) / 100; };
+    const neutral = over([40, 40, 40]), darkWall = over([34, 38, 43]), brightWall = over([205, 205, 200]);
+    return { plate, line, fg, neutral, Cneutral: C(neutral), darkWall, crDark: cr(fg, darkWall),
+      brightWall, crBright: cr(fg, brightWall), sink: getComputedStyle(document.documentElement).getPropertyValue('--plate-sink').trim() }; })()`, 8000);
+  ok('21', '代码块底 = 中性玻璃凹槽:α≤0.5 + 合成中性灰后彩度≤6(板色不带色相)+ 发丝边 α≥0.12 + 字/板 ≥4.5:1',
+    r && r.plate && r.plate[3] > 0 && r.plate[3] <= 0.5 && r.Cneutral <= 6 && r.line[3] >= 0.12 && r.crDark >= 4.5, r);
 }
 
 /* 22 玻璃仅 hover 态:正文内元素不做玻璃(交互元素悬停才有反馈) */
@@ -308,6 +323,29 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} try { const t = getT
     o.wideFolded === 0 && o.narrowFolded > 0 && o.afterWide === 0 && o.afterStuck === 0 &&
     o.restoredIds && o.restoredIds.length === o.total && o.backIds && o.backIds.length === o.total, o);
 }
+
+/* 26 工具栏靠右(2026-10-26 用户:"你的工具栏应该靠右对齐,不是靠左")。
+ * 背景:.brand 上的 margin-left:auto 在"标签栏不再吃空余"之后把所有空余吞在自己左边,
+ * actions 被顶到**标签栏**右侧、离品牌字隔着整片空档。auto 边距挪到 .actions 上后:
+ * 空档落在标签栏与工具栏之间,工具栏贴着品牌字(间距 = 顶栏 gap 10px)。 */
+{
+  const r = await val(`(() => {
+    const bar = document.getElementById('actions');
+    const top = bar.parentElement;
+    const box = (el) => { const b = el.getBoundingClientRect(); return { l: Math.round(b.left), r: Math.round(b.right), w: Math.round(b.width) }; };
+    const acts = box(bar), brand = box(document.getElementById('brandName')), side = box(document.getElementById('btnSide'));
+    const tabs = document.getElementById('tabBar');
+    const tabsBox = tabs && !tabs.hidden ? box(tabs) : null;
+    const leftEdge = tabsBox ? tabsBox.r : side.r;
+    const win = box(document.querySelector('.win-ctrl'));
+    const gaps = [['标签栏→工具栏', acts.l - leftEdge], ['工具栏→品牌', brand.l - acts.r], ['品牌→窗口钮', win.l - brand.r]];
+    const maxGap = gaps.reduce((a, b) => (b[1] > a[1] ? b : a));
+    return { acts, brand, leftEdge, gaps, maxGap, mid: Math.round(top.clientWidth / 2), folded: document.getElementById('tbMore').hidden === false };
+  })()`, 8000);
+  ok('26', '工具栏靠右:贴品牌字(间距≤14px)、左缘在中线右侧、最大空档落在工具栏左侧',
+    r && r.brand.l - r.acts.r <= 14 && r.acts.l > r.mid && r.maxGap[0] === '标签栏→工具栏' && r.acts.r <= r.brand.l, r);
+}
+
 
 console.log(`\n== r12g: pass=${results.pass} fail=${results.fail} ==`);
 if (results.fail) { console.log('failures:'); results.fails.forEach((f) => console.log('  - ' + f)); }
