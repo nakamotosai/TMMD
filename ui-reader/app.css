@@ -43,6 +43,14 @@
   --surface-pop: color-mix(in srgb, var(--bg2) calc(var(--glass) + var(--glass-pop-boost)), transparent);
   --surface-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) + var(--glass-plate-boost)), transparent);
   --surface-plate-strong: color-mix(in srgb, var(--code-bg) max(90%, calc(var(--glass) + var(--glass-plate-strong-boost))), transparent);
+  /* 正文里的**行内代码/引用**表面(设置 → 阅读增强 → 行内代码样式),与上面三块 UI 小板分开取值。
+   * 上面 20 多处 --surface-plate 是**控件反馈**(按钮 hover / 树项 / 导航),该跟着浓度走;
+   * 正文里的灰块是"压在文字上的板":40% 浓度下算出来是 62% 的 bg3 —— 在照片壁纸上就是一块
+   * 几乎不透明的灰,跟"透明风格"直接打架。所以解耦:正文表面只留"托底"级浓度(glass × .45),
+   * 浓淡仍随滑条走(滑满自然变实)。 */
+  --code-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) * .45), transparent);
+  --code-wash: color-mix(in oklab, var(--accent) 20%, transparent);
+  --code-rule: color-mix(in oklab, var(--accent) 45%, transparent);
   /* W8 文字整体透明度：只作用正文与侧栏内容容器（顶栏控件不受影响，保证按钮可读）。
    * 取值 0–1 小数，由 app.js 按百分比写入；默认 1。 */
   --text-opa: 1;
@@ -356,6 +364,10 @@ body.settings-open #layout { visibility: hidden; }
 .settings-val { font-size: 12px; color: var(--fg-faint); width: 48px; text-align: right; }
 #fileAssocStatus { width: auto; flex: 1; text-align: left; white-space: normal; }
 .theme-btn { font-size: 12px; padding: 4px 12px; }
+/* 四选一的控件行(行内代码样式):默认 232px 塞不下 4 个中文按钮 —— 给一档宽版,别把标签切短。
+ * 窄窗(窗口最小/默认 520px)下这行只有 ~240px 可用,所以必须允许收缩换行,否则按钮会顶出卡片。 */
+.set-row-ctl.cols4 { width: 268px; max-width: 100%; min-width: 0; flex-shrink: 1; flex-wrap: wrap; row-gap: 6px; }
+.set-row-ctl.cols4 .theme-btn { padding: 4px 10px; }
 .palette-swatches { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
 .swatch {
   width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;
@@ -384,12 +396,40 @@ body.settings-open #layout { visibility: hidden; }
 .markdown-body h3 { font-size: 1.15em; }
 .markdown-body p, .markdown-body ul, .markdown-body ol { margin: .8em 0; }
 .markdown-body li + li { margin-top: .2em; }
-.markdown-body code { font-family: var(--mono); font-size: var(--code-size); background: var(--surface-plate); padding: 2px 5px; border-radius: 4px; }
+/* 行内 code:默认**不压灰板**,具体画法由 body.code-* 决定(设置 → 阅读增强 → 行内代码样式)。
+ * box-decoration-break: clone 让换行时的行内码每一段都拿到同样的下划线/色带(长路径常用得到)。 */
+.markdown-body code { font-family: var(--mono); font-size: var(--code-size); background: none; padding: 0; border-radius: 0;
+  box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.markdown-body code:hover { background-color: color-mix(in srgb, var(--bg3) 16%, transparent); border-radius: var(--r-xs); }
 .markdown-body pre { background: var(--surface-plate-strong); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; overflow: auto; }
 .markdown-body pre code { background: none; padding: 0; color: var(--fg); font-size: var(--code-size); }
-.markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: var(--surface-plate); }
+.markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: none; }
 .markdown-body a { color: var(--blue); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
+
+/* —— 行内代码样式(四选一;设置 → 阅读增强 → 行内代码样式)——
+ * 四种都不用 backdrop-filter(守"正文内无玻璃"),粗条仍只做单侧装饰:
+ *   wash      荧光笔 : 只染文字下半截,没有盒子感,长行路径也扫得出来(默认)
+ *   underline 下划线 : 一根 1px 强调色底线,最省视觉噪声
+ *   bare      无痕   : 只有等宽字形 + 一点点色偏,零装饰
+ *   plate     薄底   : 保留"托底"观感,但浓度比旧版(62%)薄得多,且随滑条走
+ * 引用块跟着同一档:默认只留左侧 4px 强调条,不再压灰板。 */
+body.code-plate .markdown-body code { background-color: var(--code-plate); padding: 1px 5px; border-radius: var(--r-xs); }
+body.code-plate .markdown-body blockquote { background-color: var(--code-plate); }
+body.code-wash .markdown-body code { background-image: linear-gradient(to top, var(--code-wash) 0 44%, transparent 44%); padding: 0 2px; }
+body.code-wash .markdown-body blockquote { background-image: linear-gradient(to top, var(--code-wash) 0 26%, transparent 26%); }
+body.code-underline .markdown-body code { border-bottom: 1px solid var(--code-rule); padding-bottom: 1px; }
+body.code-bare .markdown-body code { color: color-mix(in oklab, var(--fg) 88%, var(--accent)); }
+/* 代码块内部的 code 不吃行内码的画法:它归 pre 的那块板管(α≥0.9,压住长代码的对比度)。
+ * color 也要显式提回来 —— bare 档的唯一画法就是 color,不写回来会把代码块里**不在 token span 内**
+ * 的纯文本一起染色(2026-10-25 由只读核验抓到:0,2,2 压过 .markdown-body pre code 的 0,1,2)。
+ * 选择器用四个具体类而不是 [class*="code-"]:后者会顺带命中 no-code-ln,将来改档位名会静默失效。 */
+body.code-plate .markdown-body pre code,
+body.code-wash .markdown-body pre code,
+body.code-underline .markdown-body pre code,
+body.code-bare .markdown-body pre code {
+  color: var(--fg); background: none; background-image: none; border: none; padding: 0; border-radius: 0;
+}
 .markdown-body img { max-width: 100%; border-radius: var(--radius); display: block; margin: 1.2em auto; }
 .markdown-body img.srh-img-err {
   min-height: 2.4em; border: 1px dashed var(--border); color: var(--muted);

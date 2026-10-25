@@ -7,6 +7,8 @@
 | `launch-on-secondary.ps1` | 起一个**看不见**的实例:窗口出生就在副屏、不进任务栏、不抢前台;同时隔离 config 与 WebView2 profile |
 | `capture-secondary.ps1` | 抓副屏**真实合成像素**(含 DWM 材料),可顺带出亮度/对比/高频统计 |
 | `contrast-bands.py` | **量尺**:按横条算"窗内最亮壁纸带"的中位/最坏对比度(遮蔽掉不透明配图);CHANGELOG 里的对比度数字由它产出 |
+| `code-style-shots.mjs` | 出"行内代码画法"对照截图:五档(旧版/荧光笔/下划线/无痕/薄底)各截一张页面真截图,`--backdrop <png>` 时把壁纸底贴进页面 → 截出来就是真合成 |
+| `code-style-preview.py` | 把上面那批截图拼成一张带标签的对照图(拍板用);`--backdrop-out` 可只导出"无文字边缘取样 + 拉伸模糊"的壁纸底 |
 | `stopall.ps1` | 收尾:按命令行指纹杀净本流程起的进程 + 清临时脚本 |
 
 ## 一分钟跑法
@@ -98,3 +100,19 @@ powershell -File tools/verify/stopall.ps1
 
 - `docs/2026-10-25-验证清单.md`:当前哪些功能**还没跑过**、各自怎么验、更新器真装演练的安全步骤。
 - `docs/CHANGELOG.md`:版本变更与"已完成/未验证"的明确标注。
+
+## 出"行内代码画法"对照图(拍板用,2026-10-25 加)
+
+```powershell
+# 1) 先起可见性可控的隔离实例(隐藏桌面或副屏都行),拿到端口
+# 2) 壁纸底:从用户截图里**无文字边缘**取一条,拉伸 + 高斯模糊(近似 DWM acrylic)
+python tools/verify/code-style-preview.py --shots x --wallpaper <用户截图.png> --out x `
+    --backdrop-out $env:TEMP\backdrop.png --backdrop-size 1502x803
+# 3) 五档真截图(注意参数用 `=` 形式);--backdrop 会把底贴成页面背景 → 截图即真合成
+node tools/verify/code-style-shots.mjs --port=9237 --out=$env:TEMP\code-shots --backdrop=$env:TEMP\backdrop.png
+# 4) 拼成一张对照图
+python tools/verify/code-style-preview.py --shots $env:TEMP\code-shots --wallpaper <用户截图.png> --out docs/preview/code-styles.png
+```
+
+两个实测坑:①`--port/--out/--backdrop` 只认 `--k=v`(空格形式会被当默认值,静默跑错目录);
+②隐藏桌面上合成器有节流,注入背景后**要先空截一帧**(脚本里已做)否则前一两张会缺那层底。
