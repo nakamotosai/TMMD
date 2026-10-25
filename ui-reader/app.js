@@ -2271,6 +2271,11 @@ const I18N = {
   'search.hint': ['输入关键词开始搜索', 'Type a keyword to search', 'キーワードを入力'],
   'toast.exported': ['已导出:{p}', 'Exported: {p}', '書き出しました: {p}'],
   'toast.exportFail': ['导出失败:{e}', 'Export failed: {e}', '書き出しに失敗: {e}'],
+  'toast.exportedInline': ['已导出自包含 HTML:{p}(内联 {n} 个媒体)', 'Exported self-contained HTML: {p} ({n} media inlined)', '自己完結 HTML を書き出しました: {p}(メディア {n} 件を埋め込み)'],
+  'file.exportPdf': ['导出 PDF', 'Export PDF', 'PDF 書き出し'],
+  'pdf.working': ['正在生成 PDF…(用系统 Edge 无头打印)', 'Generating PDF… (headless Edge)', 'PDF を生成中…(ヘッドレス Edge)'],
+  'pdf.done': ['PDF 已生成:{p}', 'PDF created: {p}', 'PDF を作成しました: {p}'],
+  'pdf.fail': ['PDF 生成失败:{e}(可用「打印 / 存 PDF」手动另存)', 'PDF failed: {e} (fall back to Print / Save as PDF)', 'PDF の生成に失敗: {e}(「印刷 / PDF 保存」も使えます)'],
   'toast.fsReloaded': ['磁盘上的文件已更新,已重新加载', 'File changed on disk — reloaded', 'ディスク上の変更を再読込しました'],
   'toast.fsEditing': ['磁盘文件已变更(编辑中,未覆盖你的草稿)', 'File changed on disk (editing — draft kept)', 'ディスク上で変更されました(編集中のため保持)'],
   'toast.fsStale': ['磁盘上的文件已更新(切到该标签时重读)', 'File changed on disk — reloaded when you switch to that tab', 'ディスク上の変更(タブを切り替えると再読込)'],
@@ -2334,7 +2339,7 @@ const I18N_TARGETS = [
   ['#btnGlass', 'menu.glass', 'title'], ['#btnSide', 'menu.side', 'title'],
   ['#btnOpenFolder span', 'file.openFolder'], ['#btnOpenFile span', 'file.openFile'],
   ['#btnNewDoc span', 'file.new'], ['#btnSaveAs span', 'file.saveAs'], ['#btnRenameDoc span', 'file.rename'], ['#btnDeleteDoc span', 'file.delete'],
-  ['#btnExportHtml span', 'file.exportHtml'], ['#btnPrint span', 'file.print'],
+  ['#btnExportHtml span', 'file.exportHtml'], ['#btnExportPdf span', 'file.exportPdf'], ['#btnPrint span', 'file.print'],
   ['#btnUndo span', 'edit.undo'], ['#btnRedo span', 'edit.redo'], ['#btnEdit span', 'edit.edit'], ['#btnRefresh span', 'edit.refresh'],
   ['#btnTree span', 'view.tree'], ['#btnToc span', 'view.toc'], ['#btnMap span', 'view.map'], ['#btnFindLib span', 'view.search'],
   ['#btnFindDoc span', 'view.find'], ['#btnFocus span', 'view.focus'], ['#btnZen span', 'view.zen'],
@@ -2715,17 +2720,22 @@ async function buildStandaloneHtml() {
   $qa('.code-copy', clone).forEach((b) => b.remove());
   $qa('.code-line .ln', clone).forEach((n) => n.remove());
   const docDir = String(cur.abs || '').replace(/[\\/][^\\/]*$/, '');
-  $qa('img,video,source', clone).forEach((el) => {
+  // 媒体:优先**内联成 data: URI**(导出物自包含,换台机器/发给别人也看得到图);
+  // 单张过大或读失败就退回相对路径(宁可图丢链,也不让导出物变成几十 MB)
+  let inlined = 0;
+  for (const el of $qa('img,video,source', clone)) {
     const src = el.getAttribute('src') || '';
     const p = assetUrlToLocalPath(src);
-    if (!p) return;
+    if (!p) continue;
+    const data = await inlineLocalMedia(p);
+    if (data) { el.setAttribute('src', data); inlined += 1; continue; }
     const rel = relativize(docDir, p);
     el.setAttribute('src', rel || 'file:///' + p.replace(/\\/g, '/'));
-  });
+  }
   const css = [await readAssetText('app.css'), await readAssetText('vendor/katex.min.css'), await readAssetText('vendor/hljs-atom-one-dark.min.css')].join('\n');
   const fallback = 'html,body{background:#1d2021;color:#ebdbb2;font:16px/1.7 system-ui,"Microsoft YaHei UI",sans-serif;margin:0}main{max-width:34em;margin:0 auto;padding:40px 24px}pre{background:#282828;padding:12px;border-radius:6px;overflow:auto}table{border-collapse:collapse}th,td{border:1px solid #3c3836;padding:6px 12px}img{max-width:100%}';
   const theme = currentLang() && document.body.dataset.theme === 'light' ? 'light' : 'dark';
-  return `<!DOCTYPE html>
+  const html = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang}" data-theme="${theme}" data-palette="${document.documentElement.dataset.palette || 'gruvbox'}">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${escHtml((cur.abs || '').split(/[\\/]/).pop() || 'TMMD')}</title>
@@ -2734,20 +2744,66 @@ body{background:transparent}main.reader-inner{max-width:var(--measure,34em)}
 @media print{@page{margin:18mm}body{background:#fff;color:#111}}
 </style></head>
 <body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
+  return { html, inlined };
+}
+/* 单张媒体内联上限:超过就退回相对路径(6MB base64 后约 8MB,再多导出物就不好用了) */
+const MEDIA_INLINE_MAX = 6 * 1024 * 1024;
+function mimeOfLocal(p) {
+  const e = String(p).toLowerCase().split('.').pop();
+  return ({
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp',
+    svg: 'image/svg+xml', bmp: 'image/bmp', avif: 'image/avif', ico: 'image/x-icon',
+    mp4: 'video/mp4', webm: 'video/webm', ogg: 'video/ogg',
+  })[e] || 'application/octet-stream';
+}
+/* 用 asset 协议把本地文件读成字节 → data: URI。任何一步失败都返回 null(调用方退回相对路径)。 */
+async function inlineLocalMedia(localPath) {
+  try {
+    const core = window.__TAURI__ && window.__TAURI__.core;
+    if (!core || typeof core.convertFileSrc !== 'function') return null;
+    const resp = await fetch(core.convertFileSrc(localPath));
+    if (!resp || !resp.ok) return null;
+    const buf = new Uint8Array(await resp.arrayBuffer());
+    if (!buf.length || buf.length > MEDIA_INLINE_MAX) return null;
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 8192) {
+      bin += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+    }
+    return 'data:' + mimeOfLocal(localPath) + ';base64,' + btoa(bin);
+  } catch { return null; }
 }
 async function exportCurrentHtml() {
   const cur = getTab(S.cur);
   if (!cur) { toast(t('empty.title')); return null; }
-  const html = await buildStandaloneHtml();
-  if (!html) return null;
-  const out = String(cur.abs).replace(/\.(md|markdown)$/i, '') + '.export.html';
+  const built = await buildStandaloneHtml();
+  if (!built) return null;
+  const out = String(cur.abs).replace(/\.(md|markdown|mdx|html|htm|txt)$/i, '') + '.export.html';
   try {
-    const p = await invoke('export_file', { path: out, content: html });
-    toast(t('toast.exported', { p: p || out }));
-    return p || out;
+    const p = await invoke('export_file', { path: out, content: built.html });
+    const target = p || out;
+    toast(built.inlined
+      ? t('toast.exportedInline', { p: target, n: built.inlined })
+      : t('toast.exported', { p: target }));
+    return target;
   } catch (e) {
     toast(t('toast.exportFail', { e: (e && e.message) || e }));
     return null;
+  }
+}
+/* PDF 直出:导出 HTML(含图片内联)→ 无头 Edge 打成 PDF → 打开。失败给可读原因,不弹系统框。 */
+async function exportCurrentPdf() {
+  const cur = getTab(S.cur);
+  if (!cur) { toast(t('empty.title')); return; }
+  toast(t('pdf.working'));
+  const htmlPath = await exportCurrentHtml();
+  if (!htmlPath) return;
+  const pdfPath = String(htmlPath).replace(/\.html?$/i, '') + '.pdf';
+  try {
+    const p = await invoke('export_pdf', { htmlPath, pdfPath });
+    toast(t('pdf.done', { p }));
+    try { await invoke('open_any', { path: p }); } catch { /* 打不开就只是没自动打开,路径已给 */ }
+  } catch (e) {
+    toast(t('pdf.fail', { e: (e && e.message) || e }));
   }
 }
 async function printCurrent() {
@@ -2823,6 +2879,7 @@ function initV17() {
   on('langJa', 'click', () => setLang('ja'));
   // 导出
   on('btnExportHtml', 'click', () => { closeDrawersSafe(); exportCurrentHtml(); });
+  on('btnExportPdf', 'click', () => { closeDrawersSafe(); exportCurrentPdf(); });
   on('setExportHtml', 'click', () => exportCurrentHtml());
   on('btnPrint', 'click', () => { closeDrawersSafe(); printCurrent(); });
   on('setPrintDoc', 'click', () => printCurrent());

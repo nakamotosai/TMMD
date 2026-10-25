@@ -207,6 +207,12 @@
           "markdownDescription": "Allow export_file (导出 .html/.htm 并返回绝对路径)"
         },
         {
+          "description": "Allow export_pdf (无头 Edge/Chrome 把导出 HTML 打成 PDF;CREATE_NO_WINDOW,不弹 UI)",
+          "type": "string",
+          "const": "allow-export-pdf",
+          "markdownDescription": "Allow export_pdf (无头 Edge/Chrome 把导出 HTML 打成 PDF;CREATE_NO_WINDOW,不弹 UI)"
+        },
+        {
           "description": "Allow get_glass_state (R2-fix 诊断位：直读 DWM 实时 backdrop)",
           "type": "string",
           "const": "allow-get-glass-state",

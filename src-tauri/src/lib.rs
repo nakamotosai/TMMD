@@ -1218,6 +1218,62 @@ fn watch_file(path: Option<String>) -> Result<(), String> {
 
 // ───────────────────────── 导出与打开 ─────────────────────────
 
+/// 导出 PDF:用系统自带的 Edge/Chrome **无头**模式,把导出的独立 HTML 打成 PDF —— 零新增依赖。
+/// 纪律:全程 `CREATE_NO_WINDOW`,失败只返回可读错误字符串,**绝不弹任何 UI**(用户明确要求过);
+/// 生成物不出现就报错,不做"假装成功"。
+#[tauri::command]
+fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
+    if !Path::new(&html_path).is_file() {
+        return Err(format!("导出 HTML 不存在: {html_path}"));
+    }
+    let browser = find_headless_browser()?;
+    let url = format!("file:///{}", html_path.replace('\\', "/").replace(' ', "%20"));
+    let mut cmd = std::process::Command::new(&browser);
+    cmd.args([
+        "--headless=new",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--no-pdf-header-footer",
+        &format!("--print-to-pdf={pdf_path}"),
+        &url,
+    ]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    let status = cmd.status().map_err(|e| format!("起无头浏览器失败: {e}"))?;
+    if !Path::new(&pdf_path).is_file() {
+        return Err(format!(
+            "PDF 未生成(浏览器退出码 {:?});可改用「打印 / 存 PDF」手动另存",
+            status.code()
+        ));
+    }
+    Ok(pdf_path)
+}
+
+/// 找一个可用的 Chromium 浏览器(Edge 先,Chrome 后)。找不到就给明确的下一步提示。
+fn find_headless_browser() -> Result<String, String> {
+    let mut cands: Vec<String> = Vec::new();
+    for key in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
+        if let Ok(base) = std::env::var(key) {
+            cands.push(format!(r"{base}\Microsoft\Edge\Application\msedge.exe"));
+            cands.push(format!(r"{base}\Google\Chrome\Application\chrome.exe"));
+        }
+    }
+    if let Ok(base) = std::env::var("LOCALAPPDATA") {
+        cands.push(format!(r"{base}\Microsoft\Edge\Application\msedge.exe"));
+    }
+    for c in cands {
+        if Path::new(&c).is_file() {
+            return Ok(c);
+        }
+    }
+    Err("找不到 Microsoft Edge / Chrome,无法直出 PDF(可改用「打印 / 存 PDF」)".into())
+}
+
 /// 导出:只允许 .html/.htm,写盘后返回绝对路径(「导出 HTML」)。
 #[tauri::command]
 fn export_file(path: String, content: String) -> Result<String, String> {
@@ -1635,6 +1691,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_info,
             allow_close,
+            export_pdf,
             update_check,
             update_download,
             update_install,

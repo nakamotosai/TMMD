@@ -104,6 +104,11 @@ description = "Allow allow_close (关窗守卫放行:前端确认无未保存内
 commands.allow = ["allow_close"]
 
 [[permission]]
+identifier = "allow-export-pdf"
+description = "Allow export_pdf (无头 Edge/Chrome 把导出 HTML 打成 PDF;CREATE_NO_WINDOW,不弹 UI)"
+commands.allow = ["export_pdf"]
+
+[[permission]]
 identifier = "allow-update-check"
 description = "Allow update_check (自研更新器:取发布清单,24h 节流)"
 commands.allow = ["update_check"]
