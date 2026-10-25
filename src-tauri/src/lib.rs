@@ -1602,6 +1602,68 @@ fn update_note(app: tauri::AppHandle, version: String, action: String) -> Result
     Ok(())
 }
 
+// ───────────────────────── 托盘(E 类:多窗口暂不做,前端是单窗口设计) ─────────────────────────
+/// 托盘:显示 / 隐藏 / 退出。
+/// **退出走关窗守卫**:这里调 `win.close()` 而不是 `process::exit`,于是未保存内容照样会被拦下来问一句
+/// (托盘菜单不该成为绕过守卫的后门)。
+fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出 TMMD", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+    let mut builder = TrayIconBuilder::with_id("tmmd-tray")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .tooltip("TMMD")
+        .on_menu_event(|app, ev| match ev.id().as_ref() {
+            "show" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.unminimize();
+                    let _ = w.set_focus();
+                }
+            }
+            "hide" => {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+            "quit" => {
+                // 关窗 → CloseRequested → 前端守卫(有未保存就弹三选)
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.close();
+                }
+            }
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            // 左键单击:在显示/隐藏之间切换(与大多数 Windows 应用一致)
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                let app = tray.app_handle();
+                if let Some(w) = app.get_webview_window("main") {
+                    if w.is_visible().unwrap_or(false) {
+                        let _ = w.hide();
+                    } else {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+            }
+        });
+    if let Some(icon) = app.default_window_icon() {
+        builder = builder.icon(icon.clone());
+    }
+    builder.build(app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1668,6 +1730,10 @@ pub fn run() {
             }
             // 几何落盘去抖线程:Resized/Moved 只投递,静默 500ms 后才写 window.json
             spawn_window_save_worker(app.handle().clone());
+            // 托盘(失败只记忽略:没有托盘不该影响主流程启动)
+            if let Err(e) = setup_tray(app) {
+                eprintln!("tray setup failed: {e}");
+            }
             Ok(())
         })
         .manage(StartupPending::default())
