@@ -515,6 +515,12 @@ html { transition: background-color var(--dur-slow) var(--ease); }
 .markdown-body { animation: sr-doc-in var(--dur-slow) var(--ease); }
 @keyframes sr-doc-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .toast { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+/* 编辑态查找替换条:复用 .findbar 的层级与圆角,多一个"替换为"输入与三个按钮。 */
+.edit-find { gap: 6px; }
+.edit-find .set-text { width: 150px; }
+.edit-find-cnt { font-size: 12px; color: var(--fg-dim); min-width: 44px; text-align: center; }
+.edit-find .icon-btn { width: 26px; justify-content: center; }
+
 /* 未保存三选弹窗:遮罩 + 卡片,复用玻璃/层级 token,不引入新堆叠层(z 600 高于 toast 500)。 */
 .askwrap {
   position: fixed; inset: 0; z-index: 600; display: flex; align-items: center; justify-content: center;

@@ -25,6 +25,8 @@ const LS = {
 };
 // 编辑历史（自维护 undo/redo 栈；拦截 Ctrl+Z/Y 避免与 textarea 原生栈双倍回退）
 const editHist = { undo: [], redo: [] };
+/* 撤销栈上限:每步是整文快照,长文档不设限会越堆越大(2026-10-25 加) */
+const UNDO_MAX = 200;
 let prevEditValue = '';
 let lastHistT = 0;
 let histLock = false; // doUndo/doRedo 编程赋值期间抑制 input 记史
@@ -40,10 +42,13 @@ const SWATCH_COLORS = {
 // R12b Round-2 氛围三预设：中 = R12a 默认(12/25/35/30)，弱接近清水，强深度磨砂；底色透明度(base)随预设走，后端 alpha 按拆分份额走(v1.8)
 // R12b 字号三预设：阅读 = 旧默认(1.75/16/14)，代码放大代码，演示整体放大
 /* v1.8 整窗一整块玻璃:氛围档不再分四路浓度,只给**一个总浓度**(percent)。
- * medium = 45 就是 pebrel 的 opacity(0.45)—— 两边同一起点才好对观感。 */
+ * medium = 40 是用户 2026-10-25 定调("要 40%,总之我要透出来半透明效果")——
+ * pebrel 原档是 45,我们比它再透一点点;选它就意味着接受亮壁纸处文字对比下降
+ * (实测窗内最亮壁纸带:45% 时中位 3.7:1 / 最坏 2.15:1,40% 会更低),
+ * 所以滑条留着:嫌淡就往上推(strong=70)。 */
 const ATMOS_PRESETS = {
   weak: { conc: 20, text: 100 },
-  medium: { conc: 45, text: 100 },
+  medium: { conc: 40, text: 100 },
   strong: { conc: 70, text: 100 },
 };
 const FONT_PRESETS = {
@@ -308,8 +313,11 @@ function enterEdit() {
   const ed = $id('editor');
   if (!ed) return;
   ed.value = S.cur.raw != null ? S.cur.raw : '';
-  editHist.undo.length = 0;
-  editHist.redo.length = 0;
+  // 撤销栈按标签隔离:切回来时恢复该标签自己的历史(此前是全局单例,切标签即全丢)
+  const tb = getTab(S.cur.abs);
+  const h = (tb && tb.hist && Array.isArray(tb.hist.undo)) ? tb.hist : null;
+  editHist.undo = h ? h.undo.slice() : [];
+  editHist.redo = h ? h.redo.slice() : [];
   lastHistT = 0;
   prevEditValue = ed.value;
   ed.hidden = false;
@@ -329,9 +337,17 @@ function pushUndo(v) {
   const now = Date.now();
   if (editHist.undo.length && now - lastHistT < 500) editHist.undo[editHist.undo.length - 1] = v;
   else editHist.undo.push(v);
+  // 上限:每步是整文快照,长文档不设限会越堆越大(2026-10-25 加)
+  while (editHist.undo.length > UNDO_MAX) editHist.undo.shift();
   lastHistT = now;
   editHist.redo.length = 0;
   syncHistBtns();
+}
+/* 把当前撤销/重做栈存回活动标签(切走/保存/关标签前调用),配合 enterEdit 实现"按标签隔离"。 */
+function stashHist() {
+  const tb = getTab(S.activeKey);
+  if (!tb) return;
+  tb.hist = { undo: editHist.undo.slice(), redo: editHist.redo.slice() };
 }
 function syncHistBtns() {
   const u = $id('btnUndo'); if (u) u.disabled = !S.editing || !editHist.undo.length;
@@ -477,6 +493,7 @@ async function saveEdit() {
     }
     tb.editing = false;
     tb.editDirty = false;
+    stashHist();                          // 保存后把撤销栈存回标签(切回来还能继续撤销)
     renderMarkdown(content, S.cur.abs);   // 恢复进入编辑前的滚动位置
     leaveEdit();
     persistTabs();
@@ -619,6 +636,110 @@ async function deleteDoc() {
   } catch (e) { toast(t('toast.deleteFail') + ((e && e.message) || e)); }
 }
 
+/* ==================== 编辑态查找替换(2026-10-25 编辑第二批) ====================
+ * 阅读态的 Ctrl+F 作用于渲染后的 DOM(能高亮);编辑态是 textarea,浏览器不允许高亮,
+ * 所以这里做"选中 + 跳转 + 计数"的最小可用版:区分大小写的纯文本查找、替换当前、全部替换。
+ * 每次改动都进撤销栈(Ctrl+Z 能退回来),并点亮标签脏点。 */
+let editFind = { q: '', idx: 0 };
+function buildEditFindBar() {
+  const bar = document.createElement('div');
+  bar.id = 'editFindBar';
+  bar.className = 'findbar edit-find';
+  bar.hidden = true;
+  bar.innerHTML = '<input id="editFindQ" class="set-text" placeholder="查找" spellcheck="false">'
+    + '<span id="editFindCnt" class="edit-find-cnt">0/0</span>'
+    + '<button id="editFindPrev" class="icon-btn" title="上一个">\u2191</button>'
+    + '<button id="editFindNext" class="icon-btn" title="下一个">\u2193</button>'
+    + '<input id="editFindR" class="set-text" placeholder="替换为" spellcheck="false">'
+    + '<button id="editFindOne"><span>替换</span></button>'
+    + '<button id="editFindAll"><span>全部替换</span></button>'
+    + '<button id="editFindClose" class="icon-btn" title="关闭">\u2715</button>';
+  document.body.appendChild(bar);
+  const on = (id, ev, fn) => { const el = bar.querySelector('#' + id); if (el) el.addEventListener(ev, fn); };
+  on('editFindQ', 'input', () => { editFind.idx = 0; editFindRun(0); });
+  on('editFindNext', 'click', () => editFindRun(1));
+  on('editFindPrev', 'click', () => editFindRun(-1));
+  on('editFindOne', 'click', () => editFindReplaceOne());
+  on('editFindAll', 'click', () => editFindReplaceAll());
+  on('editFindClose', 'click', () => closeEditFind());
+  on('editFindQ', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); editFindRun(e.shiftKey ? -1 : 1); } });
+  on('editFindR', 'keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); editFindReplaceOne(); } });
+}
+function closeEditFind() { const b = $id('editFindBar'); if (b) b.hidden = true; const ed = $id('editor'); if (ed) ed.focus(); }
+function openEditFind() {
+  if (!S.editing) return;
+  let b = $id('editFindBar');
+  if (!b) { buildEditFindBar(); b = $id('editFindBar'); }
+  b.hidden = false;
+  const ed = $id('editor');
+  const q = $id('editFindQ');
+  if (!q) return;
+  const sel = ed ? ed.value.slice(ed.selectionStart, ed.selectionEnd) : '';
+  if (sel && !sel.includes('\n')) q.value = sel;   // 选中文本直接当查找词(编辑器惯例)
+  q.focus();
+  q.select();
+  editFindRun(0);
+}
+/* dir=0 只重算计数;1/-1 跳下一个/上一个 */
+function editFindRun(dir) {
+  const ed = $id('editor');
+  const q = $id('editFindQ');
+  const cnt = $id('editFindCnt');
+  if (!ed || !q) return;
+  editFind.q = q.value;
+  if (!editFind.q) { if (cnt) cnt.textContent = '0/0'; return; }
+  const val = ed.value;
+  const hits = [];
+  let from = 0;
+  for (;;) {
+    const i = val.indexOf(editFind.q, from);
+    if (i === -1) break;
+    hits.push(i);
+    from = i + editFind.q.length;
+    if (hits.length > 5000) break;   // 兜底:极端情况不卡死
+  }
+  if (!hits.length) { if (cnt) cnt.textContent = '0/0'; return; }
+  if (dir !== 0) {
+    const cur = ed.selectionStart;
+    let next;
+    if (dir > 0) next = hits.find((h) => h > cur) ?? hits[0];
+    else next = [...hits].reverse().find((h) => h < cur) ?? hits[hits.length - 1];
+    editFind.idx = hits.indexOf(next);
+    ed.focus();
+    ed.setSelectionRange(next, next + editFind.q.length);
+  }
+  const at = hits[editFind.idx] != null ? editFind.idx : 0;
+  if (cnt) cnt.textContent = (at + 1) + '/' + hits.length;
+}
+function editFindReplaceOne() {
+  const ed = $id('editor');
+  const r = $id('editFindR');
+  if (!ed || !editFind.q) return;
+  const cur = ed.value.slice(ed.selectionStart, ed.selectionEnd);
+  if (cur !== editFind.q) { editFindRun(1); return; }   // 没选中命中项就先跳过去
+  pushUndo(prevEditValue);
+  ed.setRangeText(r ? r.value : '', ed.selectionStart, ed.selectionEnd, 'end');
+  prevEditValue = ed.value;
+  S.editDirty = true;
+  renderTabs();
+  editFindRun(1);
+}
+function editFindReplaceAll() {
+  const ed = $id('editor');
+  const r = $id('editFindR');
+  if (!ed || !editFind.q) return;
+  const val = ed.value;
+  if (!val.includes(editFind.q)) { editFindRun(0); return; }
+  const n = val.split(editFind.q).length - 1;
+  pushUndo(prevEditValue);
+  ed.value = val.split(editFind.q).join(r ? r.value : '');
+  prevEditValue = ed.value;
+  S.editDirty = true;
+  renderTabs();
+  toast('已替换 ' + n + ' 处');
+  editFindRun(0);
+}
+
 /* ==================== 打开文件(R7:统一进标签页) ==================== */
 async function openExternal(abs) {
   await openTab({ abs, kind: 'ext' });
@@ -647,7 +768,7 @@ function stashTab() {
   const t = getTab(S.activeKey);
   if (!t || !S.cur || normPath(S.cur.abs) !== normPath(t.abs)) return;
   t.raw = S.cur.raw;
-  if (S.editing) { const ed = $id('editor'); t.draft = ed ? ed.value : null; t.editing = true; t.editDirty = S.editDirty; }
+  if (S.editing) { const ed = $id('editor'); t.draft = ed ? ed.value : null; t.editing = true; t.editDirty = S.editDirty; stashHist(); }
   else { t.draft = null; t.editing = false; t.editDirty = false; }
 }
 // R7：打开/切换串行化（连续双击/多文件拖拽/单实例连发/CDP 连发时渲染不交错）
@@ -1717,11 +1838,39 @@ function wire() {
   $id('btnUndo')?.addEventListener('click', () => { if (S.editing) doUndo(); });
   $id('btnRedo')?.addEventListener('click', () => { if (S.editing) doRedo(); });
   $id('editor')?.addEventListener('keydown', (e) => {
+    // Tab 缩进(此前按 Tab 会把焦点跳出去 —— 编辑里最反直觉的一处)
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const ed = $id('editor');
+      const s = ed.selectionStart, en = ed.selectionEnd;
+      if (!e.shiftKey && s === en) {
+        ed.setRangeText('  ', s, en, 'end');
+      } else {
+        // 跨行选区:整块缩进 / 反缩进
+        const val = ed.value;
+        const lineStart = val.lastIndexOf('\n', s - 1) + 1;
+        let lineEnd = val.indexOf('\n', en);
+        if (lineEnd === -1) lineEnd = val.length;
+        const block = val.slice(lineStart, lineEnd);
+        const next = block
+          .split('\n')
+          .map((l) => (e.shiftKey ? l.replace(/^ {1,2}/, '') : '  ' + l))
+          .join('\n');
+        ed.setRangeText(next, lineStart, lineEnd, 'select');
+      }
+      // setRangeText 不触发 input 事件,手动记一步历史 + 点脏
+      S.editDirty = true;
+      pushUndo(prevEditValue);
+      prevEditValue = ed.value;
+      renderTabs();
+      return;
+    }
     if (!(e.ctrlKey || e.metaKey)) return;
     const k = e.key.toLowerCase();
     if (k === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
     else if (k === 'y') { e.preventDefault(); doRedo(); }
     else if (k === 's') { e.preventDefault(); saveEdit(); }   // 2026-10-25:编辑态补上 Ctrl+S(此前根本没有保存快捷键)
+    else if (k === 'h') { e.preventDefault(); openEditFind(); } // 编辑态查找替换(阅读态的 Ctrl+F 是另一套)
   });
   $id('editor')?.addEventListener('input', () => {
     if (histLock) return; // doUndo/doRedo 编程赋值不记历史（防栈污染/弹跳）
@@ -1780,7 +1929,7 @@ function wire() {
     closeDrawers();
   });
   // 单一 Esc：抽屉 + 任一面板一起关（单例路由 showPanel 全关；R12c(e)：右键菜单同车，不另起监听）
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeCtxMenu(); closeDrawers(); showPanel(null); } });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeCtxMenu(); closeDrawers(); showPanel(null); closeEditFind(); } });
   // R7 标签页快捷键:Ctrl+W 关当前,Ctrl+Tab / Ctrl+Shift+Tab 轮切(浏览器同感;编辑框内同样生效)
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;

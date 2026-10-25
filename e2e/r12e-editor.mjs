@@ -85,6 +85,17 @@ writeFileSync(MD, 'ctrl-s target\n');
 
 const winBefore = await val(`JSON.stringify({ tabs: (S.tabs || []).map((t) => t.abs), active: S.activeKey })`);
 console.log('# 起手状态', winBefore);
+// 起手复位:关掉上次跑剩下的标签(它们的文件已被上轮清掉),否则后续断言会作用在错的标签上
+await val(`(() => {
+  try { leaveEdit(); } catch (e) {}
+  for (const t of S.tabs.slice()) { t.editDirty = false; t.editing = false; t.draft = null; }
+  localStorage.removeItem('sr_tabs');
+  localStorage.removeItem('sr_active_tab');
+  S.tabs = []; S.activeKey = null; S.cur = null;
+  try { renderTabs(); renderEmpty(); } catch (e) {}
+  return 1;
+})()`, 2000);
+console.log('# 已复位标签');
 
 // ---------- E01–E06 保存链 ----------
 await check('E01', '打开 CRLF 文档(open_path)并可进编辑', async () => {
@@ -242,6 +253,59 @@ try {
   await val(`(async () => { for (const t of S.tabs.slice()) { if (/tmmd-e2e-editor|doc\\.md|crlf\\.md|note\\.txt/.test(t.abs)) { if (normPath(S.activeKey) === normPath(t.abs)) { leaveEdit(); } } } return 1; })()`, 3000);
 } catch { /* 收尾失败不影响计分 */ }
 try { rmSync(SANDBOX, { recursive: true, force: true }); } catch { /* 文件被占用时留待下次清 */ }
+
+// ---------- E22–E25 编辑器手感:Tab 缩进 / 查找替换 / 撤销栈按标签 ----------
+await check('E22', 'Tab 插入缩进而非跳走焦点(单点)', async () => {
+  await val(`(async () => { await openTab({ abs: ${q(winPath(MD))}, kind: 'ext' }); enterEdit(); const ed = $id('editor'); ed.value = 'abc\\n'; ed.selectionStart = ed.selectionEnd = 0; ed.focus(); return 1; })()`, 2500);
+  await ev(`(() => { const ed = $id('editor'); ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })); return 1; })()`);
+  await sleep(300);
+  const v = await val(`$id('editor').value`);
+  return String(v).startsWith('  abc') ? true : JSON.stringify(String(v).slice(0, 20));
+});
+await check('E23', '跨行选区 Tab 整块缩进 / Shift+Tab 反缩进', async () => {
+  await val(`(() => { const ed = $id('editor'); ed.value = 'l1\\nl2\\n'; ed.selectionStart = 0; ed.selectionEnd = 5; return 1; })()`, 300);
+  await ev(`(() => { $id('editor').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })); return 1; })()`);
+  await sleep(250);
+  const indented = await val(`$id('editor').value`);
+  await ev(`(() => { $id('editor').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })); return 1; })()`);
+  await sleep(250);
+  const back = await val(`$id('editor').value`);
+  return String(indented) === '  l1\n  l2\n' && String(back) === 'l1\nl2\n' ? true : `indented=${JSON.stringify(indented)} back=${JSON.stringify(back)}`;
+});
+await check('E24', 'Ctrl+H 编辑态查找替换:计数 + 替换当前 + 全部替换', async () => {
+  await val(`(() => { const ed = $id('editor'); ed.value = 'foo foo foo\\n'; return 1; })()`, 300);
+  await ev(`(() => { $id('editor').dispatchEvent(new KeyboardEvent('keydown', { key: 'h', ctrlKey: true, bubbles: true, cancelable: true })); return 1; })()`);
+  await sleep(400);
+  const hasBar = await val(`!!document.getElementById('editFindBar') && !document.getElementById('editFindBar').hidden`);
+  if (hasBar !== true) return 'no find bar';
+  await val(`(() => { const q = $id('editFindQ'); q.value = 'foo'; q.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`, 500);
+  const cnt = await val(`$id('editFindCnt').textContent`);
+  await val(`(() => { $id('editFindR').value = 'bar'; $id('editFindNext').click(); return 1; })()`, 300);
+  await val(`(() => { $id('editFindOne').click(); return 1; })()`, 400);
+  const afterOne = await val(`$id('editor').value`);
+  await val(`(() => { $id('editFindAll').click(); return 1; })()`, 600);
+  const afterAll = await val(`$id('editor').value`);
+  await val(`(() => { $id('editFindClose').click(); return 1; })()`, 300);
+  return cnt === '1/3' && afterOne === 'bar foo foo\n' && afterAll === 'bar bar bar\n'
+    ? true : `cnt=${cnt} one=${JSON.stringify(afterOne)} all=${JSON.stringify(afterAll)}`;
+});
+await check('E25', '撤销栈按标签隔离(切走再切回仍能撤销)', async () => {
+  await val(`(async () => { const ed = $id('editor'); ed.value = 'A0\\n'; ed.dispatchEvent(new Event('input', { bubbles: true })); ed.value = 'A1\\n'; ed.dispatchEvent(new Event('input', { bubbles: true })); return 1; })()`, 800);
+  // 切走:守卫弹窗出现就点"不保存"(这条断言测的是撤销栈,不是守卫)
+  void val(`(async () => { await openTab({ abs: ${q(winPath(TXT))}, kind: 'ext' }); return 1; })()`, 3000);
+  await sleep(700);
+  await val(`(() => { const b = [...document.querySelectorAll('.askwrap button')].find((x) => x.dataset.a === 'discard'); if (b) b.click(); return 1; })()`, 800);
+  await sleep(800);
+  void val(`(async () => { await openTab({ abs: ${q(winPath(MD))}, kind: 'ext' }); return 1; })()`, 3000);
+  await sleep(700);
+  await val(`(() => { const b = [...document.querySelectorAll('.askwrap button')].find((x) => x.dataset.a === 'discard'); if (b) b.click(); return 1; })()`, 800);
+  await sleep(900);
+  const editing = await val(`S.editing`);
+  const histLen = await val(`editHist.undo.length`);
+  await val(`(() => { doUndo(); return 1; })()`, 400);
+  const after = await val(`$id('editor').value`);
+  return editing === true && histLen > 0 && after === 'A0\n' ? true : `editing=${editing} hist=${histLen} after=${JSON.stringify(after)}`;
+});
 
 console.log(`\n=== r12e-editor: ${results.pass}/${results.pass + results.fail} 通过 ===`);
 if (results.fail) { console.log('失败清单:', results.fails.join(', ')); process.exit(1); }
