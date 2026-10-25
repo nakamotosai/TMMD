@@ -619,7 +619,10 @@ fn fingerprint(p: &Path) -> Option<(u128, u64)> {
 fn remember_read(p: &Path) {
     if let Some(fp) = fingerprint(p) {
         if let Ok(mut m) = LAST_READ.lock() {
-            m.insert(p.to_string_lossy().to_string(), fp);
+            // 键必须用 cage_key 归一化:`\\?\` 前缀 / 大小写 / 分隔符在 read_text(经 cage_join 规范化)
+            // 与 open_path(前端原样串)两条路径上不同,否则"对话框打开 → 树里再打开 → 保存"会取不到基线、
+            // 冲突检测静默失效(2026-10-25 核验发现)。
+            m.insert(cage_key(p), fp);
         }
     }
 }
@@ -654,13 +657,20 @@ fn write_atomic(p: &Path, bytes: &[u8]) -> Result<(), String> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "doc".into());
     let tmp = dir.join(format!(".{name}.tmmd-tmp"));
-    fs::write(&tmp, bytes).map_err(|e| format!("写临时文件失败: {e}"))?;
+    // 先清上次失败留下的残件(只读/被占时下面会给出可读错误),避免此后每次保存都卡在同一处
+    let _ = fs::remove_file(&tmp);
+    if let Err(e) = fs::write(&tmp, bytes) {
+        let _ = fs::remove_file(&tmp); // create 成功但 write_all 失败(如 ENOSPC)也要清
+        return Err(format!("写临时文件失败({}): {e}", tmp.display()));
+    }
     if let Ok(f) = fs::File::open(&tmp) {
         let _ = f.sync_all();
     }
     if let Err(e) = fs::rename(&tmp, p) {
         let _ = fs::remove_file(&tmp);
-        return Err(format!("替换文件失败: {e}"));
+        return Err(format!(
+            "替换文件失败: {e}(若提示拒绝访问,通常是文件只读或被别的程序占用,关掉占用它的程序再试)"
+        ));
     }
     Ok(())
 }
@@ -671,7 +681,7 @@ fn save_guarded(path: &Path, content: &str, force: bool) -> Result<(), String> {
     if !is_openable(path) {
         return Err(format!("仅支持 {} 文件", ext_hint()));
     }
-    let key = path.to_string_lossy().to_string();
+    let key = cage_key(path);   // 与 remember_read 同一套归一化,否则键对不上 = 冲突检测静默失效
     if !force {
         let known = LAST_READ.lock().ok().and_then(|m| m.get(&key).copied());
         if let (Some(k), Some(now)) = (known, fingerprint(path)) {
@@ -730,9 +740,14 @@ static CLOSE_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::
 
 #[tauri::command]
 fn allow_close(app: tauri::AppHandle) -> Result<(), String> {
+    let Some(w) = app.get_webview_window("main") else {
+        return Err("找不到主窗口".into());
+    };
     CLOSE_OK.store(true, std::sync::atomic::Ordering::SeqCst);
-    if let Some(w) = app.get_webview_window("main") {
-        let _ = w.close();
+    if let Err(e) = w.close() {
+        // 没关成就复位:否则守卫会永久失效,以后每次关窗都静默放走(将来加第二窗口/托盘就是数据事故)
+        CLOSE_OK.store(false, std::sync::atomic::Ordering::SeqCst);
+        return Err(format!("关窗失败: {e}"));
     }
     Ok(())
 }

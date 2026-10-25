@@ -381,6 +381,7 @@ async function writeTabContent(tab, content, force) {
   tab.draft = null;
   tab.editDirty = false;
   tab.stale = false;
+  tab.selfWriteAt = Date.now();   // 我们自己写的:watcher 会回声一次,别让它变成"磁盘已更新"的假提示/多余重读
   if (S.cur && normPath(S.cur.abs) === normPath(tab.abs)) { S.cur.raw = content; S.editDirty = false; }
   return 'ok';
 }
@@ -609,6 +610,7 @@ async function closeTab(abs) {
   }
   if (isActive) { stashTab(); leaveEdit(); }
   const idx = S.tabs.indexOf(t);
+  if (idx < 0) return;   // 弹窗是异步的:等待期间用户可能已经关掉这个标签,indexOf=-1 会误删最后一个无关标签
   S.tabs.splice(idx, 1);
   LS.del('sr_scr_' + abs);
   if (isActive) {
@@ -2293,7 +2295,9 @@ async function syncWatch() {
 async function onFsChanged(p) {
   const tab = getTab(p);
   if (!tab) return;
-  if (Date.now() - (tab.lastFs || 0) < 800) return;
+  // 自己刚写完也会收到一次回声(native rename 命中监听)→ 1.5s 窗口内忽略,避免假提示与多余重读
+  const quietUntil = Math.max(tab.lastFs || 0, tab.selfWriteAt || 0);
+  if (Date.now() - quietUntil < 1500) return;
   tab.lastFs = Date.now();
   // 同上:别拿 S.cur(对象)跟路径字符串比,恒假会让"编辑中保护"和"自动重载"两条分支全部失效。
   const isCur = !!(S.cur && normPath(S.cur.abs) === normPath(p));

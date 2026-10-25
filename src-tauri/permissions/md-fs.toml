@@ -39,56 +39,6 @@ description = "Allow save_roots to app config"
 commands.allow = ["save_roots"]
 
 [[permission]]
-identifier = "allow-pty-spawn"
-description = "Allow spawning embedded PTY session"
-commands.allow = ["pty_spawn"]
-
-[[permission]]
-identifier = "allow-pty-write"
-description = "Allow writing to embedded PTY"
-commands.allow = ["pty_write"]
-
-[[permission]]
-identifier = "allow-pty-resize"
-description = "Allow resizing embedded PTY"
-commands.allow = ["pty_resize"]
-
-[[permission]]
-identifier = "allow-pty-kill"
-description = "Allow killing embedded PTY session"
-commands.allow = ["pty_kill"]
-
-[[permission]]
-identifier = "allow-app-show"
-description = "Allow app_show (show + focus main window)"
-commands.allow = ["app_show"]
-
-[[permission]]
-identifier = "allow-app-hide"
-description = "Allow app_hide (hide main window to tray)"
-commands.allow = ["app_hide"]
-
-[[permission]]
-identifier = "allow-app-quit"
-description = "Allow app_quit (exit process)"
-commands.allow = ["app_quit"]
-
-[[permission]]
-identifier = "allow-app-restart"
-description = "Allow app_restart (respawn exe + exit)"
-commands.allow = ["app_restart"]
-
-[[permission]]
-identifier = "allow-app-minimize"
-description = "Allow app_minimize (titlebar chrome)"
-commands.allow = ["app_minimize"]
-
-[[permission]]
-identifier = "allow-app-toggle-maximize"
-description = "Allow app_toggle_maximize (titlebar chrome)"
-commands.allow = ["app_toggle_maximize"]
-
-[[permission]]
 identifier = "allow-set-glass-material"
 description = "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)"
 commands.allow = ["set_glass_material"]

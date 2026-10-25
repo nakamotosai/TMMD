@@ -183,42 +183,6 @@
           "markdownDescription": "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)"
         },
         {
-          "description": "Allow app_hide (hide main window to tray)",
-          "type": "string",
-          "const": "allow-app-hide",
-          "markdownDescription": "Allow app_hide (hide main window to tray)"
-        },
-        {
-          "description": "Allow app_minimize (titlebar chrome)",
-          "type": "string",
-          "const": "allow-app-minimize",
-          "markdownDescription": "Allow app_minimize (titlebar chrome)"
-        },
-        {
-          "description": "Allow app_quit (exit process)",
-          "type": "string",
-          "const": "allow-app-quit",
-          "markdownDescription": "Allow app_quit (exit process)"
-        },
-        {
-          "description": "Allow app_restart (respawn exe + exit)",
-          "type": "string",
-          "const": "allow-app-restart",
-          "markdownDescription": "Allow app_restart (respawn exe + exit)"
-        },
-        {
-          "description": "Allow app_show (show + focus main window)",
-          "type": "string",
-          "const": "allow-app-show",
-          "markdownDescription": "Allow app_show (show + focus main window)"
-        },
-        {
-          "description": "Allow app_toggle_maximize (titlebar chrome)",
-          "type": "string",
-          "const": "allow-app-toggle-maximize",
-          "markdownDescription": "Allow app_toggle_maximize (titlebar chrome)"
-        },
-        {
           "description": "Allow desktop_info command",
           "type": "string",
           "const": "allow-desktop-info",
@@ -289,30 +253,6 @@
           "type": "string",
           "const": "allow-pick-folder",
           "markdownDescription": "Allow pick_folder native dialog"
-        },
-        {
-          "description": "Allow killing embedded PTY session",
-          "type": "string",
-          "const": "allow-pty-kill",
-          "markdownDescription": "Allow killing embedded PTY session"
-        },
-        {
-          "description": "Allow resizing embedded PTY",
-          "type": "string",
-          "const": "allow-pty-resize",
-          "markdownDescription": "Allow resizing embedded PTY"
-        },
-        {
-          "description": "Allow spawning embedded PTY session",
-          "type": "string",
-          "const": "allow-pty-spawn",
-          "markdownDescription": "Allow spawning embedded PTY session"
-        },
-        {
-          "description": "Allow writing to embedded PTY",
-          "type": "string",
-          "const": "allow-pty-write",
-          "markdownDescription": "Allow writing to embedded PTY"
         },
         {
           "description": "Allow read_text under path cage",
