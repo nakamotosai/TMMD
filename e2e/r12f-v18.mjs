@@ -1,0 +1,319 @@
+// r12f-v18.mjs — v1.8 第二批四项的运行验证 + 一类静态检查(node --check 抓不到的"未定义标识符")。
+// 覆盖:
+//   A) 运行时标识符探针:把 app.js 里所有"被调用但文件内从未声明、也不是参数/内建"的名字拿去
+//     页面里 typeof 一遍 —— 2026-10-25 的 `StringtrErr(e)`(i18n 批量的 sed 事故)就属于这一类:
+//     语法检查全绿,但保存/冲突路径一跑就 ReferenceError。这条探针就是为了让同类事故再也过不去。
+//   B) 打字机模式:光标行是否稳定停在视口约 38%;关掉后是否恢复"不自动滚动"。
+//   C) 库级搜索:排序(文件名命中 > 标题命中 > 正文)+ UI 按文件分组。
+//   D) PDF 直出:导出 HTML 里图片是否内联成 data:;无头浏览器是否真的产出 PDF。
+//   E) i18n:字典三语齐备、用到的键都在字典里、EN 界面不再夹整块中文。
+// 用法:先起隔离实例(tools/verify/launch-on-secondary.ps1),再 node e2e/r12f-v18.mjs [--port=9225]
+// 安全:全部测试文件建在 os.tmpdir 的独立子目录;roots.json 写进 **隔离配置目录**(TMMD_CONFIG_DIR),
+//       绝不碰用户真实配置。不调用任何会弹窗/打开外部程序的命令(不 open_any)。
+import { writeFileSync, readFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+const args = process.argv.slice(2);
+const port = (args.find((a) => a.startsWith('--port=')) || '--port=9225').split('=')[1];
+const timeout = Number((args.find((a) => a.startsWith('--timeout=')) || '--timeout=15000').split('=')[1]) || 15000;
+const REPO = process.cwd();
+
+// ---------- 1) CDP 连通性 ----------
+let targets;
+try {
+  targets = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
+} catch (e) {
+  console.error(`CDP unreachable on :${port} — 先起调试实例(${e.message})`);
+  process.exit(2);
+}
+const page = targets.find((t) => t.type === 'page');
+if (!page) { console.error('no page target'); process.exit(2); }
+
+const ws = new WebSocket(page.webSocketDebuggerUrl);
+await new Promise((res, rej) => { ws.onopen = res; ws.onerror = () => rej(new Error('ws connect failed')); });
+let seq = 0;
+const pending = new Map();
+ws.onmessage = (e) => { const m = JSON.parse(e.data); if (pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } };
+function ev(expr, ms) {
+  const id = ++seq;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { pending.delete(id); resolve({ timeout: true }); }, ms || timeout);
+    pending.set(id, (m) => { clearTimeout(timer); resolve(m); });
+    ws.send(JSON.stringify({ id, method: 'Runtime.evaluate', params: { expression: expr, awaitPromise: true, returnByValue: true } }));
+  });
+}
+async function val(expr, ms) {
+  const r = await ev(expr, ms);
+  if (r.timeout) throw new Error(`evaluate timeout: ${expr.slice(0, 120)}`);
+  if (r.result?.exceptionDetails) throw new Error(`JS EXCEPTION: ${JSON.stringify(r.result.exceptionDetails).slice(0, 300)}`);
+  return r.result?.result?.value;
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const q = (s) => JSON.stringify(String(s));
+const results = { pass: 0, fail: 0, fails: [] };
+function ok(name, cond, extra) {
+  if (cond) { results.pass++; console.log(`  ok   ${name}`); }
+  else { results.fail++; results.fails.push(name); console.log(`  FAIL ${name}${extra ? ' :: ' + JSON.stringify(extra).slice(0, 400) : ''}`); }
+}
+
+// ---------- 沙箱 ----------
+const ROOT = join(tmpdir(), 'tmmd-e2e-v18');
+const CFG = process.env.TMMD_CONFIG_DIR || join(tmpdir(), 'tmmd-verify-cfg');
+rmSync(ROOT, { recursive: true, force: true });
+mkdirSync(ROOT, { recursive: true });
+const winPath = (p) => p.replace(/\//g, '\\');
+const SAFE_FILE_RE = /tmmd-e2e-v18/i;
+
+async function guardSandbox() {
+  const cur = String((await val(`S.cur ? S.cur.abs : ''`, 2000)) || '');
+  if (cur && !SAFE_FILE_RE.test(cur)) {
+    await val(`(() => { try { leaveEdit(); } catch (e) {} S.cur = null; S.activeKey = null; S.tabs = []; return 1; })()`, 2000);
+    throw new Error(`护栏拦下:活动文件不在沙箱内(${cur}),已清空标签拒绝继续`);
+  }
+}
+
+console.log('== r12f v1.8 运行验证 ==');
+
+/* ═══════════ A) 运行时标识符探针 ═══════════ */
+{
+  const raw = readFileSync(join(REPO, 'ui-reader/app.js'), 'utf8');
+  // 先剥注释与字符串字面量:否则中文注释/HTML 串里的词(如 `paint_glass`、`Previous`、`draft`)
+  // 会被当成"被调用的标识符",探针全是假阳性。模板串保留 ${...} 里的真实代码。
+  const src = raw
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/`(?:\\.|[^`\\])*`/g, (m) => (m.match(/\$\{[^}]*\}/g) || []).join(' '))
+    .replace(/'(?:\\.|[^'\\\n])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\\n])*"/g, '""');
+  const declared = new Set();
+  for (const m of src.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1]);
+  for (const m of src.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1]);
+  for (const m of src.matchAll(/\bclass\s+([A-Za-z_$][\w$]*)/g)) declared.add(m[1]);
+  for (const m of src.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*:/g)) declared.add(m[1]);   // 对象键 / 简写
+  for (const m of src.matchAll(/\(([^()]*)\)\s*(?:=>|\{)/g)) {                              // 参数
+    for (const p of m[1].split(',')) {
+      const n = p.trim().replace(/^\.\.\./, '').split(/[:=]/)[0].trim();
+      if (/^[A-Za-z_$][\w$]*$/.test(n)) declared.add(n);
+    }
+  }
+  // 对象字面量的简写方法:`image({...}) { ... }` / `acceptNode(n) { ... }` —— 是**声明**,不是调用
+  for (const m of src.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*\([^()]*\)\s*\{/g)) declared.add(m[1]);
+  const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'new', 'await', 'do', 'else', 'in', 'of', 'delete', 'void', 'yield', 'super', 'import', 'case', 'async', 'get', 'set', 'var', 'let', 'const', 'this', 'try', 'throw', 'break', 'continue', 'instanceof', 'with', 'debugger']);
+  const BUILTINS = new Set(['String', 'Number', 'Boolean', 'Array', 'Object', 'Math', 'JSON', 'Date', 'Map', 'Set', 'Promise', 'RegExp', 'Error', 'TypeError', 'RangeError', 'Symbol', 'BigInt', 'Proxy', 'Reflect', 'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'encodeURIComponent', 'decodeURIComponent', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame', 'requestIdleCallback', 'fetch', 'btoa', 'atob', 'alert', 'confirm', 'prompt', 'structuredClone', 'queueMicrotask', 'getComputedStyle', 'matchMedia', 'addEventListener', 'removeEventListener', 'dispatchEvent', 'URL', 'URLSearchParams', 'Blob', 'File', 'FileReader', 'TextEncoder', 'TextDecoder', 'AbortController', 'IntersectionObserver', 'ResizeObserver', 'MutationObserver', 'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'DragEvent', 'WeakMap', 'WeakSet', 'Intl', 'crypto', 'performance', 'console', 'Image', 'Audio', 'HTMLElement', 'Node', 'Element', 'DOMParser', 'XMLHttpRequest', 'Worker', 'top', 'self', 'window', 'document', 'location', 'navigator', 'history', 'screen', 'localStorage', 'sessionStorage', 'indexedDB', 'eval', 'Function', 'CSS', 'Notification', 'WebSocket', 'Path2D', 'OffscreenCanvas', 'DOMPoint', 'CanvasRenderingContext2D']);
+  const cands = new Set();
+  for (const m of src.matchAll(/(?<![\w$.])([A-Za-z_$][\w$]*)\s*\(/g)) {
+    const n = m[1];
+    if (KEYWORDS.has(n) || BUILTINS.has(n) || declared.has(n)) continue;
+    cands.add(n);
+  }
+  const list = [...cands];
+  const probe = `(() => { const out = []; for (const n of ${JSON.stringify(list)}) { let dead = false; try { eval(n); } catch (e) { dead = (e instanceof ReferenceError); } if (dead) out.push(n); } return out; })()`;
+  const bad = (await val(probe, 30000)) || [];
+  console.log(`  探针候选 ${list.length} 个`);
+  ok('A1 无未被声明的标识符被调用', bad.length === 0, bad);
+  const selfTest = await val(`(() => { try { eval('__definitely_missing__'); return 'no-throw'; } catch (e) { return e instanceof ReferenceError ? 'THROWS' : 'other'; } })()`);
+  ok('A2 探针自身有效(未声明名会被抓到)', selfTest === 'THROWS', selfTest);
+  // 反向自检:探针必须真能通过(否则"全绿"是假的)——trErr 是全项目都在用的真实函数
+  ok('A3 探针能认出真实存在的函数(trErr)', (await val(`(typeof trErr === 'function') ? 'yes' : 'no'`)) === 'yes');
+  // A4 源码级复查:i18n 的 t('...') 绝不能落在"同作用域里也声明了 t"的地方。
+  // 局部 `t`(参数名/局部变量)会把全局 i18n 函数 t 遮蔽 → 运行时变成"把 tab 对象当函数调",
+  // 抛 TypeError。2026-10-25 实测 activateTabRaw(读文件失败提示)与 closeTab(关脏标签冲突)各有这种点位。
+  const blocks = [];
+  for (const m of src.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{/g)) {
+    let i = m.index + m[0].length;
+    let depth = 1;
+    while (i < src.length && depth > 0) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; i++; }
+    blocks.push({ name: m[1], params: m[2], start: m.index, end: i, body: src.slice(m.index, i) });
+  }
+  const shadowed = [];
+  for (const m of src.matchAll(/(?<![\w$.])t\('([A-Za-z0-9_.]+)'/g)) {
+    const b = blocks.filter((x) => x.start < m.index && m.index <= x.end).pop();
+    if (!b) continue;
+    const paramShadow = /(^|,)\s*t\s*(,|$)/.test(b.params);
+    const localShadow = /\b(?:const|let|var)\s+t\b/.test(b.body);
+    if (paramShadow || localShadow) shadowed.push(`${b.name}@${src.slice(0, m.index).split('\n').length}`);
+  }
+  ok('A4 i18n 的 t() 不被局部 t 遮蔽', shadowed.length === 0, shadowed);
+}
+
+/** 每节开头把实例恢复干净:关掉残留弹窗、退出编辑态(否则切页会弹三选窗,evaluate 必卡死)。 */
+async function reset() {
+  await val(`(async () => { try { const w = document.querySelector('.askwrap'); if (w) { const b = [...w.querySelectorAll('button')].find((x) => x.dataset.a === 'cancel') || w.querySelector('button'); if (b) b.click(); } } catch (e) {} try { leaveEdit(); } catch (e) {} S.editDirty = false; await new Promise((r) => setTimeout(r, 120)); return 1; })()`, 8000);
+}
+
+
+/* ═══════════ B) 打字机模式 ═══════════ */
+{
+  console.log('-- B 打字机 --');
+  await reset();
+  const lines = Array.from({ length: 200 }, (_, i) => `line ${i + 1} of the sandbox document`);
+  const B_MD = join(ROOT, 'typewriter-probe.md');
+  writeFileSync(B_MD, lines.join('\n') + '\n', 'utf8');
+  await val(`(async () => { await invoke('open_path', { path: ${q(winPath(B_MD))} }); await openTab({ abs: ${q(winPath(B_MD))}, kind: 'ext' }); enterEdit(); return 1; })()`);
+  await guardSandbox();
+  // 造 300 行内容,光标放**第 60 行末**(后面还有 240 行)——放末尾会一路顶到底部(clamp),
+  // 那时量到的是"到底了"而不是"跟随",第一版测试就是这么假失败的。
+  const setup = `(() => { const ed = $id('editor'); const v = Array.from({ length: 300 }, (_, i) => 'row ' + i).join('\\n'); ed.value = v; const pos = v.split('\\n').slice(0, 60).join('\\n').length; ed.selectionStart = ed.selectionEnd = pos; ed.focus(); ed.dispatchEvent(new Event('input', { bubbles: true })); applyTypewriter(true); return 1; })()`;
+  await val(setup, 5000);
+  const measure = `(() => { const ed = $id('editor'); const lh = typewriterLineHeight(ed); const line = ed.value.slice(0, ed.selectionStart).split('\\n').length - 1; const ratio = (((line + 0.5) * lh) - ed.scrollTop) / ed.clientHeight; return { tw: S.editorTypewriter, lh: Math.round(lh * 10) / 10, line, ratio: Math.round(ratio * 1000) / 1000, bottomed: ed.scrollTop >= (ed.scrollHeight - ed.clientHeight) - 1 }; })()`;
+  const on = await val(measure, 5000);
+  ok('B1 开关生效(S.editorTypewriter=true)', on && on.tw === true, on);
+  ok('B2 光标行落在视口 30%~46% 高度(且没顶到底)', on && on.ratio >= 0.30 && on.ratio <= 0.46 && on.bottomed === false, on);
+  // 在光标处插入 30 个换行(光标下移,后面仍有 240 行):每一次都要落回 38% 附近
+  const burst = `(() => { const ed = $id('editor'); const out = []; for (let i = 0; i < 30; i++) { const p = ed.selectionStart; ed.value = ed.value.slice(0, p) + '\\nins' + i + ed.value.slice(p); ed.selectionStart = ed.selectionEnd = p + 5; ed.dispatchEvent(new Event('input', { bubbles: true })); const lh = typewriterLineHeight(ed); const line = ed.value.slice(0, ed.selectionStart).split('\\n').length - 1; out.push(Math.round(((((line + 0.5) * lh) - ed.scrollTop) / ed.clientHeight) * 1000) / 1000); } return out; })()`;
+  const ratios = (await val(burst, 15000)) || [];
+  const worst = ratios.length ? Math.max(...ratios.map((r) => Math.abs(r - 0.38))) : 99;
+  const notBottom = await val(`(() => { const ed = $id('editor'); return ed.scrollTop < (ed.scrollHeight - ed.clientHeight) - 1; })()`);
+  ok('B3 连打 30 行后光标仍在 38%±8%(且未顶到底)', ratios.length === 30 && worst <= 0.08 && notBottom === true, { count: ratios.length, worst: Math.round(worst * 1000) / 1000, head: ratios.slice(0, 3), tail: ratios.slice(-3), notBottom });
+  // 关掉开关:同样的输入不再被"钉"在 38% —— 光标行随原生行为往下漂,比例上升
+  const off = await val(`(() => { const ed = $id('editor'); applyTypewriter(false); const ratio = () => { const lh = typewriterLineHeight(ed); const line = ed.value.slice(0, ed.selectionStart).split('\\n').length - 1; return ((((line + 0.5) * lh) - ed.scrollTop) / ed.clientHeight); }; const r0 = ratio(); for (let i = 0; i < 20; i++) { const p = ed.selectionStart; ed.value = ed.value.slice(0, p) + '\\nplain' + i + ed.value.slice(p); ed.selectionStart = ed.selectionEnd = p + 7; ed.dispatchEvent(new Event('input', { bubbles: true })); } return { tw: S.editorTypewriter, r0: Math.round(r0 * 1000) / 1000, r1: Math.round(ratio() * 1000) / 1000 }; })()`, 15000);
+  ok('B4 关闭后不再被钉在 38%(比例随光标下移上漂)', off && off.tw === false && off.r1 > 0.5 && off.r1 > off.r0, off);
+  await val(`(() => { try { leaveEdit(); } catch (e) {} return 1; })()`, 3000);
+}
+
+/* ═══════════ C) 库级搜索:排序 + 分组 ═══════════ */
+{
+  console.log('-- C 库搜索 --');
+  await reset();
+  const f1 = join(ROOT, 'zebra-notes.md');
+  const f2 = join(ROOT, 'heading.md');
+  const f3 = join(ROOT, 'body.md');
+  writeFileSync(f1, '# notes\n' + 'filler\n'.repeat(48) + 'a zebra appears in the body of the name-hit file\n', 'utf8');
+  writeFileSync(f2, '# zebra report\n' + 'filler\n'.repeat(20) + 'tail\n', 'utf8');
+  writeFileSync(f3, '# other\n' + 'filler\n'.repeat(28) + 'the zebra is only in the body here\n', 'utf8');
+  // roots.json 写进**隔离配置目录**(不是用户真实配置)
+  mkdirSync(CFG, { recursive: true });
+  writeFileSync(join(CFG, 'roots.json'), JSON.stringify([{ id: 'e2e-v18', name: 'v18-sandbox', path: winPath(ROOT) }], null, 2), 'utf8');
+  const hits = await val(`(async () => await invoke('search_library', { query: 'zebra', limit: 200 }))()`, 20000);
+  ok('C1 搜索有结果', Array.isArray(hits) && hits.length >= 3, Array.isArray(hits) ? hits.length : hits);
+  const order = (hits || []).map((h) => String(h.path).split(/[\\/]/).pop());
+  const firstOf = (n) => order.indexOf(n);
+  ok('C2 文件名命中排第一', order[0] === 'zebra-notes.md', order.slice(0, 5));
+  ok('C3 标题命中排在纯正文命中之前', firstOf('heading.md') >= 0 && firstOf('body.md') >= 0 && firstOf('heading.md') < firstOf('body.md'), { heading: firstOf('heading.md'), body: firstOf('body.md'), order });
+  ok('C4 得分单调不增', (hits || []).every((h, i, a) => i === 0 || a[i - 1].score >= h.score), (hits || []).map((h) => h.score));
+  // UI 分组
+  const ui = await val(`(async () => { S.view = 'search'; S.search.q = 'zebra'; renderSide(); await runLibrarySearch(); await new Promise(r => setTimeout(r, 120)); const groups = [...document.querySelectorAll('.search-file')].map((g) => g.textContent); const rows = document.querySelectorAll('.search-hit').length; return { groups, rows, meta: (document.getElementById('libSearchMeta') || {}).textContent }; })()`, 20000);
+  ok('C5 UI 按文件分组(3 组)', ui && ui.groups.length === 3, ui);
+  ok('C6 每组有命中数徽标', ui && ui.groups.every((g) => /\d/.test(g)), ui && ui.groups);
+  ok('C7 分组顺序与后端排序一致(第一组=文件名命中)', ui && /zebra-notes\.md/.test(ui.groups[0]), ui && ui.groups);
+  ok('C8 命中行数=渲染行数', ui && ui.rows === (hits || []).length, ui && { rows: ui.rows, hits: (hits || []).length });
+  // 搜索 UI 的 meta 文案不应是英文键名残留
+  ok('C9 meta 文案已本地化', ui && ui.meta && !/search\./.test(ui.meta), ui && ui.meta);
+}
+
+/* ═══════════ D) PDF 直出 + 媒体内联 ═══════════ */
+{
+  console.log('-- D PDF 直出 --');
+  await reset();
+  // 1x1 透明 PNG
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+  const img = join(ROOT, 'tiny.png');
+  writeFileSync(img, PNG);
+  const D_MD = join(ROOT, 'pdf-probe.md');
+  writeFileSync(D_MD, `# PDF 直出探针\n\n段落一。\n\n![tiny](tiny.png)\n\n- a\n- b\n\n\`\`\`js\nconst x = 1;\n\`\`\`\n`, 'utf8');
+  await val(`(async () => { await invoke('open_path', { path: ${q(winPath(D_MD))} }); await openTab({ abs: ${q(winPath(D_MD))}, kind: 'ext' }); await new Promise(r => setTimeout(r, 700)); return 1; })()`, 10000);
+  await guardSandbox();
+  const exp = await val(`(async () => { const p = await exportCurrentHtml(); return { p, toast: (document.getElementById('toast') || {}).textContent }; })()`, 30000);
+  const htmlPath = exp && exp.p;
+  ok('D1 导出 HTML 成功', !!htmlPath && existsSync(htmlPath), exp);
+  if (htmlPath && existsSync(htmlPath)) {
+    const html = readFileSync(htmlPath, 'utf8');
+    ok('D2 图片已内联成 data:', html.includes('data:image/png;base64,'), html.slice(0, 0) || { hasData: html.includes('data:image/'), len: html.length });
+    ok('D3 图片无 asset:// 残留', !html.includes('asset://'), { hasAsset: html.includes('asset://') });
+    ok('D4 打印页边距已内置(@page)', /@page\s*\{\s*margin:/.test(html), {});
+    ok('D5 导出物含正文与代码(highlight 后的 code-wrap)', html.includes('段落一') && html.includes('code-wrap') && html.includes('hljs'), { hasPara: html.includes('段落一'), hasCode: html.includes('code-wrap'), hljs: html.includes('hljs') });
+  }
+  const pdfPath = String(htmlPath || '').replace(/\.html?$/i, '') + '.pdf';
+  const pdf = await val(`(async () => { try { const p = await invoke('export_pdf', { htmlPath: ${q(htmlPath)}, pdfPath: ${q(pdfPath)} }); return { ok: true, p }; } catch (e) { return { ok: false, e: String((e && e.message) || e) }; } })()`, 60000);
+  ok('D6 无头浏览器产出 PDF(命令无异常)', pdf && pdf.ok === true, pdf);
+  if (existsSync(pdfPath)) {
+    const buf = readFileSync(pdfPath);
+    ok('D7 PDF 头合法且体积正常', buf.subarray(0, 5).toString() === '%PDF-' && buf.length > 800, { head: buf.subarray(0, 8).toString(), size: buf.length });
+  } else {
+    ok('D7 PDF 文件存在', false, { pdfPath });
+  }
+  // 负面:HTML 不存在 → 可读错误,不抛系统框
+  const neg = await val(`(async () => { try { await invoke('export_pdf', { htmlPath: 'C:\\\\tmmd-nonexistent\\\\nope.html', pdfPath: ${q(join(ROOT, 'nope.pdf'))} }); return { threw: false }; } catch (e) { return { threw: true, msg: String((e && e.message) || e) }; } })()`, 20000);
+  ok('D8 负面路径给可读错误', neg && neg.threw === true && /导出 HTML 不存在/.test(neg.msg || ''), neg);
+  // 导出物清理:留在沙箱目录里,随沙箱一起删;这里顺手确认它确实写在沙箱内
+  ok('D9 导出物落在源文件同级', !!htmlPath && String(htmlPath).toLowerCase().startsWith(ROOT.toLowerCase()), { htmlPath, ROOT });
+}
+
+/* ═══════════ E) i18n ═══════════ */
+{
+  console.log('-- E i18n --');
+  const dict = await val(`(() => { const bad = []; const keys = Object.keys(I18N); for (const k of keys) { const v = I18N[k]; if (!Array.isArray(v) || v.length !== 3 || v.some((s) => typeof s !== 'string' || !s.length)) bad.push(k); } return { keys: keys.length, bad }; })()`, 10000);
+  ok('E1 字典每条都有 zh/en/ja 三语且非空', dict && dict.keys > 100 && dict.bad.length === 0, dict);
+  const usedSrc = readFileSync(join(REPO, 'ui-reader/app.js'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  const used = await val(`(() => { const s = ${q(usedSrc)}; const m = [...s.matchAll(/(?<![\\w$.])t\\('([A-Za-z0-9_.]+)'/g)].map((x) => x[1]); const missing = [...new Set(m)].filter((k) => !(k in I18N)); return { used: new Set(m).size, missing }; })()`, 15000);
+  ok('E2 代码里用到的 t() 键都在字典里', used && used.missing.length === 0, used);
+  const cjk = (s) => /[\u4e00-\u9fff]/.test(String(s));
+  const en = await val(`(() => { setLang('en'); const samples = { saveFail: t('toast.saveFail'), tooBig: trErr('文件过大(>8MB)'), outOfCage: trErr('路径越界: x'), read: trErr('读文件失败: 拒绝访问'), unmapped: trErr('不认识的后端错误') }; return samples; })()`, 10000);
+  ok('E3 EN 下 toast 文案无中文', en && !cjk(en.saveFail), en);
+  ok('E4 EN 下后端错误前缀已翻译(过大/越界/读)', en && !cjk(en.tooBig) && !cjk(en.outOfCage) && !cjk(en.read) && /too large/i.test(en.tooBig), en);
+  ok('E5 未命中的错误原样露出(不吞信息)', en && en.unmapped.includes('不认识的后端错误'), en);
+  const ja = await val(`(() => { setLang('ja'); return { saveFail: t('toast.saveFail'), tooBig: trErr('文件过大(>8MB)'), zh: I18N['toast.saveFail'][0], ja: I18N['toast.saveFail'][2] }; })()`, 10000);
+  ok('E6 JA 文案确实与中文不同(真翻译过)', ja && ja.ja !== ja.zh && ja.saveFail === ja.ja, ja);
+  ok('E7 JA 下错误前缀走日文', ja && ja.tooBig !== '文件过大(>8MB)' && !ja.tooBig.startsWith('文件过大(>'), ja && ja.tooBig);
+  const zh = await val(`(() => { setLang('zh'); return { saveFail: t('toast.saveFail'), keyLeak: /^[a-z]+\\.[a-zA-Z]+$/.test(t('toast.saveFail')) }; })()`, 10000);
+  ok('E8 切回中文正常', zh && cjk(zh.saveFail) && !zh.keyLeak, zh);
+  // E9 字典**不能有重复键**:对象字面量里同名键后者覆盖前者,是"改了不生效"的经典来源
+  // (2026-10-25 实测:err.tooBig 有两份,后一份把新文案顶掉,EN 面里 8MB 那段直接丢了)
+  const dup = await val(`(() => { const s = ${q(readFileSync(join(REPO, 'ui-reader/app.js'), 'utf8'))}; const m = [...s.matchAll(/^  '([A-Za-z0-9_.]+)': \\[/gm)].map((x) => x[1]); const seen = new Set(); const d = []; for (const k of m) { if (seen.has(k)) d.push(k); seen.add(k); } return d; })()`, 15000);
+  ok('E9 字典无重复键', Array.isArray(dup) && dup.length === 0, dup);
+  // E10 ERR_MAP / ERR_TAIL_MAP 里引用的键必须都在字典里(这类引用是变量形式,普通扫不出来)
+  const errKeys = await val(`(() => { const m1 = [...ERR_MAP, ...ERR_TAIL_MAP].map((x) => x[1]); const miss = [...new Set(m1)].filter((k) => !(k in I18N)); return { total: m1.length, miss }; })()`, 10000);
+  ok('E10 错误映射引用的键都在字典里', errKeys && errKeys.miss.length === 0, errKeys);
+  await val(`(() => { toast(t('toast.refreshed')); return document.getElementById('toast').textContent; })()`, 5000);
+}
+
+/* ═══════════ F) 大文件策略(>8MB 必须给可读错误 + 出路提示,不静默死) ═══════════ */
+{
+  console.log('-- F 大文件策略 --');
+  await reset();
+  const big = join(ROOT, 'huge-probe.md');
+  writeFileSync(big, '# huge\n' + 'a'.repeat(9 * 1024 * 1024), 'utf8');   // 9MB > MAX_BYTES(8MB)
+  const r = await val(`(async () => { setLang('zh'); const before = S.tabs.length; await openTab({ abs: ${q(winPath(big))}, kind: 'ext' }); return { toast: (document.getElementById('toast') || {}).textContent || '', tabs: S.tabs.length, before, cur: S.cur ? S.cur.abs : null }; })()`, 20000);
+  ok('F1 超大文件被拒且给出可读提示', r && /文件过大/.test(r.toast) && /8MB/.test(r.toast), r);
+  ok('F2 提示带出路(可用默认程序打开)', r && /默认程序/.test(r.toast), r);
+  ok('F3 没有留下空标签/脏状态', r && !/huge-probe/.test(String(r.cur || '')) && r.tabs === r.before, r);
+  const rEn = await val(`(async () => { setLang('en'); await openTab({ abs: ${q(winPath(big))}, kind: 'ext' }); const s = (document.getElementById('toast') || {}).textContent || ''; setLang('zh'); return s; })()`, 20000);
+  ok('F4 EN 下这条提示也不夹中文', rEn && !/[\u4e00-\u9fff]/.test(rEn) && /too large/i.test(rEn), rEn);
+}
+
+/* ═══════════ G) 5000 行大文档滚动帧率(实测,不靠感觉) ═══════════ */
+{
+  console.log('-- G 5000 行滚动帧率 --');
+  await reset();
+  const big5k = join(ROOT, 'big-5000.md');
+  const body = Array.from({ length: 5000 }, (_, i) => `## 段落 ${i + 1}\n\n这是第 ${i + 1} 行的正文内容,用来把文档撑到 5000 行。\n`);
+  writeFileSync(big5k, '# 5000 行压力测试\n\n' + body.join('\n'), 'utf8');
+  await val(`(async () => { await openTab({ abs: ${q(winPath(big5k))}, kind: 'ext' }); await new Promise(r => setTimeout(r, 900)); return 1; })()`, 30000);
+  const fps = await val(`(async () => {
+    const sc = document.querySelector('.reader-scroll') || document.scrollingElement;
+    const frames = []; let last = performance.now();
+    const steps = 60;
+    for (let i = 0; i < steps; i++) {
+      await new Promise(r => requestAnimationFrame(() => r()));
+      const now = performance.now(); frames.push(now - last); last = now;
+      sc.scrollTop = (sc.scrollHeight - sc.clientHeight) * (i / (steps - 1));
+    }
+    frames.shift();
+    const sorted = [...frames].sort((a, b) => a - b);
+    const p = (q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
+    return { n: frames.length, avg: Math.round(frames.reduce((a, b) => a + b, 0) / frames.length * 10) / 10, p50: Math.round(p(0.5) * 10) / 10, p95: Math.round(p(0.95) * 10) / 10, max: Math.round(sorted[sorted.length - 1] * 10) / 10, nodes: document.querySelectorAll('#readerInner h2, #readerInner p, #readerInner li').length, tallest: sc.scrollHeight };
+  })()`, 60000);
+  ok('G1 5000 行文档真渲染(块节点 > 5000)', fps && fps.nodes > 5000, fps);
+  ok('G2 滚动均帧 < 20ms(≥50fps)', fps && fps.avg < 20, fps);
+  ok('G3 p95 帧 < 40ms(无长时间卡顿)', fps && fps.p95 < 40, fps);
+  console.log(`  帧率样本: ${JSON.stringify(fps)}`);
+}
+
+// ---------- 收尾 ----------
+try { await val(`(() => { try { leaveEdit(); } catch (e) {} return 1; })()`, 3000); } catch {}
+console.log(`\n== r12f: pass=${results.pass} fail=${results.fail} ==`);
+if (results.fail) { console.log('failures:'); results.fails.forEach((f) => console.log('  - ' + f)); }
+console.log(`sandbox kept for inspection: ${ROOT}`);
+ws.close();
+process.exit(results.fail ? 1 : 0);

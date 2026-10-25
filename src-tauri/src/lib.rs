@@ -161,14 +161,43 @@ fn sort_tree_nodes(nodes: &mut [TreeNode]) {
     }
 }
 
-/// 配置目录里的一个文件对象(app_config_dir 不存在则先建)。
-fn config_path(app: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
+/// 起控制台子进程的铁律:**一律 CREATE_NO_WINDOW**。
+/// `reg`/`cmd`/`powershell` 都是控制台程序,由 GUI 进程(本应用)起它们时 Windows 会新建一个
+/// **可见的控制台窗口**闪一下 —— 那正是用户嘴里"疯狂弹我主屏幕"的一类源头(2026-10-25 定位)。
+/// 这是产品缺陷,不是"环境问题":任何起控制台子进程的地方都必须走这个函数。
+fn hidden_cmd(program: &str) -> std::process::Command {
+    let mut c = std::process::Command::new(program);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        c.creation_flags(CREATE_NO_WINDOW);
+    }
+    c
+}
+
+/// 配置目录(roots.json / window.json / update_state.json / updates/ 都住这里)。
+/// **测试缝**:`TMMD_CONFIG_DIR` 覆盖之 —— 自动化起隔离实例时用,保证绝不碰用户真实配置
+/// (此前 e2e 只能蹭用户真实 app_config_dir,roots.json/window.json 都有被改的风险)。
+fn config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    if let Ok(d) = std::env::var("TMMD_CONFIG_DIR") {
+        if !d.trim().is_empty() {
+            let p = PathBuf::from(d);
+            fs::create_dir_all(&p).map_err(|e| format!("create test config dir: {e}"))?;
+            return Ok(p);
+        }
+    }
     let dir = app
         .path()
         .app_config_dir()
         .map_err(|e| format!("app_config_dir: {e}"))?;
     fs::create_dir_all(&dir).map_err(|e| format!("create config dir: {e}"))?;
-    Ok(dir.join(name))
+    Ok(dir)
+}
+
+/// 配置目录里的一个文件对象(目录不存在则先建)。
+fn config_path(app: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
+    Ok(config_dir(app)?.join(name))
 }
 
 fn roots_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
@@ -1228,7 +1257,7 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
     }
     let browser = find_headless_browser()?;
     let url = format!("file:///{}", html_path.replace('\\', "/").replace(' ', "%20"));
-    let mut cmd = std::process::Command::new(&browser);
+    let mut cmd = hidden_cmd(&browser);
     cmd.args([
         "--headless=new",
         "--disable-gpu",
@@ -1238,12 +1267,6 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
         &format!("--print-to-pdf={pdf_path}"),
         &url,
     ]);
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
     let status = cmd.status().map_err(|e| format!("起无头浏览器失败: {e}"))?;
     if !Path::new(&pdf_path).is_file() {
         return Err(format!(
@@ -1254,24 +1277,74 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
     Ok(pdf_path)
 }
 
-/// 找一个可用的 Chromium 浏览器(Edge 先,Chrome 后)。找不到就给明确的下一步提示。
+/// 找一个可用的 Chromium 内核浏览器(Edge 先,Chrome 后)。顺序:
+/// 显式指定 `TMMD_PDF_BROWSER`(自带 Chromium 的场景 / 测试缝)→ 常见安装目录 →
+/// 注册表 App Paths(装在非默认目录的 Chrome/Edge 也认)。
+/// 注意:本机(2026-10-25 实测)**没有装 Edge/Chrome**,所以这条链找不到时必须给可读提示,
+/// 让用户改用「打印 / 存 PDF」,而不是假装成功。
 fn find_headless_browser() -> Result<String, String> {
-    let mut cands: Vec<String> = Vec::new();
-    for key in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
-        if let Ok(base) = std::env::var(key) {
-            cands.push(format!(r"{base}\Microsoft\Edge\Application\msedge.exe"));
-            cands.push(format!(r"{base}\Google\Chrome\Application\chrome.exe"));
-        }
-    }
-    if let Ok(base) = std::env::var("LOCALAPPDATA") {
-        cands.push(format!(r"{base}\Microsoft\Edge\Application\msedge.exe"));
-    }
-    for c in cands {
+    for c in headless_browser_candidates() {
         if Path::new(&c).is_file() {
             return Ok(c);
         }
     }
     Err("找不到 Microsoft Edge / Chrome,无法直出 PDF(可改用「打印 / 存 PDF」)".into())
+}
+
+fn headless_browser_candidates() -> Vec<String> {
+    let mut cands: Vec<String> = Vec::new();
+    if let Ok(p) = std::env::var("TMMD_PDF_BROWSER") {
+        if !p.trim().is_empty() {
+            cands.push(p);
+        }
+    }
+    for key in ["ProgramFiles(x86)", "ProgramFiles", "LOCALAPPDATA"] {
+        if let Ok(base) = std::env::var(key) {
+            for rel in [
+                r"Microsoft\Edge\Application\msedge.exe",
+                r"Google\Chrome\Application\chrome.exe",
+                r"BraveSoftware\Brave-Browser\Application\brave.exe",
+                r"Vivaldi\Application\vivaldi.exe",
+                r"Chromium\Application\chrome.exe",
+            ] {
+                cands.push(format!("{base}\\{rel}"));
+            }
+        }
+    }
+    for exe in ["msedge.exe", "chrome.exe", "brave.exe", "vivaldi.exe"] {
+        for hive in ["HKLM", "HKCU"] {
+            let key = format!(r"{hive}\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe}");
+            if let Some(p) = reg_app_path(&key) {
+                cands.push(p);
+            }
+        }
+    }
+    cands
+}
+
+/// 读 `App Paths\<exe>` 的默认值(路径可能是非 ASCII,所以只取 "REG_SZ" 之后那段并去引号)。
+/// `to_ascii_lowercase` 只改 ASCII 字节、不改长度,所以用小写串找到的下标可以直接切原串。
+fn reg_app_path(key: &str) -> Option<String> {
+    let out = hidden_cmd("reg")
+        .args(["query", key, "/ve"])
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains(".exe") {
+            if let Some(idx) = lower.find("reg_sz") {
+                let p = line[idx + 6..].trim().trim_matches('"').trim().to_string();
+                if !p.is_empty() {
+                    return Some(p);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// 导出:只允许 .html/.htm,写盘后返回绝对路径(「导出 HTML」)。
@@ -1304,7 +1377,7 @@ fn export_file(path: String, content: String) -> Result<String, String> {
 fn open_any(path: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
+        hidden_cmd("cmd")
             .args(["/C", "start", "", path.as_str()])
             .spawn()
             .map_err(|e| format!("打开失败: {e}"))?;
@@ -1563,7 +1636,7 @@ fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
         launch = launch,
     );
     fs::write(&script, body).map_err(|e| format!("写安装脚本失败: {e}"))?;
-    std::process::Command::new("powershell")
+    hidden_cmd("powershell")
         .args([
             "-NoProfile",
             "-NonInteractive",
@@ -1805,7 +1878,7 @@ fn pending_open(state: tauri::State<StartupPending>) -> Result<Option<String>, S
 fn open_default_apps_settings() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        std::process::Command::new("cmd")
+        hidden_cmd("cmd")
             .args(["/C", "start", "", "ms-settings:defaultapps"])
             .spawn()
             .map_err(|e| format!("打开默认应用设置失败: {e}"))?;
@@ -1819,7 +1892,7 @@ fn open_default_apps_settings() -> Result<(), String> {
 fn get_md_default() -> Result<serde_json::Value, String> {
     #[cfg(target_os = "windows")]
     {
-        let out = std::process::Command::new("reg")
+        let out = hidden_cmd("reg")
             .args([
                 "query",
                 r"HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.md\UserChoice",
@@ -1855,7 +1928,7 @@ pub struct SystemEffectsState {
 /// 键或值缺失(reg 非 0 退出)返回 None → 调用方按「缺失当 true」处理。
 #[cfg(target_os = "windows")]
 fn read_transparency_enabled() -> Option<bool> {
-    let out = std::process::Command::new("reg")
+    let out = hidden_cmd("reg")
         .args([
             "query",
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",

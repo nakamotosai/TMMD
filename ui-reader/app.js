@@ -389,7 +389,7 @@ async function writeTabContent(tab, content, force) {
     if (tab.relPos) await invoke('write_text', { root: tab.rootPath || S.root.rootPath, rel: tab.relPos, ...args });
     else await invoke('save_path', { path: tab.abs, ...args });
   } catch (e) {
-    const msg = StringtrErr(e);
+    const msg = String(trErr(e));
     if (msg.includes('CONFLICT|')) return 'conflict'; // 后端发现磁盘被外部改过
     throw e;
   }
@@ -787,53 +787,56 @@ async function openTabInner(spec) {
   const ok = await activateTabRaw(t, { recent: true, kind: spec.kind });
   if (ok && spec.kind === 'ext') await scanSiblingTree(abs);
 }
-async function activateTabRaw(t, opts) {
+/* 注意:参数名**不能叫 t** —— 全局 i18n 函数就叫 t,参数遮蔽后 `t('toast.x')` 会变成
+ * "把 tab 对象当函数调"→ TypeError(2026-10-25 运行验证抓到:读文件失败这条提示一弹就炸)。 */
+async function activateTabRaw(tab, opts) {
   opts = opts || {};
-  if (t.abs !== S.activeKey) {
+  if (tab.abs !== S.activeKey) {
     if (!(await confirmLeaveEdit())) return false;
     stashTab();
     leaveEdit();
   }
-  S.activeKey = t.abs;
+  S.activeKey = tab.abs;
   try {
-    if (t.raw == null || (t.stale && !t.editDirty)) {
+    if (tab.raw == null || (tab.stale && !tab.editDirty)) {
       // raw==null:首次打开;stale:后台标签在磁盘上被改过(见 onFsChanged),
       // 且该标签没有未保存草稿时才敢覆盖 —— 有草稿就保留,避免顺手吃掉用户的字。
-      t.raw = t.relPos
-        ? await invoke('read_text', { root: t.rootPath, rel: t.relPos })
-        : await invoke('open_path', { path: t.abs });
-      t.stale = false;
+      tab.raw = tab.relPos
+        ? await invoke('read_text', { root: tab.rootPath, rel: tab.relPos })
+        : await invoke('open_path', { path: tab.abs });
+      tab.stale = false;
     }
   } catch (e) {
-    toast(t('toast.readFail') + trErr(e));
-    S.tabs = S.tabs.filter((x) => x !== t);
-    if (S.activeKey === t.abs) { S.activeKey = null; S.cur = null; renderEmpty(); }
+    // 大文件这类"读不了"要给出路:提示可用系统默认程序打开(提示文案同样走字典)
+    toast(t('toast.readFail') + trErr(e) + (trErrKey(e) === 'err.tooBig' ? t('toast.tooBigHint') : ''));
+    S.tabs = S.tabs.filter((x) => x !== tab);
+    if (S.activeKey === tab.abs) { S.activeKey = null; S.cur = null; renderEmpty(); }
     persistTabs();
     renderTabs();
     return false;
   }
-  S.cur = { abs: t.abs, raw: t.raw };
-  if (t.relPos) { S.cur.relPos = t.relPos; S.cur.rootPath = t.rootPath; }
-  renderMarkdown(t.raw, t.abs);
-  if (t.editing && t.draft != null) {
+  S.cur = { abs: tab.abs, raw: tab.raw };
+  if (tab.relPos) { S.cur.relPos = tab.relPos; S.cur.rootPath = tab.rootPath; }
+  renderMarkdown(tab.raw, tab.abs);
+  if (tab.editing && tab.draft != null) {
     enterEdit();
     const ed = $id('editor');
-    if (ed) { ed.value = t.draft; prevEditValue = t.draft; }
-    S.editDirty = !!t.editDirty;
+    if (ed) { ed.value = tab.draft; prevEditValue = tab.draft; }
+    S.editDirty = !!tab.editDirty;
     syncHistBtns();
   }
-  if (opts.recent) pushRecent(t.abs);
-  markActive(t.relPos || null);
+  if (opts.recent) pushRecent(tab.abs);
+  markActive(tab.relPos || null);
   if (opts.kind) setView('toc');
   persistTabs();
   renderTabs();
   return true;
 }
 async function closeTab(abs) {
-  const t = getTab(abs);
-  if (!t) return;
+  const tab = getTab(abs);   // 局部名不叫 t:i18n 的 t() 会被遮蔽(见 activateTabRaw 的注释)
+  if (!tab) return;
   const isActive = normPath(S.activeKey) === normPath(abs);
-  const dirty = isActive ? (S.editing && S.editDirty) : !!t.editDirty;
+  const dirty = isActive ? (S.editing && S.editDirty) : !!tab.editDirty;
   if (dirty) {
     if (isActive) {
       if (!(await confirmLeaveEdit())) return;
@@ -841,9 +844,9 @@ async function closeTab(abs) {
       const a = await askUnsaved();
       if (a === 'cancel') return;
       if (a === 'save') {
-        const content = t.draft != null ? t.draft : t.raw;
+        const content = tab.draft != null ? tab.draft : tab.raw;
         try {
-          const r = await writeTabContent(t, content, false);
+          const r = await writeTabContent(tab, content, false);
           // 后台标签不做"覆盖"确认(弹窗里没有上下文):冲突时保守拦下,让用户切过去处理
           if (r !== 'ok') { toast(t('conflict.title')); return; }
         } catch (e) { toast(t('toast.saveFail') + trErr(e)); return; }
@@ -851,7 +854,7 @@ async function closeTab(abs) {
     }
   }
   if (isActive) { stashTab(); leaveEdit(); }
-  const idx = S.tabs.indexOf(t);
+  const idx = S.tabs.indexOf(tab);
   if (idx < 0) return;   // 弹窗是异步的:等待期间用户可能已经关掉这个标签,indexOf=-1 会误删最后一个无关标签
   S.tabs.splice(idx, 1);
   LS.del('sr_scr_' + abs);
@@ -1428,8 +1431,11 @@ function updateDebugInfo() {
 /* 后端错误串是中文(命令层直接返回人话)。这里做一层**常见前缀**映射,让 EN/JA 界面不至于
  * 夹一整句中文;未命中的原样返回 —— 宁可露出中文,也不能把错误信息吞掉或改写成语义不同的句子。 */
 const ERR_MAP = [
-  [/^仅支持/, 'err.onlyExt'],
-  [/^文件过大/, 'err.tooBig'],
+  [/^仅支持.*$/, 'err.onlyExt'],
+  [/^文件过大.*$/, 'err.tooBig'],
+  [/^内容过大.*$/, 'err.tooBig'],
+  [/^不是文件$/, 'err.notFile'],
+  [/^找不到 Microsoft Edge \/ Chrome.*$/, 'err.noBrowser'],
   [/^路径越界/, 'err.outOfCage'],
   [/^读文件失败/, 'err.read'],
   [/^读取失败/, 'err.read'],
@@ -1443,12 +1449,31 @@ const ERR_MAP = [
   [/^校验失败/, 'err.sha'],
   [/^取更新清单失败|^读更新清单失败|^更新清单/, 'err.manifest'],
 ];
+/* 细节层:命令层的错误串常带 Windows 的中文系统消息(拒绝访问 / 找不到文件 / 被占用),
+ * EN/JA 界面里这几句也得翻,否则"前缀英文 + 后半句中文"更难看。未命中的原样露出 —— 不吞信息。 */
+const ERR_TAIL_MAP = [
+  [/拒绝访问/g, 'err.tailDenied'],
+  [/系统找不到指定的文件。/g, 'err.tailNoFile'],
+  [/系统找不到指定的路径。/g, 'err.tailNoPath'],
+  [/另一个程序正在使用此文件/g, 'err.tailBusy'],
+  [/文件名、目录名或卷标语法不正确。/g, 'err.tailBadName'],
+  [/浏览器退出码/g, 'err.tailExitCode'],
+  [/可改用「打印 \/ 存 PDF」手动另存/g, 'err.tailUsePrint'],
+];
 function trErr(e) {
-  const msg = String((e && e.message) || e || '');
+  let msg = String((e && e.message) || e || '');
   for (const [re, key] of ERR_MAP) {
-    if (re.test(msg)) return t(key) + msg.replace(re, '');
+    if (re.test(msg)) { msg = t(key) + msg.replace(re, ''); break; }
   }
+  for (const [re, key] of ERR_TAIL_MAP) msg = msg.replace(re, t(key));
   return msg;
+}
+/** 命中的映射键(没命中返回 '')。用于"某一类错误要额外补一句可操作提示"的场景:
+ * 提示文案本身也要走字典,否则 EN/JA 界面又会夹中文。 */
+function trErrKey(e) {
+  const msg = String((e && e.message) || e || '');
+  for (const [re, key] of ERR_MAP) if (re.test(msg)) return key;
+  return '';
 }
 
 /* ==================== 拖放(Tauri webview 事件拿磁盘路径) ==================== */
@@ -2306,6 +2331,18 @@ const I18N = {
   'toast.refreshFail': ['刷新失败:', 'Reload failed: ', '再読込に失敗: '],
   'toast.readFail': ['读取失败:', 'Read failed: ', '読み込みに失敗: '],
   'toast.readDirFail': ['读取目录失败:', 'Reading the folder failed: ', 'フォルダの読み込みに失敗: '],
+  'toast.tooBigHint': [' —— 可改用系统默认程序打开', ' — open it with your default app instead', ' — 既定のアプリで開いてください'],
+  'err.tailDenied': ['(拒绝访问)', ' (access denied)', '(アクセスが拒否されました)'],
+  'err.tailNoFile': ['(系统找不到指定的文件)', ' (the system cannot find the file)', '(指定されたファイルが見つかりません)'],
+  'err.tailNoPath': ['(系统找不到指定的路径)', ' (the system cannot find the path)', '(指定されたパスが見つかりません)'],
+  'err.tailBusy': ['(文件正被其它程序占用)', ' (the file is in use by another process)', '(他のプロセスが使用中です)'],
+  'err.tailBadName': ['(文件名不合法)', ' (invalid file name)', '(ファイル名が不正です)'],
+  'err.tooBig': ['文件过大(超过 8MB)', 'File too large (over 8 MB)', 'ファイルが大きすぎます(8MB 超)'],
+  'err.onlyExt': ['仅支持 Markdown / 文本文件', 'Only Markdown / text files are supported', 'Markdown / テキストファイルのみ対応'],
+  'err.notFile': ['不是文件', 'Not a file', 'ファイルではありません'],
+  'err.noBrowser': ['找不到 Microsoft Edge / Chrome,无法直出 PDF(可改用「打印 / 存 PDF」)', 'Microsoft Edge / Chrome not found, cannot export a PDF (use Print / Save as PDF instead)', 'Microsoft Edge / Chrome が見つからないため PDF を直接書き出せません(「印刷 / PDF に保存」をご利用ください)'],
+  'err.tailExitCode': ['(浏览器退出码', ' (browser exit code', '(ブラウザ終了コード'],
+  'err.tailUsePrint': [';可改用「打印 / 存 PDF」手动另存', '; use Print / Save as PDF instead', ';「印刷 / PDF に保存」をご利用ください'],
   'toast.replaced': ['已替换 {n} 处', 'Replaced {n} occurrence(s)', '{n} 件置換しました'],
   'toast.unfav': ['已取消收藏', 'Removed from favorites', 'お気に入りを解除しました'],
   'toast.fav': ['已收藏', 'Added to favorites', 'お気に入りに追加しました'],
@@ -2317,8 +2354,6 @@ const I18N = {
   'toast.sysSettingsOpened': ['已打开系统「默认应用」页:搜 .md → 选 TMMD', 'Opened Default apps — search ".md" then pick TMMD', '「既定のアプリ」を開きました: .md を検索して TMMD を選択'],
   'toast.iconModeHint': ['顶栏为纯图标模式:悬停看名称,可在设置→阅读→工具栏切换', 'Icon-only toolbar: hover for names; switch in Settings → Reading → Toolbar', 'アイコンのみのツールバー: ホバーで名称表示、設定→閲覧→ツールバーで切替'],
   'toast.needDesktop': ['请通过 TMMD 桌面应用打开', 'Please open this inside the TMMD desktop app', 'TMMD デスクトップアプリから開いてください'],
-  'err.onlyExt': ['文件类型不支持,仅支持 ', 'Unsupported file type; only ', '未対応のファイル形式です(対応: '],
-  'err.tooBig': ['文件过大', 'File too large', 'ファイルが大きすぎます'],
   'err.outOfCage': ['路径不在已登记的文件夹内', 'Path is outside the registered folders', '登録フォルダ外のパスです'],
   'err.read': ['读文件失败', 'Reading the file failed', 'ファイルの読み込みに失敗'],
   'err.write': ['写入失败', 'Writing failed', '書き込みに失敗'],
@@ -2710,7 +2745,7 @@ async function runLibrarySearch() {
     S.search.hits = Array.isArray(hits) ? hits : [];
   } catch (e) {
     S.search.hits = [];
-    if (meta) meta.textContent = StringtrErr(e);
+    if (meta) meta.textContent = String(trErr(e));
     return;
   }
   if (String(S.search.q).trim() !== q) return;   // 过期结果丢弃
@@ -2766,7 +2801,7 @@ function relativize(fromDir, abs) {
   return null;
 }
 async function buildStandaloneHtml() {
-  const cur = getTab(S.cur);
+  const cur = getTab(S.cur && S.cur.abs);   // S.cur 是**对象**({abs,raw}),不是路径:直接传进去恒 undefined(2026-10-25 修)
   if (!cur) return null;
   const inner = $id('readerInner');
   const clone = inner.cloneNode(true);
@@ -2827,7 +2862,7 @@ async function inlineLocalMedia(localPath) {
   } catch { return null; }
 }
 async function exportCurrentHtml() {
-  const cur = getTab(S.cur);
+  const cur = getTab(S.cur && S.cur.abs);
   if (!cur) { toast(t('empty.title')); return null; }
   const built = await buildStandaloneHtml();
   if (!built) return null;
@@ -2846,7 +2881,7 @@ async function exportCurrentHtml() {
 }
 /* PDF 直出:导出 HTML(含图片内联)→ 无头 Edge 打成 PDF → 打开。失败给可读原因,不弹系统框。 */
 async function exportCurrentPdf() {
-  const cur = getTab(S.cur);
+  const cur = getTab(S.cur && S.cur.abs);
   if (!cur) { toast(t('empty.title')); return; }
   toast(t('pdf.working'));
   const htmlPath = await exportCurrentHtml();
@@ -2863,7 +2898,7 @@ async function exportCurrentPdf() {
 async function printCurrent() {
   const p = await exportCurrentHtml();
   if (!p) return;
-  try { await invoke('open_any', { path: p }); } catch (e) { toast(StringtrErr(e)); }
+  try { await invoke('open_any', { path: p }); } catch (e) { toast(String(trErr(e))); }
 }
 
 /* ---------------- 系统透明效果回落 ---------------- */

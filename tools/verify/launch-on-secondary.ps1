@@ -74,18 +74,22 @@ if (-not $sc) { throw 'no secondary display found - connect/enable one first' }
 $b = $sc.Bounds
 $w = [int]($b.Width * 0.88); $h = [int]($b.Height * 0.88); $x = $b.X + 40; $y = $b.Y + 40
 
-# seed window.json (v2 = physical pixels) into the app config dir
-$cfgDir = Join-Path $env:APPDATA 'com.saaaai.tmmd'
+# seed window.json (v2 = physical pixels) into an ISOLATED config dir
+# (TMMD_CONFIG_DIR: the app honors it as a test seam, so the user's real roots.json/window.json are never touched)
+$cfgDir = Join-Path $env:TEMP 'tmmd-verify-cfg'
 New-Item -ItemType Directory -Force -Path $cfgDir | Out-Null
 $cfg = Join-Path $cfgDir 'window.json'
-if (Test-Path $cfg) { Copy-Item $cfg (Join-Path $env:TEMP 'window.json.bak-verify-launch') -Force }
 Set-Content -Path $cfg -Value ('{"v":2,"w":' + $w + '.0,"h":' + $h + '.0,"x":' + $x + '.0,"y":' + $y + '.0}') -Encoding ASCII
 Write-Output ('seeded v2 physical geometry ' + $w + 'x' + $h + ' @' + $x + ',' + $y + ' on ' + $sc.DeviceName)
+Write-Output ('isolated config dir: ' + $cfgDir)
 
 $fgBefore = [VW]::GetForegroundWindow()
+$env:TMMD_CONFIG_DIR = $cfgDir
 $env:TMMD_TEST_NOACTIVATE = '1'                                  # no focus steal, no taskbar button
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
-$p = Start-Process -FilePath $Exe -PassThru
+$log = Join-Path $env:TEMP 'tmmd-verify-out.log'
+$err = Join-Path $env:TEMP 'tmmd-verify-err.log'
+$p = Start-Process -FilePath $Exe -PassThru -RedirectStandardOutput $log -RedirectStandardError $err
 
 $primary = [System.Windows.Forms.Screen]::AllScreens | Where-Object { $_.Primary } | Select-Object -First 1
 $pb = $primary.Bounds
@@ -126,4 +130,5 @@ if ($Capture) {
   if (Test-Path $cap) { & powershell -NoProfile -ExecutionPolicy Bypass -File $cap -Out (Join-Path $env:TEMP 'tmmd-secondary.png') }
 }
 Write-Output ('PID=' + $p.Id + ' PORT=' + $Port)
+Set-Content -Path (Join-Path $env:TEMP 'tmmd-verify.pid') -Value $p.Id -Encoding ASCII
 Write-Output 'NOTE: run tools/verify/stopall.ps1 when done.'

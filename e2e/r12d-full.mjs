@@ -83,6 +83,24 @@ const fC = mkTmp('c', '# C\n\nhello c\n');
 const fD = mkTmp('d', '# D\n\npara with hello word and hello again\n\n```js\nconst x = 1;\nconsole.log(x);\n```\n\nfoot[^1]\n\n[^1]: a note\n');
 const js = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
+/* 三选弹窗(v1.8 起):离开脏编辑态走 askUnsaved 弹窗(保存 / 不保存 / 取消),**不再是 window.confirm**。
+ * 所以"在同一条 evaluate 里 await 一个会弹窗的动作"必然超时 —— 单条 evaluate 期间没人能点按钮。
+ * 正确手法:把动作挂到 window.__pending(先不 await),另发一条 evaluate 点掉弹窗,最后再取结果。 */
+async function clickAsk(preferred, tries) {
+  for (let i = 0; i < (tries || 40); i++) {
+    const hit = await val(`(() => { const w = document.querySelector('.askwrap'); if (!w) return ''; const bs = [...w.querySelectorAll('button')]; const b = bs.find((x) => x.dataset.a === '${preferred}') || bs[0]; if (!b) return ''; const label = b.textContent; b.click(); return 'clicked:' + label; })()`, 4000);
+    if (hit) return hit;
+    await new Promise((r) => setTimeout(r, 80));
+  }
+  return '';
+}
+async function runWithAsk(body, preferred, ms) {
+  await val(`(() => { window.__pending = (${body}); return 1; })()`, 4000);
+  const clicked = await clickAsk(preferred || 'discard');
+  const result = await val(`window.__pending`, ms || 30000);
+  return { clicked, result };
+}
+
 // ---------- 4) 独立计分跑道 ----------
 let pass = 0;
 const fails = [];
@@ -147,21 +165,26 @@ await T('A20', '设置 单 Esc 双向全关', async () => (await val(`(() => { s
 await T('A21', '设置 整页几何：全宽＋顶 38', async () => (await val(`(() => { showPanel('settings'); return document.getElementById('settingsPanel').getBoundingClientRect().width; })()`)) !== undefined && near(await val(`(() => document.getElementById('settingsPanel').getBoundingClientRect().width)()`), await val(`window.innerWidth`), 2));
 await T('A22', '设置 导航宽 208', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-nav').getBoundingClientRect().width; })()`), 208, 4));
 await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-search').getBoundingClientRect().height; })()`), 74, 6));
-// 真类名 .set-row/.set-section;v1.7 起 26 行 7 区(新增阅读增强/文件与导出,行内加排版与语言控件)
+// 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行(打字机模式 + 导出 PDF 相关)→ 28 行 7 区
 await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
-await T('A25', '设置 清空还原 26 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '26/7');
-await T('A26', '设置 开设置藏底文（visibility:hidden 语义，CSS 设计如此）', async () => (await val(`(() => { showPanel('settings'); const v = getComputedStyle(document.getElementById('layout')).visibility; return v; })()`)) === 'hidden');
-// 面板底色 var(--bg)＝#1d2021（app.css L9/L289-292）
-await T('A27', '设置 面板不透明（底色非透）', async () => (await val(`(() => { showPanel('settings'); return getComputedStyle(document.getElementById('settingsPanel')).backgroundColor; })()`)).includes('29, 32, 33'));
+await T('A25', '设置 清空还原 28 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '28/7');
+await T('A26', '设置 开设置藏底文(visibility:hidden 语义,CSS 设计如此)', async () => (await val(`(() => { showPanel('settings'); const v = getComputedStyle(document.getElementById('layout')).visibility; return v; })()`)) === 'hidden');
+// v1.8 统一玻璃后,设置面板不再是"不透明板"(那正是要修掉的破玻璃渣底),而是**同一块玻璃**:
+// 底色 alpha 跟着浓度档位走(弱 0.62 → 强 0.92),永远半透、且随浓度单调变化。断言改成验这个行为。
+await T('A27', '设置 面板底色=玻璃浓度(半透且随档位变化)', async () => {
+  const r = await val(`(() => { showPanel('settings'); const p = document.getElementById('settingsPanel'); const alpha = () => { const m = getComputedStyle(p).backgroundColor.match(/([\\d.]+)\\s*\\)$/); return m ? parseFloat(m[1]) : NaN; }; $id('setAtmosWeak').click(); const aWeak = alpha(); $id('setAtmosStrong').click(); const aStrong = alpha(); $id('setAtmosMedium').click(); showPanel(null); return JSON.stringify([aWeak, aStrong]); })()`);
+  const [aw, as] = JSON.parse(r);
+  return aw > 0.4 && as <= 1 && as > aw;
+});
 await T('A28', '设置 Esc 恢复正文 intact', async () => (await val(`(() => { showPanel('settings'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return getComputedStyle(document.getElementById('layout')).visibility !== 'hidden'; })()`)) === true);
 await T('A29', '设置 R12a 回归：无宽滑条（setSideWidth 零残留）', async () => (await val(`(() => !document.getElementById('setSideWidth'))()`)) === true);
 await T('A30', '设置 R12a 回归：sr_side_w=260 原样', async () => (await val(`(() => { applySideWidth(260); return Number(localStorage.getItem('sr_side_w')); })()`)) === 260);
 // ===== 玻璃 A31–A41 =====
-// 真语义：ATMOS_PRESETS weak/medium/strong＝[base,chrome,reader,pop]（app.js L41-44）；
-// setGlassPreset/glassOn 不存在（bindSettings 内闭包 L1309-1320），一律点真实按钮
-await T('A31', '玻璃 氛围弱档（6/10/14/12）', async () => (await val(`(() => { showPanel('glass'); $id('setAtmosWeak').click(); const g = S.glass; return JSON.stringify([g.base, g.chrome, g.reader, g.pop]); })()`)) === JSON.stringify([6, 10, 14, 12]));
-await T('A32', '玻璃 氛围中档（12/25/35/30）', async () => (await val(`(() => { $id('setAtmosMedium').click(); const g = S.glass; return JSON.stringify([g.base, g.chrome]); })()`)) === JSON.stringify([12, 25]));
-await T('A33', '玻璃 氛围强档（30/50/60/55）落盘干净', async () => (await val(`(() => { $id('setAtmosStrong').click(); const g = JSON.parse(localStorage.getItem('sr_glass')); return g.base === 30 && !('tintDraft' in g); })()`)) === true);
+// v1.8 统一玻璃后,氛围档位收成**单一浓度**(ATMOS_PRESETS: weak/medium/strong → conc 20/40/70,text 恒 100);
+// 旧的 [base,chrome,reader,pop] 四数模型已随"整窗一块玻璃"的改造移除。
+await T('A31', '玻璃 氛围弱档(conc=20,text=100)', async () => (await val(`(() => { showPanel('glass'); $id('setAtmosWeak').click(); const g = S.glass; return JSON.stringify([g.atmos, g.conc, g.text]); })()`)) === JSON.stringify(['weak', 20, 100]));
+await T('A32', '玻璃 氛围中档(conc=40,text=100)', async () => (await val(`(() => { $id('setAtmosMedium').click(); const g = S.glass; return JSON.stringify([g.atmos, g.conc, g.text]); })()`)) === JSON.stringify(['medium', 40, 100]));
+await T('A33', '玻璃 氛围强档(conc=70)落盘干净', async () => (await val(`(() => { $id('setAtmosStrong').click(); const g = JSON.parse(localStorage.getItem('sr_glass')); return g.atmos === 'strong' && g.conc === 70 && !('tintDraft' in g); })()`)) === true);
 // 真总开关：S.glass.on＋applyGlass(false)（app.js L1143）；applyGlass 永不 toast
 await T('A34', '玻璃 真总开关：零 toast', async () => (await val(`(() => { const n0 = document.querySelectorAll('.toast').length; S.glass.on = false; applyGlass(false); S.glass.on = true; applyGlass(false); return document.querySelectorAll('.toast').length - n0; })()`)) === 0);
 await T('A35', '玻璃 底色预览只进内存（tintDraft 永不落盘）', async () => (await val(`(() => { S.glass.tintDraft = '#ff0000'; const g = localStorage.getItem('sr_glass'); return g.includes('tintDraft') ? 'leaked' : true; })()`)) === true);
@@ -177,7 +200,7 @@ await T('A40', '玻璃 字号阅读档（1.75/16/14）', async () => (await val(
 await T('A41', '玻璃 R12b 回归：旧存档前迁不断档（材质 acrylic/none）', async () => (await val(`(() => ['acrylic', 'none'].includes(S.glass.material || 'acrylic'))()`)) === true);
 // ===== 标签 A42–A47 =====
 // 相对基线计分（用户真实 tabs 在快照里，跑 doit 中 tmp tabs 叠加其上，finally 还原）
-// 脏页切页会弹 window.confirm 卡死 evaluate（confirmLeaveEdit，app.js L256），故每次切页前
+// 脏页切页会弹 三选窗卡死 evaluate（confirmLeaveEdit → askUnsaved），故每次切页前
 // 若脏则真保存（saveEdit 只写当前 tmp 页，A48 起所有被编辑页均为 tmp）；标签操作给 30s
 await T('A42', '标签 三开', async () => (await val(`(async () => { window.__r12d_n0 = S.tabs.length; await openExternal('${js(fA)}'); await openExternal('${js(fB)}'); await openExternal('${js(fC)}'); return S.tabs.length - window.__r12d_n0; })()`, 30000)) === 3);
 await T('A43', '标签 同路聚焦（不重复开）', async () => (await val(`(async () => { if (S.editing && S.editDirty) await saveEdit(); const n = S.tabs.length; await openExternal('${js(fA)}'); return S.tabs.length === n; })()`, 30000)) === true);
@@ -193,14 +216,20 @@ await T('A48', '编辑 非编辑态 editor 藏＋undo 禁', async () => (await v
 // 真函数 enterEdit()（app.js L278）；startEdit 不存在。先聚焦 tmp 页，绝不碰用户真实文件
 await T('A49', '编辑 进编辑：脏＋undo 可用', async () => (await val(`(() => { enterEdit(); const ed = document.getElementById('editor'); ed.value += '\\nmore'; ed.dispatchEvent(new Event('input', { bubbles: true })); return S.editDirty === true && $id('btnUndo').disabled === false; })()`)) === true);
 await T('A50', '编辑 undo 值回滚', async () => (await val(`(() => { const ed = document.getElementById('editor'); const before = ed.value; doUndo(); return ed.value.length <= before.length; })()`)) === true);
-// 切页经 confirmLeaveEdit（脏页弹 window.confirm，evaluate 会卡死）；本测按用户真实
-// "放弃修改继续"语义桩 confirm→true（stashTab 已把 draft 写进 tab 内存，app.js L407，
-// 不丢数），验 draft 切页恢复；随后真保存落 tmp 文件，之后状态干净，A54 切页无 modal
-await T('A51', '编辑 draft 切页恢复＋真保存', async () => (await val(`(async () => { const ed = document.getElementById('editor'); ed.value += 'draft-x'; ed.dispatchEvent(new Event('input', { bubbles: true })); const k1 = S.activeKey; const cf = window.confirm; window.confirm = () => true; let back = false; try { await activateTab(getTab('${js(fC)}'), {}); await activateTab(getTab(k1), {}); back = S.activeKey === k1 && document.getElementById('editor').value.includes('draft-x'); } finally { window.confirm = cf; } await saveEdit(); return back && S.editing === false; })()`, 30000)) === true);
+// 切页经 confirmLeaveEdit（脏页弹三选窗，evaluate 会卡死）；本测按用户真实
+// A51:脏页切页走三选窗(askUnsaved),不再是 window.confirm;点"不保存"后 draft 仍在 tab 内存
+// 内存不丢；随后真保存落 tmp 文件，之后状态干净，A54 切页无 modal
+await T('A51', '编辑 draft 切页恢复+真保存', async () => {
+  const r = await runWithAsk(`(async () => { const ed = document.getElementById('editor'); ed.value += 'draft-x'; ed.dispatchEvent(new Event('input', { bubbles: true })); const k1 = S.activeKey; let back = false; await activateTab(getTab('${js(fC)}'), {}); await activateTab(getTab(k1), {}); back = S.activeKey === k1 && document.getElementById('editor').value.includes('draft-x'); await saveEdit(); return back && S.editing === false; })()`, 'discard', 30000);
+  return r.result === true;
+});
 await T('A52', '编辑 黄项注记：undo 回滚后 editDirty 仍 true（只报不修，仅记录）', async () => (await val(`(() => S.editDirty === true || S.editDirty === false)()`)) === true);
 // ===== 拖入 A53–A54 =====
 await T('A53', '拖入 DOM 合成 drop 不可达属预期（真链路=Tauri 原生 drop）', async () => (await val(`(() => { document.getElementById('reader').dispatchEvent(new DragEvent('drop', { bubbles: true })); return true; })()`)) === true);
-await T('A54', '拖入 openExternal 同路绿（T20 同路）', async () => (await val(`(async () => { if (S.editing && S.editDirty) await saveEdit(); await openExternal('${js(fB)}'); return S.tabs.some((t) => t.abs === '${js(fB)}'); })()`, 30000)) === true);
+await T('A54', '拖入 openExternal 同路绿(T20 同路)', async () => {
+  const r = await runWithAsk(`(async () => { if (S.editing && S.editDirty) await saveEdit(); await openExternal('${js(fB)}'); return S.tabs.some((t) => t.abs === '${js(fB)}'); })()`, 'discard', 30000);
+  return r.result === true;
+});
 // ===== 最近 A55–A56 =====
 await T('A55', '最近 3 条可读', async () => (await val(`(() => Array.isArray(S.recent) && S.recent.length >= 1)()`)) === true);
 // 真选择器 #recentList .side-recent（app.js L1000-1021；renderRecent 只取 10）
@@ -239,7 +268,10 @@ await T('A66', '引导 toast 原文可读', async () => (await val(`(() => { con
 await T('A67', '引导 旗一次性(sr_tb_guide_seen 落盘不再弹)', async () => (await val(`(() => localStorage.getItem('sr_tb_guide_seen') === '1')()`)) === true);
 // ===== v1.7 阅读增强 V01–V14 =====
 // 场景页:含代码块与脚注的 tmp 文件(绝不动用户真实文档)
-await T('V01', 'v1.7 预览页可开(代码块+脚注样本)', async () => (await val(`(async () => { if (S.editing && S.editDirty) await saveEdit(); await openExternal('${js(fD)}'); for (let i = 0; i < 50; i++) { if (getTab('${js(fD)}') && document.querySelector('.markdown-body')) break; await new Promise((r) => setTimeout(r, 100)); } return !!getTab('${js(fD)}') && !!document.querySelector('.markdown-body'); })()`, 30000)) === true);
+await T('V01', 'v1.7 预览页可开(代码块+脚注样本)', async () => {
+  const r = await runWithAsk(`(async () => { if (S.editing && S.editDirty) await saveEdit(); await openExternal('${js(fD)}'); for (let i = 0; i < 50; i++) { if (getTab('${js(fD)}') && document.querySelector('.markdown-body')) break; await new Promise((r) => setTimeout(r, 100)); } return !!getTab('${js(fD)}') && !!document.querySelector('.markdown-body'); })()`, 'discard', 30000);
+  return r.result === true;
+});
 // 脚注:零依赖前置处理产 sup 角标 + 文末脚注区
 await T('V02', '脚注 渲染角标+脚注区', async () => (await val(`(() => { const sup = document.querySelector('.markdown-body sup.fn-ref'); const sec = document.querySelector('.markdown-body section.footnotes[data-footnotes="1"]'); return !!sup && !!sec && sec.textContent.includes('a note'); })()`)) === true);
 // 代码块:复制按钮 + 行号列(两行代码 → 两个 .code-line)
