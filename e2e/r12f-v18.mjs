@@ -425,6 +425,44 @@ async function reset() {
   ok('H3 设置页是右侧抽屉:阅读区在左边且不被覆盖(窄窗回落为全遮)', h3o.ok === true, h3o);
 }
 
+/* ═══════════ I) 媒体上的文字加固:全站文字都有阴影(可量化覆盖) ═══════════
+ * 2026-10-25 用户实拍:玻璃模式下侧栏灰字对背景只有 1.18:1 / 1.49:1,字等于没了。
+ * 配方(skill over-media-text-readability):文字必须带 shadow 做局部对比;且 button/input 的
+ * text-shadow 会被 UA 样式表重置成 none,必须显式接回继承。判据:逐**非空白文本节点**取父元素计算值,坏数=0。 */
+{
+  console.log('-- I 文字阴影覆盖 --');
+  const audit = async (theme) => {
+    const r = await val(`(() => {
+      S.theme = ${JSON.stringify(theme)}; applySettings();
+      showPanel('settings');
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      let n = 0; const bad = [];
+      while (w.nextNode()) {
+        const t = w.currentNode;
+        if (!t.textContent || !t.textContent.trim()) continue;
+        const el = t.parentElement; if (!el) continue;
+        n++;
+        const ts = getComputedStyle(el).textShadow;
+        if (!ts || ts === 'none') bad.push(el.tagName + '.' + String(el.className).slice(0, 18) + ' :: ' + t.textContent.trim().slice(0, 14));
+      }
+      const ctl = ['button', 'input', 'select', 'textarea'].map((sel) => {
+        const e = document.querySelector(sel);
+        return sel + ':' + (e ? (getComputedStyle(e).textShadow === 'none' ? 'none' : 'ok') : 'n/a');
+      });
+      const halo = getComputedStyle(document.body).textShadow;
+      showPanel(null);
+      return JSON.stringify({ n, badCount: bad.length, bad: bad.slice(0, 6), ctl, halo: halo.slice(0, 70) });
+    })()`, 25000);
+    return JSON.parse(r || '{}');
+  };
+  const dark = await audit('dark');
+  ok('I1 深色:每个非空白文本节点都有 text-shadow', dark && dark.n > 50 && dark.badCount === 0, dark);
+  ok('I2 深色:控件(button/input/select/textarea)阴影已接回继承', dark && dark.ctl && dark.ctl.every((c) => !/:none$/.test(c)), dark && dark.ctl);
+  const light = await audit('light');
+  ok('I3 浅色:覆盖同样 0 坏,且晕反相(亮晕,不是深色的暗晕)', light && light.badCount === 0 && light.halo !== dark.halo && /255, 255, 255/.test(light.halo), light);
+  await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 10000);
+}
+
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
 // 为什么必须:r12d 的 A16/A17 验的是"空态(没有任何文档)里那两个按钮",而 G 段开的 5000 行文档
 // 会一直挂在标签栏上 → 空态不渲染 → 后面那条跑道假失败(2026-10-25 实测踩到)。

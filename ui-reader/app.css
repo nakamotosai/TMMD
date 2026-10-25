@@ -51,9 +51,20 @@
   --code-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) * .45), transparent);
   --code-wash: color-mix(in oklab, var(--accent) 20%, transparent);
   --code-rule: color-mix(in oklab, var(--accent) 45%, transparent);
-  /* W8 文字整体透明度：只作用正文与侧栏内容容器（顶栏控件不受影响，保证按钮可读）。
-   * 取值 0–1 小数，由 app.js 按百分比写入；默认 1。 */
+  /* W8 文字整体透明度:只作用正文与侧栏内容容器(顶栏控件不受影响,保证按钮可读)。
+   * 取值 0–1 小数,由 app.js 按百分比写入;默认 1。 */
   --text-opa: 1;
+  /* 媒体上的文字加固(2026-10-25 加):玻璃模式下文字直接叠在**模糊壁纸**上,亮壁纸会把米白文字洗没。
+   * 实测(用户自己的侧栏截图,背景 (122,126,120)、L≈0.21):--fg-faint 只有 **1.18:1**、--fg-dim **1.49:1**
+   * (判据:正文 ≥4.5:1、大字 ≥3:1)—— 字等于没了。而且**换色救不了**:背景 L≈0.21 时任何实心字色最多 ~3.0:1,
+   * 连 --fg 也刚好 3.0:1。所以走配方里的**局部对比**:给字加一圈暗晕(subtitle 做法),
+   * "字 vs 紧邻像素"立刻回到 4.5:1 以上。落在实色背景上这层晕几乎不可见(暗晕压暗底、亮晕压亮底),
+   * 所以实色模式观感不变;text-shadow 烘进文字合成层,滚动只合成不重绘(帧率断言 G2/G3 盯着)。 */
+  /* 强度是扫出来的(同一亮壁纸底、A/B 量"字心 vs 紧邻最暗"局部对比):
+   *   无晕 4.89 → +1px环 5.90 → **紧三档 6.48(采用)** → 紧+宽 7.15(偏重,正文小字会显糊)。
+   * 远景对比不随晕变化(那是背景亮度决定的,只有压暗表面才能改 —— 那会动用户拍板的 40% 浓度,不做)。 */
+  --text-halo: 0 0 1px rgba(0, 0, 0, .95), 0 1px 2px rgba(0, 0, 0, .9), 0 2px 8px rgba(0, 0, 0, .85);
+  --title-halo: 0 0 1px rgba(0, 0, 0, .95), 0 1px 2px rgba(0, 0, 0, .92), 0 2px 10px rgba(0, 0, 0, .88), 0 0 4px rgba(0, 0, 0, .9);
 }
 
 /* 配色预设（R9：三个主题——深炭灰/暖纸浅/gruvbox 原生；旧款已删，存档旧值自动回落 gruvbox） */
@@ -64,12 +75,16 @@
   --code-bg: #2c2f31; --ink: #e8e6e3; --green: #9ec49a; --blue: #9ec1cf; --red: #d98c8c;
 }
 
-/* 配色预设（light） */
+/* 配色预设(light) */
 [data-theme="light"] {
   --bg: #fbf1c7; --bg2: #f2e5bc; --bg3: #ebdbb2;
   --fg: #3c3836; --fg-dim: #7c6f64; --fg-faint: #928374;
   --accent: #af3a03; --accent2: #b57614; --border: #d5c4a1;
   --green: #79740e; --blue: #076678; --red: #9d0006; --code-bg: #f2e5bc; --ink: #3c3836;
+  /* 浅色主题的晕要**反相**(亮晕):深色字配暗晕只会烘成一团黑边,叠在亮壁纸上更糊。
+   * 几何与深色同档(紧三档),只换颜色。 */
+  --text-halo: 0 0 1px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .92), 0 2px 8px rgba(255, 255, 255, .88);
+  --title-halo: 0 0 1px rgba(255, 255, 255, .95), 0 1px 2px rgba(255, 255, 255, .95), 0 2px 10px rgba(255, 255, 255, .9), 0 0 4px rgba(255, 255, 255, .9);
 }
 :root[data-theme="light"][data-palette="paper"] {
   --bg: #f5f0e8; --bg2: #ece4d4; --bg3: #ded2ba;
@@ -99,6 +114,16 @@ body {
   font-family: var(--sans); font-size: var(--body-size);
   display: flex; flex-direction: column; overflow: hidden;
 }
+/* ---- 媒体上的文字加固:全站文字都带一层晕(见 :root --text-halo 的实测依据)----
+ * 这一层是"文字可读性的地基",不是装饰:玻璃模式下正文/侧栏/工具栏/抽屉都直接叠在模糊壁纸上。
+ * 覆盖口径由 r12f 的 I 组断言逐文本节点扫(坏数必须为 0),深浅两主题各扫一次。 */
+body { text-shadow: var(--text-halo); }
+/* Chromium 的 UA 样式表会把 button/input/select/textarea 的 text-shadow 重置为 none —— body 上的覆盖不到它们,
+ * 必须显式接回继承链,否则按钮/输入框文字在亮壁纸上照样被洗没。 */
+button, input, select, textarea { text-shadow: inherit; }
+/* 标题级用更强一档(层级口径:按"文本节点 × 阴影档位"统计,不是看规则数) */
+.markdown-body h1, .markdown-body h2, .markdown-body h3,
+.set-section-title, .settings-header span, .brand, .side-bottom-head { text-shadow: var(--title-halo); }
 
 /* SVG 图标通用 */
 .ic { width: 16px; height: 16px; display: inline-block; vertical-align: -3px; flex-shrink: 0; }
