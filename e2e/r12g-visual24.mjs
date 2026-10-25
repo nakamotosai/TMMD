@@ -111,10 +111,22 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('05', '正文色与文字透明度下限就位(fg 定义 + text-opa ≥0.7)', r && /^#|rgb/.test(r.fg) && r.textOpa >= 0.7, r);
 }
 
-/* 6 模糊区最坏情况 ≥4.5:浓度滑到最低(α 最小 = 最坏)时仍要求页面层不透明度 ≥0.55 的上限保护 */
+/* 6 默认浓度 = 40(用户定调)+ 拆分契约:glassSplit 只出模糊(dwm 恒 1)、css = 总浓度(写多少得多少),
+ *   且默认档真落到 CSS 变量上。此前这条是空的(css>=0 && dwm>=0 恒真)。 */
 {
-  const r = await val(`(() => { const s = glassSplit(1); return { dwm: s.dwm, css: s.css, atDefault: glassSplit(Number(S.glass.conc) || 45) }; })()`);
-  ok('06', '模糊区最坏情况有下限(conc=1 时页面层仍留底)', r && r.css >= 0 && r.dwm >= 0, r);
+  const r = await val(`(() => {
+    const d = glassSplit(1), c = glassSplit(40);
+    return {
+      conc: Number(S.glass.conc), atmos: S.glass.atmos,
+      dwmLow: d.dwm, dwmDef: c.dwm, cssLow: d.css, cssDef: c.css,
+      varNow: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim(),
+      preset: (typeof ATMOS_PRESETS !== 'undefined') ? ATMOS_PRESETS.medium.conc : null,
+      fallback: glassSplit(NaN).css
+    };
+  })()`);
+  ok('06', '默认浓度 40 且拆分契约成立(--glass=40% / 预设=40 / 兜底=40 / dwm 恒 1 / css=conc)',
+    r && r.conc === 40 && r.varNow === '40%' && r.preset === 40 && r.fallback === 40 &&
+    r.dwmLow === 1 && r.dwmDef === 1 && r.cssLow === 1 && r.cssDef === 40, r);
 }
 
 /* 7 不用 tertiary 做正文:正文色必须来自 --fg,且 --fg 与 --fg-faint 不同 */

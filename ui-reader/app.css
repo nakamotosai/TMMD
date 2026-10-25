@@ -27,11 +27,11 @@
   --h1-size: 1.75em;
   --body-size: 16px;
   --code-size: 14px;
-  /* v1.8 整窗一整块玻璃(对标 pebrel:opacity 0.45 + blur=acrylic)。
+  /* v1.8 整窗一整块玻璃(对标 pebrel:opacity 0.45 + blur=acrylic;我们默认取 40)。
    * 单一浓度 --glass 贯穿整窗:铬层/正文区/底不再各叠一层浓度 —— 叠起来就是"四块深浅不一的板子",
    * 那正是"不像一整块"的根因(旧模型 base 12 + chrome 25 / reader 35 / pop 30)。
-   * 总浓度按 pebrel 语义拆两半:DWM 出 45% 的份额(模糊 + 少量底色,保证最坏情况底仍偏深),
-   * 页面层出其余,两边相乘 = --glass(拆分公式见 app.js 的 glassSplit)。
+   * 浓度**全由页面层画**(默认 40,SSOT = app.js 的 GLASS_CONC_DEFAULT);DWM 只出模糊
+   * (alpha=1,保 accent 通道),两边不再相乘(拆分见 app.js 的 glassSplit)。
    * 浮层与内容小板各加一点点浓度,是"浮起来/压在正文上的东西"必须的支撑,不是分家。 */
   --glass: 100%;
   --glass-pop-boost: 12%;

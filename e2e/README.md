@@ -103,7 +103,7 @@ T31d 手动展清 auto 旗故无恢复 toast（纯自动回路另测）；T22 DO
 | `setTheme('paper')` | 非法值；theme∈{dark,light}，paper 是配色（PALETTES） | app.js L33-34 |
 | `glassOn()` | 无全局（bindSettings 内闭包）；直接读写 `S.glass` | app.js L1309（局部） |
 | `setGlassPreset('soft'/'mid'/'strong')` | 无全局（内闭包 `applyAtmos`）；点真实按钮 `setAtmosWeak/Medium/Strong`，键名 weak/medium/strong | app.js L1312-1323 |
-| `S.glass.frost/tintA/txtA/edge` | 无此字段;真字段 `conc/text+atmos`(**2026-10-25 v1.8 起单一浓度**;旧四路 `base/chrome/reader/pop` 已废,弱/中/强 = conc 20/45/70) | app.js L44-48 |
+| `S.glass.frost/tintA/txtA/edge` | 无此字段;真字段 `conc/text+atmos`(**2026-10-25 v1.8 起单一浓度**;旧四路 `base/chrome/reader/pop` 已废,弱/中/强 = conc 20/**40**/70,默认即 40) | app.js L44-50 |
 | `setFontPreset(k)` | 无全局（内闭包 `applyFontPreset`）；点真实按钮 `setFontRead/Code/Demo` | app.js L1297-1307 |
 | `S.fontCode/fontDemo/fontRead` | 无此字段；真 `S.h1Size/bodySize/codeSize`（读1.75/16/14、码1.6/15/15、演2.1/19/16） | app.js L89-92 |
 | `onResize(w)` | 无此函数；真 `autoFoldSide()` 读 `window.innerWidth`（resize 监听 120ms 防抖后调它＋layoutToolbar） | app.js L1067/L1499-1501 |

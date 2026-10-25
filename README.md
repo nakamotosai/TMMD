@@ -89,17 +89,14 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 
 > Tracked via `skill://sai-long-project` + `skill://sai-closeout`. Full session log in `docs/CHANGELOG.md`; portfolio card in vps `~/project-portfolio/projects.md`.
 
-- **Status**: active (v1.7.0 收官 2026-10-24 — 竞品差距分析路线图全部落地,装机版已升级)
-- **Latest**: v1.7.0 visual & reading overhaul — typography controls (line width/height/body font), WinUI-style layering + motion tokens, material三选 (none/Acrylic/Mica) with transparency/high-contrast fallback, in-document find, library-wide search, footnotes, code copy + line numbers, focus/immersive modes, export HTML + print, remembered window geometry (validated against the current monitor work area), UI i18n (zh/en/ja)
-- **Basis**: `docs/2026-10-24-竞品与差距分析.md` (22 competitors × 22 capabilities, 57-item self-audit, 24-point visual checklist)
-- **Open residuals** (reviewed 2026-10-25, evidence in `docs/2026-10-24-竞品与差距分析.md` §9):
-  1. first-screen black — root cause fixed 2026-08-06 (editor layer painting a black block over the body); 2026-10-25 live startup burst on a real composited display (120 ms grid, 14 frames of the window area): frames at 120/240/360 ms read mean luma 14.4–14.5 (dark shell), 22.2 at 480 ms, 24.2 at 600 ms, stable 21.1 from 720 ms — no black frame anywhere in the sampled window. Sub-120 ms first frame not yet sampled → close it after a 10 ms-resolution burst.
-  2. version number — **closed**: `app.getVersion()` = 1.7.0, settings › About row renders `TMMD v1.7.0`, installed `%LOCALAPPDATA%\TMMD\tmmd.exe` FileVersion 1.7.0, bundle artifacts `TMMD_1.7.0_x64-setup.exe` / `TMMD_1.7.0_x64_en-US.msi`, tag `v1.7.0` = `851007e` (inside main; get its distance to HEAD with `git describe --tags`).
-  3. whole-window glass — **direction set 2026-10-25: one single pane of acrylic across the entire window, matching pebrel** (its own config: `opacity=0.45` + `blur=acrylic` + base `#2e3440`), *not* the MS-spec "Mica base + Acrylic chrome" layering. Mica renders on real hardware (`get_glass_state` backdrop 1 → 2). Open: the surfaces currently use four separate densities (chrome 25 / reader 35 / pop 30 / base 12 %) and several opaque plates — both must go.
-  4. export image inlining — open (export still links images).
-  5. library search ranking — open (substring hits, no rank ordering).
-  6. *(new, 2026-10-25)* window geometry is stored as logical pixels without a monitor identity → on multi-DPI setups the remembered position degrades to the 88% default (never off-screen: the work-area check holds). Fix = store physical coords + monitor id.
-- **Mirrors**: GitHub (SSOT) + Gitea `sai/TMMD` (self-hosted) — both were at `94f29cd` (v1.6.0) until the v1.7.0 push on 2026-10-25; verify parity with `git ls-remote`.
+- **Status**: active (**v1.8.1** 2026-10-25 — installer + update manifest in `dist/v1.8.1/`, tag `v1.8.1`, GitHub release is the live update channel)
+- **Latest**: v1.8 window/glass + editing + updater — one single pane of acrylic across the whole window (default concentration **40%**, presets weak/medium/strong = 20/40/70; measured contrast in `docs/CHANGELOG.md` v1.8.1), DWM only blurs (no tint share), full editing (new / save-as / rename / delete via recycle bin, tab + multi-line indent, in-edit find & replace, per-tab undo stacks, atomic writes, write-time conflict detection, close guard), typewriter mode, direct PDF export, inlined export images, ranked library search, window geometry in physical pixels + window born on the remembered monitor, tray, self-hosted updater (manifest check + SHA-256 + hand-off install), UI i18n (zh/en/ja). Architecture: **single window + multi-tab**; multi-window is deliberately not implemented.
+- **Basis**: `docs/2026-10-24-竞品与差距分析.md` (22 competitors × 22 capabilities, 57-item self-audit, 24-point visual checklist); verification receipt `docs/2026-10-25-验证清单.md`
+- **Open items** (2026-10-25):
+  1. PDF direct export — **positive path not verifiable on this machine**: it has no Chromium kernel (no Edge/Chrome/Brave/Vivaldi, and the WebView2 runtime binary cannot act as a headless CLI). The app then refuses with a readable message pointing at Print / Save as PDF; the runway asserts exactly that branch and hard-requires a real `%PDF-` file on machines that do have a kernel.
+  2. Contrast at the 40% default over the brightest wallpaper band: median **5.57:1** / worst **2.67:1** (A/B on the same wallpaper/doc: 45% → 5.88 / 2.98, 70% → 8.37 / 5.61). Accepted cost of the 40% call — the settings slider is the escape hatch.
+  3. window rounded corners — not done (documented scope).
+- **Mirrors**: GitHub (SSOT) + Gitea `sai/TMMD` — both at v1.8.1; verify parity with `git ls-remote`.
 
 ---
 

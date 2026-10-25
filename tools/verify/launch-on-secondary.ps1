@@ -16,7 +16,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [int]$Port = 9225,
-  [switch]$Capture
+  [switch]$Capture,
+  [switch]$NoSeed
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @"
@@ -84,8 +85,21 @@ Write-Output ('seeded v2 physical geometry ' + $w + 'x' + $h + ' @' + $x + ',' +
 Write-Output ('isolated config dir: ' + $cfgDir)
 
 $fgBefore = [VW]::GetForegroundWindow()
+# refuse a double launch: two instances sharing the isolated profile make CDP ambiguous (the
+# 2026-10-25 hang: a stale instance answered the port, the new one seeded the doc into the void).
+$busy = $false
+try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 ("http://127.0.0.1:" + $Port + "/json"); $busy = $true } catch { }
+if ($busy) { throw ('CDP already answers on port ' + $Port + ' - run tools/verify/stopall.ps1 first') }
+# isolated WebView2 profile (localStorage / tab restore / cache). Wiped on every launch so each
+# runway starts from a pristine profile - fresh-install defaults are then actually testable.
+# (this was MISSING until 2026-10-25: runways wrote into the user's real profile)
+$vwDir = Join-Path $env:TEMP 'tmmd-verify-webview'
+if (Test-Path $vwDir) { Remove-Item -Recurse -Force $vwDir -ErrorAction SilentlyContinue }
+if (Test-Path $vwDir) { throw ('could not wipe ' + $vwDir + ' - a stale instance still holds it; run stopall.ps1') }
+New-Item -ItemType Directory -Force -Path $vwDir | Out-Null
 $env:TMMD_CONFIG_DIR = $cfgDir
 $env:TMMD_TEST_NOACTIVATE = '1'                                  # no focus steal, no taskbar button
+$env:WEBVIEW2_USER_DATA_FOLDER = $vwDir
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
 $log = Join-Path $env:TEMP 'tmmd-verify-out.log'
 $err = Join-Path $env:TEMP 'tmmd-verify-err.log'
@@ -128,6 +142,17 @@ if ($fgAfter -ne $fgBefore) {
 if ($Capture) {
   $cap = Join-Path $PSScriptRoot 'capture-secondary.ps1'
   if (Test-Path $cap) { & powershell -NoProfile -ExecutionPolicy Bypass -File $cap -Out (Join-Path $env:TEMP 'tmmd-secondary.png') }
+}
+# Seed one document. The isolated profile starts in the app's EMPTY state (no restored tabs) and
+# several runway steps assume a document is on screen - without this the runways HANG (they do not
+# fail, they block). The fixture is the repo README (always present, read-only for the runways).
+# Skip with -NoSeed when you deliberately want to test the empty state.
+if (-not $NoSeed) {
+  $seed = (Resolve-Path (Join-Path $PSScriptRoot '..\..\README.md')).Path
+  $probe = Join-Path $PSScriptRoot 'probe.mjs'
+  $expr = "(async()=>{await openExternal('" + ($seed -replace '\\', '\\') + "');await new Promise(r=>setTimeout(r,1500));return 'seeded tabs='+S.tabs.length})()"
+  $seeded = & node $probe --port=$Port $expr 2>&1
+  Write-Output ('seed doc -> ' + ($seeded -join ' '))
 }
 Write-Output ('PID=' + $p.Id + ' PORT=' + $Port)
 Set-Content -Path (Join-Path $env:TEMP 'tmmd-verify.pid') -Value $p.Id -Encoding ASCII

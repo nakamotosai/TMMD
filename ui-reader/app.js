@@ -42,13 +42,14 @@ const SWATCH_COLORS = {
 // R12b Round-2 氛围三预设：中 = R12a 默认(12/25/35/30)，弱接近清水，强深度磨砂；底色透明度(base)随预设走，后端 alpha 按拆分份额走(v1.8)
 // R12b 字号三预设：阅读 = 旧默认(1.75/16/14)，代码放大代码，演示整体放大
 /* v1.8 整窗一整块玻璃:氛围档不再分四路浓度,只给**一个总浓度**(percent)。
- * medium = 40 是用户 2026-10-25 定调("要 40%,总之我要透出来半透明效果")——
- * pebrel 原档是 45,我们比它再透一点点;选它就意味着接受亮壁纸处文字对比下降
- * (实测窗内最亮壁纸带:45% 时中位 3.7:1 / 最坏 2.15:1,40% 会更低),
+ * 默认浓度 = GLASS_CONC_DEFAULT = 40(用户 2026-10-25 定调:"要 40%,总之我要透出来半透明效果"),
+ * 比 pebrel 的 45 再透一点点;选它就意味着接受亮壁纸处文字对比下降(实测见 docs/CHANGELOG.md 的 v1.8.1),
  * 所以滑条留着:嫌淡就往上推(strong=70)。 */
+// 单一浓度的唯一 SSOT:预设 / 兜底 / 回显全用它,别再散写字面量(此前 3 处兜底写 45,与预设 40 打架)。
+const GLASS_CONC_DEFAULT = 40;
 const ATMOS_PRESETS = {
   weak: { conc: 20, text: 100 },
-  medium: { conc: 40, text: 100 },
+  medium: { conc: GLASS_CONC_DEFAULT, text: 100 },
   strong: { conc: 70, text: 100 },
 };
 const FONT_PRESETS = {
@@ -1461,7 +1462,7 @@ const ERR_MAP = [
   [/^导出 HTML 不存在/, 'err.exportHtmlMissing'],
   [/^导出失败: /, 'err.export'],
   [/^打开失败: /, 'err.open'],
-  [/^找不到 Microsoft Edge \/ Chrome.*$/, 'err.noBrowser'],
+  [/^找不到 Chromium 内核浏览器.*$/, 'err.noBrowser'],
   [/^起无头浏览器失败: /, 'err.browserSpawn'],
   [/^PDF 未生成/, 'err.pdfFailed'],
   // —— 窗口 / 材质 ——
@@ -1771,11 +1772,11 @@ function applyEnhance() {
 /* v1.8 浓度拆分(与 pebrel 对齐):**DWM 只做模糊,不承担浓度** —— 浓度全由页面层画。
  * 依据是同门产品的实测配方:`blur=acrylic` 首选 WinAppSDK DesktopAcrylicController(tint=0/luminosity=0),
  * 回落 WCA accent state 4 时 gradient_color = 0x01000000(alpha=1);两种都等于"纯模糊、不加底色",
- * 它那 0.45 的浓度完全来自自己画的壳色/卡底。我们照抄这条,顺带让滑条诚实:写 45% 就得到 45%。
+ * 它那 0.45 的浓度完全来自自己画的壳色/卡底。我们照抄这条,顺带让滑条诚实:写多少就得到多少。
  * alpha 不取 0:部分 DWM 版本会直接跳过 alpha=0 的 accent,玻璃会整个消失(pebrel 也踩过,故写 1)。 */
 const GLASS_DWM_ALPHA = 1; // /255 ≈ 0.4%,仅用来保住 accent 通道
 function glassSplit(conc) {
-  const total = Math.min(100, Math.max(1, Number(conc) || 45));
+  const total = Math.min(100, Math.max(1, Number(conc) || GLASS_CONC_DEFAULT));
   return { dwm: GLASS_DWM_ALPHA, css: Math.round(total) };
 }
 /* R12b 玻璃质感:S.glass 数值恒由氛围预设写入,本函数只负责落 CSS 变量 + 面板回显。
@@ -1787,7 +1788,7 @@ function applyGlass(opaque) {
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
   // v1.8:浓度只有一路(conc)。页面层承担的那份 = 总浓度减去 DWM 份额(拆分见 glassSplit);
   // 铬层/正文区/浮层不再各有各的浓度 —— 那正是"不像一整块"的来源。
-  const conc = num(S.glass.conc, 45, 1, 100);
+  const conc = num(S.glass.conc, GLASS_CONC_DEFAULT, 1, 100);
   const text = num(S.glass.text, 100, 70, 100);   // 文字整体透明度下限 70%(再低正文掉对比度)
   const root = document.documentElement.style;
   root.setProperty('--glass', (on ? glassSplit(conc).css : 100) + '%');
@@ -1835,7 +1836,7 @@ async function applyGlassMaterial(force, tintOverride) {
   // 连续映射：底色滑杆 1–100 → DWM alpha 1–255（磨砂霜跟着滑杆走，不透明↔透明一杆到底）；
   // 直透通道渐变恒零，透明度全由页面层承担。开机/回焦重放带 force 穿透去重（DWM 丢状态自愈）。
   // v1.8:DWM 只出模糊(alpha=1,pebrel 配方),浓度全在页面层 —— 见 glassSplit。
-  const alpha = glassSplit(Number(g.conc) || 45).dwm;
+  const alpha = glassSplit(Number(g.conc) || GLASS_CONC_DEFAULT).dwm;
   try {
     await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha, dark, force: !!force });
     glassDbg('mat:' + material + ':ok');
@@ -2386,7 +2387,7 @@ const I18N = {
   'err.tooBig': ['文件过大(超过 8MB)', 'File too large (over 8 MB)', 'ファイルが大きすぎます(8MB 超)'],
   'err.onlyExt': ['仅支持 Markdown / 文本文件', 'Only Markdown / text files are supported', 'Markdown / テキストファイルのみ対応'],
   'err.notFile': ['不是文件', 'Not a file', 'ファイルではありません'],
-  'err.noBrowser': ['找不到 Microsoft Edge / Chrome,无法直出 PDF(可改用「打印 / 存 PDF」)', 'Microsoft Edge / Chrome not found, cannot export a PDF (use Print / Save as PDF instead)', 'Microsoft Edge / Chrome が見つからないため PDF を直接書き出せません(「印刷 / PDF に保存」をご利用ください)'],
+  'err.noBrowser': ['找不到 Chromium 内核浏览器(Edge / Chrome / Brave / Vivaldi),无法直出 PDF(可改用「打印 / 存 PDF」)', 'No Chromium-based browser found (Edge / Chrome / Brave / Vivaldi) — cannot export a PDF directly (use Print / Save as PDF instead)', 'Chromium 系ブラウザ(Edge / Chrome / Brave / Vivaldi)が見つからないため PDF を直接書き出せません(「印刷 / PDF に保存」をご利用ください)'],
   'err.tailExitCode': ['(浏览器退出码', ' (browser exit code', '(ブラウザ終了コード'],
   'err.tailUsePrint': [';可改用「打印 / 存 PDF」手动另存', '; use Print / Save as PDF instead', ';「印刷 / PDF に保存」をご利用ください'],
   'toast.replaced': ['已替换 {n} 处', 'Replaced {n} occurrence(s)', '{n} 件置換しました'],

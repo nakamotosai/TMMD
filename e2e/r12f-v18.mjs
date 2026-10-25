@@ -256,12 +256,24 @@ async function reset() {
   }
   const pdfPath = String(htmlPath || '').replace(/\.html?$/i, '') + '.pdf';
   const pdf = await val(`(async () => { try { const p = await invoke('export_pdf', { htmlPath: ${q(htmlPath)}, pdfPath: ${q(pdfPath)} }); return { ok: true, p }; } catch (e) { return { ok: false, e: String((e && e.message) || e) }; } })()`, 60000);
-  ok('D6 无头浏览器产出 PDF(命令无异常)', pdf && pdf.ok === true, pdf);
-  if (existsSync(pdfPath)) {
-    const buf = readFileSync(pdfPath);
-    ok('D7 PDF 头合法且体积正常', buf.subarray(0, 5).toString() === '%PDF-' && buf.length > 800, { head: buf.subarray(0, 8).toString(), size: buf.length });
+  // D6/D7:PDF 直出是"有内核就真产出、没内核就诚实拒绝"——按**本机事实**分支断言,别假装有内核。
+  // 语义:有内核时这两条是硬要求(没产出就是 bug);没内核时硬要求"可读拒绝 + 不留假 PDF"。
+  const kernKeys = ['ProgramFiles(x86)', 'ProgramFiles', 'LOCALAPPDATA'];
+  const kernRel = ['Microsoft\\Edge\\Application\\msedge.exe', 'Google\\Chrome\\Application\\chrome.exe',
+    'BraveSoftware\\Brave-Browser\\Application\\brave.exe', 'Vivaldi\\Application\\vivaldi.exe',
+    'Chromium\\Application\\chrome.exe'];
+  const kern = [process.env.TMMD_PDF_BROWSER,
+    ...kernKeys.flatMap((k) => (process.env[k] ? kernRel.map((r) => join(process.env[k], r)) : []))]
+    .filter(Boolean).find((c) => existsSync(c));
+  const pdfExists = existsSync(pdfPath);
+  if (kern) {
+    ok('D6 无头浏览器产出 PDF(命令无异常)', pdf && pdf.ok === true, { kern, pdf });
+    const buf = pdfExists ? readFileSync(pdfPath) : Buffer.alloc(0);
+    ok('D7 PDF 头合法且体积正常', pdfExists && buf.subarray(0, 5).toString() === '%PDF-' && buf.length > 800,
+      { head: buf.subarray(0, 8).toString(), size: buf.length });
   } else {
-    ok('D7 PDF 文件存在', false, { pdfPath });
+    ok('D6 无内核时诚实拒绝(不假装成功)', pdf && pdf.ok === false && /存 PDF/.test(String(pdf.e || '')), { kern: null, pdf });
+    ok('D7 拒绝时不留下假 PDF', !pdfExists, { pdfPath, pdfExists });
   }
   // 负面:HTML 不存在 → 可读错误,不抛系统框
   const neg = await val(`(async () => { try { await invoke('export_pdf', { htmlPath: 'C:\\\\tmmd-nonexistent\\\\nope.html', pdfPath: ${q(join(ROOT, 'nope.pdf'))} }); return { threw: false }; } catch (e) { return { threw: true, msg: String((e && e.message) || e) }; } })()`, 20000);

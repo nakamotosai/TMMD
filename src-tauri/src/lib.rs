@@ -1287,7 +1287,7 @@ fn find_headless_browser() -> Result<String, String> {
             return Ok(c);
         }
     }
-    Err("找不到 Microsoft Edge / Chrome,无法直出 PDF(可改用「打印 / 存 PDF」)".into())
+    Err("找不到 Chromium 内核浏览器(Edge / Chrome / Brave / Vivaldi),无法直出 PDF(可改用「打印 / 存 PDF」)".into())
 }
 
 fn headless_browser_candidates() -> Vec<String> {
