@@ -1889,6 +1889,8 @@ function showPanel(name) {
     if (sp) sp.hidden = true;
     if (gp) gp.hidden = true;
   }
+  // 设置页现在是右侧抽屉:阅读区宽度变了 → 工具栏要重算溢出(它按 clientWidth 判定,只有 resize 才会自动重跑)
+  if (typeof layoutToolbar === 'function') layoutToolbar();
 }
 function isPanelOpen() {
   const sp = $id('settingsPanel');
@@ -2362,11 +2364,11 @@ const I18N = {
   's.enh.focus': ['专注模式', 'Focus mode', '集中モード'],
   's.enh.zen': ['无干扰模式', 'Immersive mode', '没入モード'],
   's.enh.codeLn': ['代码块行号', 'Code line numbers', 'コード行番号'],
-  's.enh.codeStyle': ['行内代码样式', 'Inline code style', 'インラインコードの表示'],
-  's.enh.csWash': ['荧光笔', 'Highlighter', 'マーカー'],
-  's.enh.csUnderline': ['下划线', 'Underline', '下線'],
-  's.enh.csBare': ['无痕', 'Plain', '装飾なし'],
-  's.enh.csPlate': ['薄底', 'Faint base', '薄い下地'],
+  's.theme.codeStyle': ['行内代码样式', 'Inline code style', 'インラインコードの表示'],
+  's.theme.csWash': ['荧光笔', 'Highlighter', 'マーカー'],
+  's.theme.csUnderline': ['下划线', 'Underline', '下線'],
+  's.theme.csBare': ['无痕', 'Plain', '装飾なし'],
+  's.theme.csPlate': ['薄底', 'Faint base', '薄い下地'],
   's.theme.theme': ['主题', 'Theme', 'テーマ'],
   's.theme.palette': ['配色方案', 'Palette', '配色'],
   's.theme.lang': ['界面语言', 'Language', '表示言語'],
@@ -2548,11 +2550,11 @@ const I18N_TARGETS = [
   ['#sec-theme .set-section-title', 'nav.theme', 'text'], ['#sec-glass .set-section-title', 'nav.glass', 'text'],
   ['#sec-file .set-section-title', 'nav.file', 'text'], ['#sec-keys .set-section-title', 'nav.keys', 'text'],
   ['#sec-about .set-section-title', 'nav.about', 'text'],
-  ['#setCodeStyleWash', 's.enh.csWash', 'text'], ['#setCodeStyleUnderline', 's.enh.csUnderline', 'text'],
-  ['#setCodeStyleBare', 's.enh.csBare', 'text'], ['#setCodeStylePlate', 's.enh.csPlate', 'text'],
+  ['#setCodeStyleWash', 's.theme.csWash', 'text'], ['#setCodeStyleUnderline', 's.theme.csUnderline', 'text'],
+  ['#setCodeStyleBare', 's.theme.csBare', 'text'], ['#setCodeStylePlate', 's.theme.csPlate', 'text'],
   ['#sec-read .set-row-title', ['s.read.preset', 's.read.font', 's.read.measure', 's.read.lineH', 's.read.toolbar', 's.read.side']],
-  ['#sec-enhance .set-row-title', ['s.enh.typewriter', 's.enh.focus', 's.enh.zen', 's.enh.codeLn', 's.enh.codeStyle']],
-  ['#sec-theme .set-row-title', ['s.theme.theme', 's.theme.palette', 's.theme.lang']],
+  ['#sec-enhance .set-row-title', ['s.enh.typewriter', 's.enh.focus', 's.enh.zen', 's.enh.codeLn']],
+  ['#sec-theme .set-row-title', ['s.theme.theme', 's.theme.codeStyle', 's.theme.palette', 's.theme.lang']],
   ['#sec-glass .set-row-title', ['s.glass.glass', 's.glass.floor', 's.glass.sys']],
   ['#sec-file .set-row-title', ['s.file.assoc', 's.file.current', 's.file.export']],
   ['#sec-about .set-row-title', ['s.about.ver', 's.about.design']],

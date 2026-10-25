@@ -299,19 +299,28 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
   background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-md);
   box-shadow: 0 10px 40px rgba(0,0,0,.4); overflow: hidden;
 }
-/* 设置整页：占满阅读区（顶栏下/全宽），与玻璃面板同 z400 单层、无新增堆叠；
- * R12c(a)：背景必须用实色 --bg（禁 surface-base——玻璃开时它是半透明的，
- * 底层正文透出来 = 本轮用户报的双显拥挤根因；玻璃语义只许动 surface-*，不动 --bg 本体） */
+/* 设置整页 = **右侧抽屉**(不是全覆盖):左边留着正文,改外观立刻看得见真实效果。
+ * 2026-10-25 用户投诉:整页覆盖把正文全挡掉、面板里又没有预览,"改完什么样子都不知道"。
+ * 两条硬约束:
+ *   1) 面板背景仍是实色(不许半透明)—— R12c(a) 那次"双显拥挤"就是半透明面板把底层正文透出来;
+ *      所以正文不是"透过来",而是**布局重排到左边**(body.settings-open #layout 收窄)。
+ *   2) 正文宽度由 CSS 变量 --measure 管,收窄即自动重排,不需要 JS 参与;
+ *      只有工具栏溢出判定是量 clientWidth 的 → showPanel() 里补一次 layoutToolbar()。
+ * 窗宽不够(≤1120)时回落成原来的全覆盖,避免两栏都挤扁。 */
+:root { --settings-w: min(820px, 58vw); }
 .settings-panel.settings-page {
-  top: 38px; right: 0; left: 0; bottom: 0; width: auto;
-  border: none; border-top: 1px solid var(--border); border-radius: 0;
+  top: 38px; right: 0; left: auto; bottom: 0; width: var(--settings-w);
+  border: none; border-top: 1px solid var(--border); border-left: 1px solid var(--border); border-radius: 0;
   box-shadow: none; background: var(--surface-plate);
   display: flex; flex-direction: column;
 }
 .settings-panel.settings-page[hidden] { display: none; }
-/* R12c(a)：设置页开时阅读区 DOM 直接不可见（cover-or-hide 的 hide 半边；
- * visibility 保布局无重排，关即随 class 移除自动恢复；面板 fixed 不受影响） */
-body.settings-open #layout { visibility: hidden; }
+/* 阅读区收窄到左边(重排,不是遮挡;body 是 column flex、#layout flex:1 → margin-right 即减宽) */
+body.settings-open #layout { margin-right: var(--settings-w); }
+@media (max-width: 1120px) {
+  :root { --settings-w: 100%; }
+  body.settings-open #layout { margin-right: 0; visibility: hidden; }   /* 窄窗回落:老的全覆盖行为 */
+}
 /* 整页体：左导航 + 右主区 */
 .setpage { flex: 1; min-height: 0; display: flex; }
 .setpage-nav {

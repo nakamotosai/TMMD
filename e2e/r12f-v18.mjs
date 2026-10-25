@@ -378,6 +378,53 @@ async function reset() {
   console.log(`  帧率样本: ${JSON.stringify(fps)}`);
 }
 
+/* ═══════════ H) 设置页:分区归类 + 右侧抽屉(改外观能看见正文) ═══════════
+ * 2026-10-25 用户投诉两条:①"行内代码样式"放在「阅读增强」里找不到(它本质是外观);
+ * ②设置整页把正文全挡掉、面板里又没有预览 → 改外观看不到效果。
+ * 这两条都是**可观测**的:分区归属看 DOM,遮挡看几何。 */
+{
+  console.log('-- H 设置页 --');
+  const h1 = await val(`(() => {
+    const inTheme = !!document.querySelector('#sec-theme #setCodeStyleWash');
+    const inEnhance = !!document.querySelector('#sec-enhance #setCodeStyleWash');
+    return JSON.stringify({ inTheme, inEnhance });
+  })()`, 10000);
+  const h1o = JSON.parse(h1 || '{}');
+  ok('H1 行内代码样式归在「主题外观」区(不再放阅读增强)', h1o.inTheme === true && h1o.inEnhance === false, h1o);
+
+  const h2 = await val(`(() => {
+    showPanel('settings');
+    const inp = document.getElementById('setSearch');
+    const rows = () => [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null);
+    inp.value = '代码'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    const hitZh = rows().some((r) => r.querySelector('#setCodeStyleWash'));
+    inp.value = 'code style'; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    const hitEn = rows().some((r) => r.querySelector('#setCodeStyleWash'));
+    inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true }));
+    showPanel(null);
+    return JSON.stringify({ hitZh, hitEn });
+  })()`, 10000);
+  const h2o = JSON.parse(h2 || '{}');
+  ok('H2 设置搜索"代码"/"code style"都能过滤到它', h2o.hitZh === true && h2o.hitEn === true, h2o);
+
+  // 抽屉几何:面板占右侧,阅读区留在左边且**不被盖住**(面板左缘 ≥ 阅读区右缘);
+  // 窄窗(≤1120)回落到全覆盖,那时这条按"回落也要成立"判:要么并列,要么明确藏起来
+  const h3 = await val(`(() => {
+    showPanel('settings');
+    const l = document.getElementById('layout').getBoundingClientRect();
+    const p = document.getElementById('settingsPanel').getBoundingClientRect();
+    const rd = document.getElementById('reader').getBoundingClientRect();
+    const vis = getComputedStyle(document.getElementById('layout')).visibility;
+    const narrow = innerWidth <= 1120;
+    showPanel(null);
+    const aside = l.width > 200 && p.left >= l.right - 1 && rd.width > 100;
+    const fallback = narrow && vis === 'hidden';
+    return JSON.stringify({ ok: (aside || fallback), narrow, aside, vis, layoutW: Math.round(l.width), layoutRight: Math.round(l.right), panelLeft: Math.round(p.left), readerW: Math.round(rd.width), innerW: innerWidth });
+  })()`, 10000);
+  const h3o = JSON.parse(h3 || '{}');
+  ok('H3 设置页是右侧抽屉:阅读区在左边且不被覆盖(窄窗回落为全遮)', h3o.ok === true, h3o);
+}
+
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
 // 为什么必须:r12d 的 A16/A17 验的是"空态(没有任何文档)里那两个按钮",而 G 段开的 5000 行文档
 // 会一直挂在标签栏上 → 空态不渲染 → 后面那条跑道假失败(2026-10-25 实测踩到)。

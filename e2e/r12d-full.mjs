@@ -165,14 +165,34 @@ await T('A18', '设置 单例正向：开设置关玻璃', async () => (await va
 await T('A19', '设置 单例反向：开玻璃关设置', async () => (await val(`(() => { showPanel('glass'); showPanel(null); showPanel('glass'); return document.getElementById('settingsPanel').hidden === true; })()`)) === true);
 await T('A20', '设置 单 Esc 双向全关', async () => (await val(`(() => { showPanel('settings'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return document.getElementById('settingsPanel').hidden === true; })()`)) === true);
 // A21–A23：hidden 面板几何为 0，必须先 showPanel('settings') 再量
-await T('A21', '设置 整页几何：全宽＋顶 38', async () => (await val(`(() => { showPanel('settings'); return document.getElementById('settingsPanel').getBoundingClientRect().width; })()`)) !== undefined && near(await val(`(() => document.getElementById('settingsPanel').getBoundingClientRect().width)()`), await val(`window.innerWidth`), 2));
+// v1.8.4 起设置页是**右侧抽屉**(不是全宽覆盖):宽 = min(820px, 58vw),贴右缘,左边留出正文
+await T('A21', '设置 抽屉几何:右贴边 + 宽 min(820px,58vw)', async () => (await val(`(() => {
+  showPanel('settings');
+  const r = document.getElementById('settingsPanel').getBoundingClientRect();
+  showPanel(null);
+  const want = Math.min(820, innerWidth * 0.58);
+  const good = Math.abs(r.width - want) <= 2 && Math.abs(r.right - innerWidth) <= 2 && r.left > 100;
+  return good ? 'ok' : JSON.stringify({ w: Math.round(r.width), want: Math.round(want), right: Math.round(r.right), win: innerWidth, left: Math.round(r.left) });
+})()`)) === 'ok');
 await T('A22', '设置 导航宽 208', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-nav').getBoundingClientRect().width; })()`), 208, 4));
 await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-search').getBoundingClientRect().height; })()`), 74, 6));
 // 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行(打字机模式 + 导出 PDF 相关)→ 28 行 7 区,
 // v1.8.4 再加 1 行(行内代码样式四档)→ 29 行 7 区。数字是真在数行数,别改代码不改这里。
 await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
 await T('A25', '设置 清空还原 29 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '29/7');
-await T('A26', '设置 开设置藏底文(visibility:hidden 语义,CSS 设计如此)', async () => (await val(`(() => { showPanel('settings'); const v = getComputedStyle(document.getElementById('layout')).visibility; return v; })()`)) === 'hidden');
+// v1.8.4 起设置页是**右侧抽屉**:阅读区不再被藏起来/盖住,而是重排到左边(改外观能立刻看见正文)
+await T('A26', '设置 开设置时阅读区收窄到左侧(不遮挡)', async () => (await val(`(() => {
+  showPanel('settings');
+  const l = document.getElementById('layout').getBoundingClientRect();
+  const p = document.getElementById('settingsPanel').getBoundingClientRect();
+  const rd = document.getElementById('reader').getBoundingClientRect();
+  const vis = getComputedStyle(document.getElementById('layout')).visibility;
+  showPanel(null);
+  const narrow = innerWidth <= 1120;
+  if (narrow) return vis === 'hidden' ? 'ok' : ('bad ' + JSON.stringify({ narrow, vis }));
+  return (vis === 'visible' && l.width > 200 && rd.width > 100 && p.left >= l.right - 1)
+    ? 'ok' : ('bad ' + JSON.stringify({ vis, lw: Math.round(l.width), lr: Math.round(l.right), pl: Math.round(p.left), rw: Math.round(rd.width) }));
+})()`)) === 'ok');
 // v1.8 统一玻璃后,设置面板不再是"不透明板"(那正是要修掉的破玻璃渣底),而是**同一块玻璃**:
 // 底色 alpha 跟着浓度档位走(弱 0.62 → 强 0.92),永远半透、且随浓度单调变化。断言改成验这个行为。
 await T('A27', '设置 面板底色=玻璃浓度(半透且随档位变化)', async () => {
