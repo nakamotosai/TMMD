@@ -1,5 +1,12 @@
 # Changelog · TMMD
 
+## v1.8.3 · 2026-10-25(更新通道 BOM 致瘫修复)
+
+- **真缺陷:清单带 UTF-8 BOM,更新通道整体失效**。PowerShell 5.1 的 `Set-Content -Encoding UTF8` 会写 BOM(`EF BB BF`),而客户端 `serde_json::from_str` 见 BOM 直接报 `expected value at line 1 column 1` —— 对外资产可下载、对内一律"更新清单无效"(2026-10-25 实测;由本版新增的脚本化核验抓到,上一版只有"手演一遍"所以没发现)。
+  两边都修:发布脚本 `tools/make-release-manifest.ps1` 显式写**无 BOM** UTF-8;客户端解析前 `trim_start_matches('\u{feff}')` 再兜一层(清单是信任根,不该因为一个看不见的字符整体失效)。
+- **新增 `tools/verify/update-manifest-check.py`**:脚本化核验更新通道(真起隔离实例、真读清单),覆盖 ①BOM 清单可解析 ②sha 长度非法即拒 ③新版但下载物 sha 不符 → 下载被拒且不留文件 ④真链路读 GitHub 的 `latest.json` → 已是最新。启动器加 `-UpdateEndpoint` 透传测试缝。
+- 回归:四条跑道 **175/175** + `update-manifest-check` **4/4**。
+
 ## v1.8.2 · 2026-10-25(旧默认档前迁修正)
 
 - **旧存档前迁:旧默认档 → 新默认 40%**。旧四路默认(12/25/35/30)按折算公式得 **43%**,等于拿"旧默认"顶掉了用户新定的 40%——升级用户会看到 43%(实测:用户真实 profile 就是这一档)。

@@ -8,7 +8,12 @@
 # 装在 %LOCALAPPDATA%\Programs 下的正式版永远不会被这里碰到。
 #
 # ASCII only (Windows PowerShell decodes .ps1 with the ANSI codepage).
-param([switch]$Quiet)
+#
+# -IncludeInstalled (opt-in): ALSO kill the installed app (%LOCALAPPDATA%\TMMD\tmmd.exe).
+# Needed when an installed instance is running, because TMMD registers tauri-plugin-single-instance:
+# a second launch just forwards argv to the running one and exits, so every verify launch dies with
+# "window never became visible" (2026-10-25: cost 25 s per attempt plus four bogus failures).
+param([switch]$Quiet, [switch]$IncludeInstalled)
 $pidFile = Join-Path $env:TEMP 'tmmd-verify.pid'
 $mine = New-Object System.Collections.Generic.HashSet[int]
 if (Test-Path $pidFile) {
@@ -18,6 +23,10 @@ Get-Process tmmd -ErrorAction SilentlyContinue | ForEach-Object {
   $p = $null
   try { $p = $_.Path } catch { }
   if ($p -and ($p -match '\\target\\debug\\tmmd\.exe$' -or $p -match '\\target\\release\\tmmd\.exe$')) { [void]$mine.Add($_.Id) }
+  elseif ($IncludeInstalled -and $p -and ($p -match '\\AppData\\Local\\TMMD\\tmmd\.exe$')) {
+    [void]$mine.Add($_.Id)
+    if (-not $Quiet) { Write-Output ('including installed instance pid=' + $_.Id) }
+  }
 }
 foreach ($id in $mine) {
   try {

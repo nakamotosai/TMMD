@@ -38,7 +38,10 @@ $m = [ordered]@{
   notes   = $Notes
 }
 $jsonPath = Join-Path $exe.DirectoryName 'latest.json'
-($m | ConvertTo-Json) | Set-Content -Path $jsonPath -Encoding UTF8
+# NO BOM: PowerShell 5.1's `Set-Content -Encoding UTF8` writes EF BB BF, and the client's
+# serde_json then dies with "expected value at line 1 column 1" (2026-10-25: shipped exactly that,
+# the update channel looked fine and was dead). Write UTF-8 without BOM explicitly.
+[System.IO.File]::WriteAllText($jsonPath, ($m | ConvertTo-Json), (New-Object System.Text.UTF8Encoding($false)))
 $sumPath = Join-Path $exe.DirectoryName 'SHA256SUMS'
 ($hash + '  ' + $exe.Name) | Set-Content -Path $sumPath -Encoding ASCII
 Write-Output ('installer : ' + $exe.FullName + '  (' + [Math]::Round($exe.Length / 1MB, 1) + ' MB)')

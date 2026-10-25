@@ -248,12 +248,17 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('22', '正文内无玻璃 + 悬停反馈规则存在', r && r.inBody === 0 && r.hoverRule === true, r);
 }
 
-/* 23 焦点环可见:**真键盘 Tab** 才命中 :focus-visible */
+/* 23 焦点环可见:**真键盘 Tab** 才命中 :focus-visible。
+ * 口径用**物理像素**:Chromium 在非 100% 缩放的屏上会把 computed 长度按 zoom 折算
+ * (225% 屏实测 2px 环读成 1.77778px = 2 × 2/2.25),而两者物理宽度都是 4 设备像素。
+ * 拿 computed 值直接比 2px 会变成"换个屏就假失败"(2026-10-25 在隐藏桌面/225% 上踩到),
+ * 所以断言乘回 devicePixelRatio:CSS 基准 2px × 2 倍有效缩放 = 4 设备像素。 */
 {
   await val(`(() => { document.body.focus(); if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); return 1; })()`, 4000);
   await keyTab(3);
-  const r = await val(`(() => { const el = document.activeElement; if (!el || el === document.body) return { none: true }; const cs = getComputedStyle(el); return { tag: el.tagName, cls: String(el.className).slice(0, 30), matches: el.matches(':focus-visible'), outlineWidth: cs.outlineWidth, outlineStyle: cs.outlineStyle, outlineColor: cs.outlineColor }; })()`, 6000);
-  ok('23', '焦点环可见(真键盘 Tab 后 outline ≥2px)', r && r.matches === true && parseFloat(r.outlineWidth) >= 2 && r.outlineStyle !== 'none', r);
+  const r = await val(`(() => { const el = document.activeElement; if (!el || el === document.body) return { none: true }; const cs = getComputedStyle(el); const css = parseFloat(cs.outlineWidth); const dpr = devicePixelRatio; return { tag: el.tagName, cls: String(el.className).slice(0, 30), matches: el.matches(':focus-visible'), outlineWidth: cs.outlineWidth, devicePx: Math.round(css * dpr * 100) / 100, outlineStyle: cs.outlineStyle, outlineColor: cs.outlineColor, dpr: dpr }; })()`, 6000);
+  ok('23', '焦点环可见(真键盘 Tab 后 outline ≥3.5 设备像素 = CSS 2px @2x)',
+    r && r.matches === true && r.devicePx >= 3.5 && r.outlineStyle !== 'none', r);
 }
 
 /* 24 透明度有下限:文字透明度压到最低也 ≥70% */

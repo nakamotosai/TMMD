@@ -64,6 +64,21 @@ powershell -File tools/verify/stopall.ps1
 
 > 少了后两个之前踩过:测试实例一启动就把用户真实标签(`F:\knowledge\...`)恢复出来,用户看到"有人开了我的文件"。
 
+## 启动器/收尾脚本的闸(2026-10-25 补,都是踩过才加的)
+
+| 闸 | 触发 | 为什么 |
+|---|---|---|
+| 端口已有 CDP 就报错 | `Invoke-WebRequest http://127.0.0.1:<port>/json` 通 | 双实例共用一个隔离 profile 时,喂文档/探针会打到旧实例上,结论全是假的 |
+| 有任意 `tmmd.exe` 存活就报错 | 应用注册了 `tauri-plugin-single-instance` | 单实例:第二次启动只把 argv 转给在跑的那个然后**直接退出**,窗口永不出现,启动器会干等到超时(实测 4 条核验全变成"launch failed") |
+| 清空隔离 profile 失败就报错 | wipe 后目录仍存在 | 静默继续会让"全新安装默认值"的断言失去意义 |
+| 自动喂一篇文档 | 默认行为,`-NoSeed` 关 | 隔离 profile 是空态,而跑道隐含"屏上有正文";不喂会**卡死**(不是失败) |
+
+> 装了正式版又在跑时,起验证实例前先:`powershell -File tools/verify/stopall.ps1 -IncludeInstalled`
+> (默认**不**碰装好的那台,`-IncludeInstalled` 才连它一起收掉 —— 这是单实例应用的刚需。)
+>
+> 更新通道核验:`python tools/verify/update-manifest-check.py`(真起实例、真读清单,含 BOM/篡改/真链路四例);
+> 它依赖启动器的 `-UpdateEndpoint` 测试缝。
+
 ## 为什么窗口"出生就在副屏"
 
 应用侧配合:`window.json` v2 存**物理像素**,启动时按坐标找到那块显示器并用它的工作区校验,**先摆好位置才 `show()`**(窗口以 `visible:false` 创建)。所以只要给副屏的 v2 几何,窗口第一帧就在副屏,不存在"先主屏闪一下再搬走"。

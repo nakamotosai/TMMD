@@ -17,7 +17,9 @@ param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [int]$Port = 9225,
   [switch]$Capture,
-  [switch]$NoSeed
+  [switch]$NoSeed,
+  # test seam for the updater check: point the app at a local manifest (tools/verify/update-manifest-check.py)
+  [string]$UpdateEndpoint = ''
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @"
@@ -90,6 +92,13 @@ $fgBefore = [VW]::GetForegroundWindow()
 $busy = $false
 try { $null = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 ("http://127.0.0.1:" + $Port + "/json"); $busy = $true } catch { }
 if ($busy) { throw ('CDP already answers on port ' + $Port + ' - run tools/verify/stopall.ps1 first') }
+# TMMD registers tauri-plugin-single-instance: if ANY tmmd.exe is alive, this launch just forwards
+# argv to it and exits - the window never appears and the launcher would sit there until its deadline.
+$alive = Get-Process tmmd -ErrorAction SilentlyContinue
+if ($alive) {
+  $who = ($alive | ForEach-Object { $_.Id.ToString() + '@' + ($_.Path -replace '.*\\', '') }) -join ', '
+  throw ('TMMD already running (' + $who + ') - single-instance app, this launch would just exit; run tools/verify/stopall.ps1 -IncludeInstalled first')
+}
 # isolated WebView2 profile (localStorage / tab restore / cache). Wiped on every launch so each
 # runway starts from a pristine profile - fresh-install defaults are then actually testable.
 # (this was MISSING until 2026-10-25: runways wrote into the user's real profile)
@@ -101,6 +110,7 @@ $env:TMMD_CONFIG_DIR = $cfgDir
 $env:TMMD_TEST_NOACTIVATE = '1'                                  # no focus steal, no taskbar button
 $env:WEBVIEW2_USER_DATA_FOLDER = $vwDir
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port"
+if ($UpdateEndpoint) { $env:TMMD_UPDATE_ENDPOINT = $UpdateEndpoint }
 $log = Join-Path $env:TEMP 'tmmd-verify-out.log'
 $err = Join-Path $env:TEMP 'tmmd-verify-err.log'
 $p = Start-Process -FilePath $Exe -PassThru -RedirectStandardOutput $log -RedirectStandardError $err

@@ -1512,8 +1512,13 @@ fn update_check(app: tauri::AppHandle, force: Option<bool>) -> Result<Option<Upd
         .into_body()
         .read_to_string()
         .map_err(|e| format!("读更新清单失败: {e}"))?;
+    // 清单是信任根:不能因为一个看不见的 BOM 整体失效。2026-10-25 实测:GitHub 上的 asset 带
+    // UTF-8 BOM(PowerShell 5.1 的 Set-Content -Encoding UTF8 会写 BOM),serde_json 直接
+    // 报 "expected value at line 1 column 1" —— 通道看着通、实际全军覆没。生成脚本已改成无 BOM,
+    // 这里再兜一层(顺手吃掉首尾空白)。
+    let body = body.trim_start_matches('\u{feff}').trim();
     let m: UpdateManifest =
-        serde_json::from_str(&body).map_err(|e| format!("更新清单无效: {e}"))?;
+        serde_json::from_str(body).map_err(|e| format!("更新清单无效: {e}"))?;
     st.last_checked = Some(now);
     if m.sha256.len() != 64 || !m.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("更新清单里的 sha256 不合法".into());
