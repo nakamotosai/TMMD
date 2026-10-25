@@ -1,17 +1,20 @@
-# make-release-manifest.ps1 - 给一次 TMMD 发布生成 latest.json + SHA256SUMS(自研更新器的信任根)
+# make-release-manifest.ps1 - build latest.json + SHA256SUMS for one TMMD release (trust root of the updater)
 #
-# 为什么需要:自研更新器(程序内 update_check)固定读
+# Why: the built-in updater reads a fixed manifest URL
 #   https://github.com/nakamotosai/TMMD/releases/latest/download/latest.json
-# 所以每次发版必须把这个清单当作**发布资产**上传,里面写清楚版本、安装包名、下载 URL 与 SHA-256。
-# 下载端会强校验 sha256,不符即丢弃;URL 还必须落在受信任前缀内(lib.rs UPDATE_TRUSTED)。
+# so every release MUST ship that manifest as a release asset, containing version, asset name,
+# download URL and SHA-256. The client hard-verifies sha256 (mismatch -> discarded) and the URL
+# must fall inside the trusted prefix (lib.rs UPDATE_TRUSTED).
 #
-# ASCII only(Windows PowerShell 按 ANSI 解码 .ps1)。
+# ASCII ONLY - Windows PowerShell decodes .ps1 using the ANSI codepage (GBK on this machine).
+# A UTF-8 Chinese string in this file gets mis-decoded and breaks the parser at load time
+# (2026-10-25: this file shipped non-ASCII comments and died with "invalid assignment expression").
 #
-# 用法(在仓库根执行,先在 tauri build 出安装包之后):
+# Usage (run from the repo root, after `npm run build` produced the installer):
 #   powershell -File tools/make-release-manifest.ps1 -Dir src-tauri/target/release/bundle/nsis `
-#       -Version 1.8.0 -Notes "整窗玻璃/编辑器/自研更新器"
+#       -Version 1.8.0 -Notes "glass / editor / updater"
 #
-# 之后把 latest.json、SHA256SUMS 与安装包一起作为该 release 的资产上传(GitHub / Gitea 皆可)。
+# Then upload latest.json, SHA256SUMS and the installer together as assets of that release (GitHub / Gitea).
 param(
   [Parameter(Mandatory = $true)][string]$Dir,
   [Parameter(Mandatory = $true)][string]$Version,
@@ -20,9 +23,10 @@ param(
   [string]$Tag = ''
 )
 $ErrorActionPreference = 'Stop'
+if (-not (Test-Path -LiteralPath $Dir)) { throw ('dir not found: ' + $Dir + ' (run tauri build first)') }
 if (-not $Tag) { $Tag = 'v' + $Version }
 $exe = Get-ChildItem -Path $Dir -Filter '*-setup.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $exe) { throw ('在 ' + $Dir + ' 找不到 *-setup.exe(先跑 npm run build)') }
+if (-not $exe) { throw ('no *-setup.exe under ' + $Dir + ' (run npm run build first)') }
 $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 $url = 'https://github.com/' + $Repo + '/releases/download/' + $Tag + '/' + $exe.Name
 $m = [ordered]@{
@@ -39,8 +43,6 @@ $sumPath = Join-Path $exe.DirectoryName 'SHA256SUMS'
 ($hash + '  ' + $exe.Name) | Set-Content -Path $sumPath -Encoding ASCII
 Write-Output ('installer : ' + $exe.FullName + '  (' + [Math]::Round($exe.Length / 1MB, 1) + ' MB)')
 Write-Output ('sha256    : ' + $hash)
-Write-Output ('url       : ' + $url)
-Write-Output ('wrote     : ' + $jsonPath)
-Write-Output ('wrote     : ' + $sumPath)
-Write-Output ''
-Write-Output '下一步:把上面两个文件与安装包一起上传为该 release 的资产(gh release create / gitea 网页皆可)'
+Write-Output ('manifest  : ' + $jsonPath)
+Write-Output ('sums      : ' + $sumPath)
+Write-Output ('asset url : ' + $url)

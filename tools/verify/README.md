@@ -20,16 +20,34 @@ powershell -File tools/verify/launch-on-secondary.ps1 -Exe F:\projects\tmmd\src-
 #   onSecondary=True
 #   exStyle=... (含 0x80 = WS_EX_TOOLWINDOW)   ← 不进任务栏
 
-# 2) 跑自动化跑道
-node e2e/r12d-full.mjs  --port=9225     # 81 条旧全量回归
-node e2e/r12e-editor.mjs --port=9225    # 25 条编辑链
+# 2) 跑自动化跑道(顺序即依赖:每条自己收尾,别乱序)
+node e2e/r12d-full.mjs     --port=9225     # 81 条全量回归
+node e2e/r12e-editor.mjs   --port=9225     # 25 条编辑链
+node e2e/r12f-v18.mjs      --port=9225     # 45 条 v1.8(含 i18n 覆盖度/大文件/帧率)
+node e2e/r12g-visual24.mjs --port=9225     # 24 条视觉检查表
 
-# 3) 需要看图时抓一张(含统计)
+# 3) 排障:一行读运行态(不弹窗、不改文件)
+node tools/verify/probe.mjs --port=9225 "S.cur && S.cur.abs"
+node tools/verify/probe.mjs --port=9225 "JSON.stringify({editing:S.editing, tabs:S.tabs.length})"
+
+# 4) 需要看图时抓一张(含统计)
 powershell -File tools/verify/capture-secondary.ps1 -Out $env:TEMP\shot.png -Stats
 
-# 4) 收尾
+# 5) 收尾
 powershell -File tools/verify/stopall.ps1
 ```
+
+## 隔离边界(别省)
+
+启动器会设三个环境变量,把"测试实例"和"你的实例"彻底分开:
+
+| 变量 | 作用 |
+|---|---|
+| `TMMD_CONFIG_DIR` | 覆盖配置目录(roots.json / window.json / update_state.json / updates/)→ 自动化**绝不碰**用户真实文库与窗口记忆 |
+| `WEBVIEW2_USER_DATA_FOLDER` | 覆盖 WebView2 用户目录(localStorage / 标签恢复 / 缓存)→ 不会继承用户真实标签 |
+| `TMMD_TEST_NOACTIVATE=1` | `SW_SHOWNOACTIVATE` + `WS_EX_TOOLWINDOW`:不抢前台、不进任务栏 |
+
+> 少了后两个之前踩过:测试实例一启动就把用户真实标签(`F:\knowledge\...`)恢复出来,用户看到"有人开了我的文件"。
 
 ## 为什么窗口"出生就在副屏"
 
