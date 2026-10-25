@@ -80,15 +80,16 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 
 > 追踪规则：`skill://sai-long-project` + `skill://sai-closeout`；长流水见 `docs/CHANGELOG.md`；项目本卡 vps `~/project-portfolio/projects.md`。
 
-- **状态**:活跃(**v1.8.11** 2026-10-26 — 安装包与更新清单在 `dist/v1.8.11/`,tag `v1.8.11`,GitHub release 即更新通道)。最新点版 **v1.8.11**:正文内容板改**中性玻璃**(代码块不再把强调色掺进板色 —— 合成后彩度 ≤6、压在壁纸上字对板 11.95:1)、工具栏只在真放不下时折叠且**靠右贴品牌字**、文字晕可调
+- **状态**:活跃(**v1.8.12** 2026-10-26 — 安装包与更新清单在 `dist/v1.8.12/`,tag `v1.8.12`,GitHub release 即更新通道)。最新点版 **v1.8.12**:导出 PDF 的判据改成**产物出现**(修掉"内核不打印时永久卡在正在生成":30s 到点收摊 + 整树收干净 + 一次性 profile 目录)、**卸载器收回文件关联**(卸完不再留 `.md` 的死指向)。上一版 **v1.8.11**:正文内容板改**中性玻璃**(代码块不再把强调色掺进板色 —— 合成后彩度 ≤6、压在壁纸上字对板 11.95:1)、工具栏只在真放不下时折叠且**靠右贴品牌字**、文字晕可调
 - **本版**:v1.8 窗口/玻璃 + 编辑 + 更新器 —— **整窗一整块玻璃**(默认浓度 **40%**,弱/中/强 = 20/40/70;对比度实测见 `docs/CHANGELOG.md` v1.8.1),DWM 只做模糊不再分摊浓度;编辑补齐(新建/另存为/重命名/删除走回收站、Tab 与多行缩进、编辑态查找替换、撤销栈按标签隔离、原子写、写前冲突检测、关窗守卫);打字机模式;PDF 直出;导出图片内联;库级搜索排序;窗口几何按物理像素存 + 出生就在记忆的那块屏;托盘;自研更新器(清单检查 + SHA-256 + 交接安装);界面 zh/en/ja。**架构:单窗口 + 多标签**,不做多窗口。
 - **依据**:`docs/2026-10-24-竞品与差距分析.md`;验证回执:`docs/2026-10-25-验证清单.md`
 - **已知项**(2026-10-25):
-  1. PDF 直出**正例仍无法在本机验证**,但原因 2026-10-26 查清了:本机没有**候选表里**的内核(无 Edge/Chrome/Brave/Vivaldi;WebView2 运行时当不了无头 CLI,实测 exit 13);本机唯一的 Chromium 是 **ego lite**(`$LOCALAPPDATA\Citro Labs\ego lite\Application\ego.exe`),它不在候选表里,而且**实测它的无头打印根本不产出文件** —— `--headless=new` 与旧式 `--headless` 都试过:整棵无头进程树(gpu/renderer/crashpad)都活着、157s 不吐文件、也不退出。用 `TMMD_PDF_BROWSER` 指向它就能复现。跑道因此仍断言"可读拒绝 + 不留假 PDF"这一支,并在**有可用内核的机器上硬要求真产出 `%PDF-`**。顺带修了这一支里的真 bug:旧代码用 `cmd.status()` 一直等浏览器退出 → 用户点「导出 PDF」会**永久卡在"正在生成"**;现在判据改成产物文件出现、30s 到点收摊、`taskkill /T` 清干净、并给无头进程一次性 `user-data-dir`(见 `docs/CHANGELOG.md` 未发布节)。
+  1. PDF 直出**正例仍无法在本机验证**,但原因 2026-10-26 查清了:本机没有**候选表里**的内核(无 Edge/Chrome/Brave/Vivaldi;WebView2 运行时当不了无头 CLI,实测 exit 13);本机唯一的 Chromium 是 **ego lite**(`$LOCALAPPDATA\Citro Labs\ego lite\Application\ego.exe`),它不在候选表里,而且**实测它的无头打印根本不产出文件** —— `--headless=new` 与旧式 `--headless` 都试过:整棵无头进程树(gpu/renderer/crashpad)都活着、157s 不吐文件、也不退出。用 `TMMD_PDF_BROWSER` 指向它就能复现。跑道因此仍断言"可读拒绝 + 不留假 PDF"这一支,并在**有可用内核的机器上硬要求真产出 `%PDF-`**。
+     (v1.8.12 已修掉这一支里的真 bug:旧代码 `cmd.status()` 等浏览器退出 → 点「导出 PDF」会**永久卡在"正在生成"**;现在判据是产物文件出现、30s 到点收摊、`taskkill /T` 清整树、无头进程走一次性 profile 目录。)**决定不把 ego lite 加进候选表**:它不产文件,加进去只会把"找不到内核"这句清楚的话变成含糊的"PDF 未生成"。**
   2. 默认 40% 在窗内最亮壁纸带上的对比度:中位 **5.57:1** / 最坏 **2.67:1**(同壁纸同文档 A/B:45% → 5.88 / 2.98,70% → 8.37 / 5.61)。这是 40% 定调的代价,设置里的浓度滑条就是出口。
   3. 窗口圆角 —— 未做(已明示范围)。**用户 2026-10-26 明确拍板:不做。**
-  4. 卸载残留(2026-10-26 实测):安装器把 `.md` / `.markdown` 的默认 ProgID 写成 `Markdown`(Tauri NSIS 的 `APP_ASSOCIATE`),而卸载器只删 `HKCU\Software\Classes\Markdown`,**没清扩展名那一侧的默认指向** → 卸完 `.md` 指向一个已经不存在的 ProgID(双击大概会落到"选择打开方式",推断:该 ProgID 下已无 `shell\open\command`)。另外 `HKCU\Software\Classes\TMMD.md` 与 `.md\OpenWithProgids` 里的 TMMD.md 也会留下。修法:NSIS `installerHooks` 的 `NSIS_HOOK_POSTUNINSTALL` 里比对后删除 —— 待拍板是否发版修。
-- **双仓**:GitHub(SSOT)+ Gitea(备份)双端同 HEAD(v1.8.11,核 `git ls-remote`)
+  4. 卸载残留 —— **v1.8.12 已修**:`src-tauri/nsis-hooks.nsh` 的 `NSIS_HOOK_POSTUNINSTALL` 会(只在默认值仍是我们写的 `Markdown` 时才)删掉扩展名的默认指向,并清掉 `TMMD.md` / `.md`·`.markdown` 的 `OpenWithProgids` 项 / `Applications\tmmd.exe` 三处死链。`…\FileExts\.md\UserChoice` **故意不碰**(那是用户自己的默认应用选择,系统也不允许程序改)。
+- **双仓**:GitHub(SSOT)+ Gitea(备份)双端同 HEAD(v1.8.12,核 `git ls-remote`)
 
 ---
 

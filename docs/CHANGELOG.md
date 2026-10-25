@@ -1,27 +1,44 @@
 # Changelog · TMMD
 
-## 未发布 · 2026-10-26(本机验证过,**尚未发版**)
+## v1.8.12 · 2026-10-26(PDF 导出不再可能永久卡住 + 卸载器把文件关联收回)
 
-### PDF 直出:判据从"进程退出"换成"产物出现" —— 之前可能永久卡住(实测病灶)
+这一版只有两件事,但都是"用户会真的撞上"的那种。
 
-2026-10-26 拿本机唯一内核(ego lite 的 Chromium,用 `TMMD_PDF_BROWSER` 指过去)做 PDF 正例,量到的是病灶不是正例:
+### 1. 导出 PDF:判据从"进程退出"换成"产物出现"
 
-- 应用起的无头进程 `ego.exe --headless=new … --print-to-pdf=<绝对路径>` **活了 157 秒**:整棵进程树
-  (gpu-process / utility:network / storage / renderer / crashpad)都在,`%TEMP%` 与全盘热点目录里**没有任何新 PDF**,进程也不退出。
-- 旧代码 `cmd.status()` 就是**等它退出** ⇒ 用户点「导出 PDF」会永久停在"正在生成 PDF…"(跑道侧表现为 60s evaluate 超时)。
-- 换旧式 `--headless` 再试:同样不产文件 —— 所以**旗号不是问题**,代码里仍是 `--headless=new`(不为一个不打印的分支换写法)。
+拿本机唯一内核(ego lite 的 Chromium,`TMMD_PDF_BROWSER` 指过去)做正例时量到的是病灶:
 
-修法(四件,都在 `export_pdf`):
+- 应用起的无头进程(`--headless=new … --print-to-pdf=<绝对路径>`)活 **157 秒**:整棵进程树
+  (gpu / network / storage / renderer / crashpad)都在,`%TEMP%` 与全盘热点目录里**没有任何新 PDF**,进程也不退出。
+- 旧代码 `cmd.status()` 就是**等它退出** ⇒ 用户点「导出 PDF」永久停在"正在生成 PDF…"(跑道侧表现为 60s evaluate 超时)。
+- 换旧式 `--headless` 再试:同样不产文件 —— 所以**旗号不是问题**,代码里仍是 `--headless=new`。
 
-1. 轮询产物文件,**大小连续两次一致**才算写完 → 立刻收摊(避免读到半截 PDF);
-2. **30s 硬上限**(`PDF_WAIT_SECS`),到点返回可读错误「PDF 未生成;可改用「打印 / 存 PDF」手动另存」;
-3. 收摊时 `taskkill /PID <我们起的那个> /T /F` 清整棵树 —— 实测残留 **0**(旧行为是留一窝 157s 的无头进程);
-4. 每次调用给无头进程一个一次性 `--user-data-dir=<temp>`,用完删:既不去抢用户正开着的浏览器 profile,
-   也不会被"交接给已有实例"(那条路根本不会打印)。
+修法四件(都在 `export_pdf`):
 
-**文案纪律**:后端每个中文错误串都必须被前端 `ERR_MAP` + `ERR_TAIL_MAP` 完整吃掉(E11 把 lib.rs 里全部中文错误串喂 `trErr`,
-EN 面留一个汉字就红)。第一版新文案带 `(等了 30 秒没等到文件)` → "等了…没等到文件"没有映射规则 → E11 直接红;
-改成能整段吃掉的短句后转绿 —— 这条比"能不能打印"更容易被忽略,记在这里。
+| # | 做法 | 为什么 |
+|---|---|---|
+| 1 | 判据改成**产物文件出现**,且大小连续两次一致才算写完 | 有些分支打印完也不退出;半截文件不能算成功 |
+| 2 | **30s 硬上限**(`PDF_WAIT_SECS`) | 到点必须收摊,不能让 UI 无限等 |
+| 3 | 到点 `taskkill /PID <我们起的那个> /T /F` | `kill` 只收直接子进程,无头浏览器是一窝;实测残留 **0** |
+| 4 | 每次调用给一个一次性 `--user-data-dir=<temp>`,用完删 | 不抢用户正开着的浏览器 profile,也不会被"交接给已有实例"(那条路根本不打印) |
+
+**文案纪律**(本轮踩到并记住):后端每个中文错误串都必须被前端 `ERR_MAP` + `ERR_TAIL_MAP` **整段吃掉** ——
+E11 会把 `lib.rs` 里全部中文错误串喂 `trErr`,EN 面留一个汉字就红。第一版新文案写成
+`PDF 未生成(等了 30 秒没等到文件);…`,其中"等了…没等到文件"没有映射规则 → 直接红;改成能整段吃掉的短句后绿。
+
+### 2. 卸载器把文件关联收回(否则卸完 `.md` 是死指向)
+
+真卸了一次(2026-10-26)才看见:安装器按 Tauri 的 `APP_ASSOCIATE` 把 `.md` / `.markdown` 的默认 ProgID 写成
+`Markdown`,而卸载器只删 `HKCU\Software\Classes\Markdown` 本体,**留着扩展名那一侧指着它** → 卸完双击 `.md`
+落到"选择打开方式"。附带 `TMMD.md` 与 `OpenWithProgids` 里的死项也留着。
+
+修法 = `bundle.windows.nsis.installerHooks` → `src-tauri/nsis-hooks.nsh` 的 `NSIS_HOOK_POSTUNINSTALL`:
+
+- 扩展名默认值**只在当前值仍是我们写的 `Markdown` 时**才删(用户后来改成别的绝不碰);
+- 删 `TMMD.md` / `.md`·`.markdown` 的 `OpenWithProgids` 项 / `Applications\tmmd.exe`(都指向已卸走的 exe = 死链);
+- **不碰** `…\FileExts\.md\UserChoice`(那是用户自己的默认应用选择,系统也不让程序改)。
+
+`.nsh` 里**只用 ASCII 注释**:makensis 按机器 ANSI 代码页读 `.nsh`,中文注释会让它解析失败(同 `tools/*.ps1` 的纪律)。
 
 ## v1.8.11 · 2026-10-26(代码块改中性玻璃凹槽 + 工具栏靠右)
 
