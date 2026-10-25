@@ -1,0 +1,63 @@
+{
+  "project": "TMMD (透明MD) — 透明玻璃质感本地 Markdown 阅读器 (Tauri 2 + WebView2)",
+  "root": "F:/projects/tmmd",
+  "locked_at": "2026-10-26",
+  "locked_by": "用户拍板(本轮实拍 + 「可以的做吧」= 认可中性玻璃方案)",
+  "note": "值只此一处:锁里是**决策与判据**,具体 CSS 变量值住在 ui-reader/app.css 的 :root,禁两处重复值。",
+  "values": {
+    "glass": {
+      "default_concentration": 40,
+      "presets": { "weak": 20, "medium": 40, "strong": 70 },
+      "ssot": "app.js 的 GLASS_CONC_DEFAULT + ui-reader/app.css :root[--glass]",
+      "why": "整窗一整块 acrylic:DWM 只出模糊(alpha=1),浓度全由页面层画,两处不相乘"
+    },
+    "text_halo": {
+      "default_percent": 55,
+      "range": [0, 100],
+      "ssot": "ui-reader/app.css --halo-k(0.55)+ 玻璃面板「文字阴影」滑条",
+      "why": "玻璃模式下文字直接压在模糊壁纸上,亮壁纸会把米白字洗没;55% 是「少一半丑、几乎不丢可读」的点"
+    },
+    "content_plates": {
+      "code_block": { "token": "--plate-sink", "value": "#000 @ glass×.42", "form": "中性玻璃凹槽 + 1px 顶部内高光" },
+      "inline_chip": { "token": "--plate-lift", "value": "ink @ glass×.22", "form": "中性玻璃薄片" },
+      "hairline": { "token": "--hair-strong", "value": "ink 18%", "form": "1px 中性发丝线" },
+      "why": "板色不许带自己的色相:强调色掺板色在暗底=脏棕、亮底=死灰。禁回退到 --well / --well-deep / --rule-strong 那套暖板",
+      "retired": ["--well", "--well-deep", "--rule-strong", "实心中性灰板(α≥0.9)"]
+    },
+    "toolbar": {
+      "fold_rule": "整条顶栏自然宽 ≤ 顶栏可用宽(可见项真实尺寸 + gap − padding − 2px 余量)",
+      "why": "禁拿容器自己的 clientWidth 当可用空间(自指 ⇒ 折了就回不来)",
+      "tabbar": "flex: 0 1 auto(禁 1 1 auto:会把顶栏空余全部吃掉,单标签撑到 1099px)",
+      "alignment": "auto 边距挂在 .actions 上(不是 .brand),工具栏贴品牌字靠右"
+    },
+    "typography": {
+      "body_size": 16,
+      "line_height_ratio": 1.7,
+      "measure": "── 见 app.css --body-size / --line-h / --measure",
+      "font_stack": "Maple Mono NF CN → PingFang SC → Microsoft YaHei UI → system-ui"
+    }
+  },
+  "assertions": [
+    { "id": "contrast", "kind": "probe", "check": "正文/次要文字对底对比度", "threshold": "≥4.5:1(大字 ≥3:1)", "how": "e2e/r12g-visual24.mjs #10/#11 + tools/verify/contrast-bands.py" },
+    { "id": "font-floor", "kind": "probe", "check": "可读文字字号", "threshold": "≥14px;字号档 ≤6", "how": "r12g #19" },
+    { "id": "no-simsun-fallback", "kind": "probe", "check": "渲染字族不落 SimSun/宋体", "threshold": "命中 = 0", "how": "r12g #20" },
+    { "id": "line-metrics", "kind": "probe", "check": "正文行高比 / 字号 / 行宽", "threshold": "1.6–1.75 / 16px / ≈30 汉字", "how": "r12g #18/#19/#17" },
+    { "id": "code-plate-neutral", "kind": "probe", "check": "代码块底:α + 合成中性灰后彩度 + 发丝边 α + 字/板对比", "threshold": "0<α≤0.5;彩度 ≤6;边 α≥0.12;字/板 ≥4.5:1", "how": "r12g #21" },
+    { "id": "plate-inline-neutral", "kind": "probe", "check": "深/浅两主题下的凹槽与薄片:α、合成彩度、字对比", "threshold": "凹槽 ≤0.5/≤6;薄片 ≤0.35/≤8", "how": "e2e/r12f-v18.mjs J2/J3/J4" },
+    { "id": "table-hairline-only", "kind": "probe", "check": "表头无填充、单元格只留上发丝线", "threshold": "左/右/下框 = 0px", "how": "r12f J1" },
+    { "id": "toolbar-fold-only-when-needed", "kind": "probe", "check": "宽窗不折 / 真挤必折 / 放开全归还(含手动全塞的回归)", "threshold": "宽窗折叠数 = 0 且归还数 = 总数", "how": "r12g #25" },
+    { "id": "toolbar-right-aligned", "kind": "probe", "check": "工具栏贴品牌字(≤14px)、左缘过中线、最大空档在工具栏左侧", "threshold": "三条全真", "how": "r12g #26" },
+    { "id": "no-backdrop-filter-in-body", "kind": "probe", "check": "正文内 backdrop-filter 元素数", "threshold": "= 0(玻璃只出现在浮层/顶栏)", "how": "r12g #22" },
+    { "id": "focus-visible-ring", "kind": "probe", "check": "真键盘 Tab 后 :focus-visible 的 outline", "threshold": "≥2 CSS px(实测按 dpr 折算 ≥4 设备像素)", "how": "r12g #23" },
+    { "id": "text-opacity-floor", "kind": "probe", "check": "把文字透明度压到 5% 时 --text-opa 的下限", "threshold": "≥0.7", "how": "r12g #24" },
+    { "id": "accent-block-area", "kind": "probe", "check": "强调色大面积填充块数", "threshold": ">40000px² 的块 = 0(强调色只做线与控件)", "how": "r12g #14" },
+    { "id": "border-radii-few-steps", "kind": "probe", "check": "全站圆角档位", "threshold": "≤4 档(r-xs/sm/md/lg)", "how": "r12g #15" },
+    { "id": "overflow-clip-fit", "kind": "manual", "check": "正文容器无溢出裁切(滚动区内容不被硬切)", "threshold": "无违例", "how": "目视 + r12g 截图" },
+    { "id": "js-clean", "kind": "probe", "check": "app.js 语法 + 运行期无未捕获异常", "threshold": "错误 = 0", "how": "node --check ui-reader/app.js + 跑道运行期无 exception" },
+    { "id": "updater-channel", "kind": "probe", "check": "线上更新清单可下、SHA 与清单一致", "threshold": "version 最新且 sha 匹配", "how": "dist/<ver>/verify-live-channel.ps1" },
+    { "id": "a11y-basics", "kind": "manual", "check": ":focus-visible / 文本替代 / prefers-reduced-motion 三条存在", "threshold": "缺一即红", "how": "r12g #23 + 目视" }
+  ],
+  "accept": [
+    { "id": "runways-194", "kind": "probe", "check": "四条自动化跑道全绿", "threshold": "81+25+62+26 = 194/194", "how": "node e2e/r12d-full.mjs / r12e-editor.mjs / r12f-v18.mjs / r12g-visual24.mjs --port=<cdp>" }
+  ]
+}
