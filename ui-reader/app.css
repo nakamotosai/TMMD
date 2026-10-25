@@ -19,7 +19,7 @@
   --blue: #83a598;
   --red: #fb4934;
   --code-bg: #282828;
-  --radius: 6px;
+  --radius: var(--r-sm);   /* 兼容别名:新代码请用 --r-xs/sm/md/lg */
   --ink: #ebdbb2;
   --sans: "Maple Mono NF CN", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --mono: "Maple Mono NF CN", Consolas, "JetBrains Mono", monospace;
@@ -42,7 +42,7 @@
   --surface-reader: transparent;
   --surface-pop: color-mix(in srgb, var(--bg2) calc(var(--glass) + var(--glass-pop-boost)), transparent);
   --surface-plate: color-mix(in srgb, var(--bg3) calc(var(--glass) + var(--glass-plate-boost)), transparent);
-  --surface-plate-strong: color-mix(in srgb, var(--code-bg) calc(var(--glass) + var(--glass-plate-strong-boost)), transparent);
+  --surface-plate-strong: color-mix(in srgb, var(--code-bg) max(90%, calc(var(--glass) + var(--glass-plate-strong-boost))), transparent);
   /* W8 文字整体透明度：只作用正文与侧栏内容容器（顶栏控件不受影响，保证按钮可读）。
    * 取值 0–1 小数，由 app.js 按百分比写入；默认 1。 */
   --text-opa: 1;
@@ -128,7 +128,7 @@ button:disabled { opacity: .45; cursor: default; }
 }
 /* 抽屉触发按钮：仅图标/仅文字双模式由 body.tb-icon / body.tb-text 控制 */
 .topbar .tb-btn { height: 26px; padding: 0 9px; font-size: 13px; flex-shrink: 0; }
-.topbar .tb-btn.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-color: transparent; border-radius: 7px; }
+.topbar .tb-btn.active { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--fg); border-color: transparent; border-radius: var(--r-sm); }
 .topbar .tb-caret { width: 10px; height: 10px; margin-left: 1px; opacity: .7; }
 body.tb-icon .tb-btn { width: 30px; padding: 0; justify-content: center; }
 body.tb-icon .tb-btn .tb-label, body.tb-icon .tb-btn .tb-caret { display: none; }
@@ -149,7 +149,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .brand { display: inline-flex; align-items: center; margin-left: auto; }   /* T1b：品牌字靠右对齐（最小化钮左）；margin 撑在 brand 上，无 tab 时也不塌回左边 */
 .tab { display: flex; align-items: center; gap: 6px; max-width: 200px; min-width: 60px; flex: 0 1 auto;
   height: 26px; padding: 0 6px 0 10px; font-size: 13px; color: var(--fg-dim); white-space: nowrap;
-  background: transparent; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
   cursor: pointer; }
 .tab:hover { color: var(--fg); background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .tab.active { color: var(--fg); background: color-mix(in srgb, var(--accent) 16%, transparent); border-color: transparent; }
@@ -248,7 +248,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 /* ===== 下拉抽屉（文件/编辑/视图/文档/更多） ===== */
 .drawer {
   position: fixed; z-index: 300; min-width: 230px; max-width: 360px;
-  background: var(--surface-pop); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-md);
   box-shadow: 0 10px 40px rgba(0,0,0,.4); padding: 4px; overflow: hidden;
 }
 .menu-item {
@@ -288,7 +288,7 @@ body.dragover .reader { outline: 3px dashed var(--accent); outline-offset: -6px;
 /* ===== 设置面板（玻璃小浮层） / 设置整页（阅读区全覆盖，单例路由，与玻璃互斥；沿用 z400 单层） ===== */
 .settings-panel {
   position: fixed; top: 42px; right: 12px; z-index: 400; width: 320px;
-  background: var(--surface-pop); border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-pop); border: 1px solid var(--border); border-radius: var(--r-md);
   box-shadow: 0 10px 40px rgba(0,0,0,.4); overflow: hidden;
 }
 /* 设置整页：占满阅读区（顶栏下/全宽），与玻璃面板同 z400 单层、无新增堆叠；
@@ -407,7 +407,7 @@ body.settings-open #layout { visibility: hidden; }
 /* 导读地图（侧栏地铁图视图） */
 .map-head { padding: 10px 12px 4px; }
 .map-title { font-size: 13px; font-weight: 600; color: var(--fg); letter-spacing: .04em; }
-.map-prog { margin-top: 8px; height: 6px; border-radius: 3px; background: var(--surface-plate); overflow: hidden; }
+.map-prog { margin-top: 8px; height: 6px; border-radius: 999px; background: var(--surface-plate); overflow: hidden; }
 .map-prog-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .25s ease; }
 .map-prog-text { margin-top: 4px; font-size: 11px; color: var(--fg-dim); }
 .map-list { position: relative; padding: 2px 0 16px 0; }
@@ -506,6 +506,14 @@ body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--
 .settings-panel { border-radius: var(--r-lg); box-shadow: var(--elev-flyout); }
 .tab, .tb-btn.active, .menu-item, .tree-item, .side-recent, .drawer-item { border-radius: var(--r-sm); }
 .tab { border-radius: var(--r-sm); }
+
+/* —— 键盘可达性:焦点环(24 条视觉检查表第 23 条) ——
+ * 只对 `:focus-visible` 上环:键盘 Tab 走这里,鼠标点击不会到处冒方框。
+ * 为什么必须有:此前除了三个输入框(改边框色)之外没有任何焦点提示,
+ * 纯键盘用户 Tab 一圈完全不知道焦点在哪 —— 这是可用性缺陷,不是审美偏好。 */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
+.set-select:focus-visible, .set-text:focus-visible, .ask-input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.topbar :focus-visible, .win-btn:focus-visible { outline-offset: -2px; }
 
 /* —— 动效统一(短、稳、只做反馈) —— */
 .tab, .tb-btn, .menu-item, .tree-item, .theme-btn, .side-recent, .drawer-item, .setpage-nav-item, .win-btn {
@@ -611,7 +619,7 @@ body.settings-open .findbar { display: none; }
 .findbar .set-text { width: 190px; flex: 0 0 auto; }
 .findbar .find-count { font-size: 12px; color: var(--fg-faint); min-width: 44px; text-align: center; }
 .findbar .tb-btn { width: 26px; height: 24px; padding: 0; justify-content: center; }
-mark.srh-hit { background: color-mix(in srgb, var(--accent2) 42%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+mark.srh-hit { background: color-mix(in srgb, var(--accent2) 42%, transparent); color: inherit; border-radius: var(--r-xs); padding: 0 1px; }
 mark.srh-hit.now { background: var(--accent); color: #1d2021; }
 
 /* —— 侧栏:全文搜索视图 —— */

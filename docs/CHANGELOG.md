@@ -51,10 +51,35 @@
 - **托盘**:显示 / 隐藏 / 退出三项;左键单击切换显示隐藏;托盘里的「退出」走**同一道关窗守卫**(不会绕过未保存提醒)。**多窗口不做**——前端是单窗口 + 多标签的设计,拆多窗口要重写状态与 IPC 路由,不在本轮范围。
 - **验证工作流入库** `tools/verify/`:副屏启动器(出生在副屏 + 三项验收判据)、副屏抓图(含亮度/对比统计)、`stopall.ps1` 收尾,外加 `README.md` 里的六条硬规矩(ASCII、短命令、禁弹 UI、沙箱护栏、改前端要重建、收尾清零)。
 
-> ⚠️ **以上四项已写完并通过静态检查(JS 解析 + `cargo check`),但尚未运行验证** —— 按用户 2026-10-25 的停手要求,活体验证要等一次明确许可的运行窗。验证步骤见 `docs/2026-10-25-验证清单.md`。
+### v1.8 运行验证(2026-10-25,全绿)
+
+**跑道**:`e2e/r12d-full.mjs` **81/81** · `e2e/r12e-editor.mjs` **25/25** · `e2e/r12f-v18.mjs` **43/43**(新增) · `e2e/r12g-visual24.mjs` **24/24**(新增)。
+隔离实例跑在副屏、不抢前台、不进任务栏;`TMMD_CONFIG_DIR` + `WEBVIEW2_USER_DATA_FOLDER` 双隔离,测试实例完全不碰用户真实配置与标签。
+
+**运行验证抓到并修掉的 5 个真缺陷(全是静态检查漏掉的)**:
+
+1. **保存/冲突路径 TypeError** —— i18n 批量的替换把 `String(trErr(e))` 写成 `StringtrErr(e)`,`writeTabContent` 的 catch 一执行就 `ReferenceError`;`printCurrent` 同款。
+2. **i18n 调用被局部 `t` 遮蔽** —— `activateTabRaw(t, opts)` 的参数、`closeTab` 的局部都叫 `t`,`t('toast.x')` 变成"把 tab 对象当函数调"→ TypeError:**读文件失败提示**与**关脏标签冲突**两条路全崩。已改名 `tab`,并加源码级回归(r12f A4)。
+3. **导出 HTML / PDF 恒失败** —— `getTab(S.cur)` 传的是对象 `{abs,raw}` 而非路径,恒 `undefined`,点导出永远"还没有打开任何文档";三处(`buildStandaloneHtml`/`exportCurrentHtml`/`exportCurrentPdf`)全修。
+4. **PDF 直出找不到浏览器** —— 只查 ProgramFiles 三处固定路径,而本机没装 Edge/Chrome。已补注册表 `App Paths`(HKLM/HKCU)+ Brave/Vivaldi/Chromium + `TMMD_PDF_BROWSER` 显式指定,失败给可读提示(改用「打印 / 存 PDF」)。
+5. **控制台闪窗** —— `reg` / `cmd /C start` / 更新器 `powershell` 都没加 `CREATE_NO_WINDOW`:GUI 进程起控制台子进程时 Windows 会新建**可见的**控制台窗口,闪在用户桌面上(用户抱怨"疯狂弹主屏幕"的一类真源)。5 处 spawn 统一走 `hidden_cmd()`。
+
+**其它随验证落地的改动**:
+- i18n 补**细节层**翻译(`ERR_TAIL_MAP`:Windows 中文系统消息「拒绝访问/找不到文件/被占用」+ PDF 浏览器相关几条),EN/JA 界面不再出现"英文前缀 + 中文后半句";删除 `err.tooBig`/`err.onlyExt` 的**重复键**(后者覆盖前者,新文案静默失效)。
+- 代码块底板透明度加上下限 `max(90%, …)`(低浓度档此前只有 0.8,低于设计要求的 α≥0.9)。
+- 新增全局 `:focus-visible` 焦点环(键盘 Tab 可辨;此前除三个输入框外没有任何焦点提示)。
+- 圆角字面量归位到 4/6/8/12 四档(消除 3px/7px/10px 随手值)。
+- 后端新增测试缝 `TMMD_CONFIG_DIR`;`tools/verify/` 新增 `probe.mjs`(一行读运行态)、启动器加 `WEBVIEW2_USER_DATA_FOLDER` 与 PID 落盘,`stopall.ps1` 改**身份定位**(不再按进程名杀,避免误杀用户自己那台)。
+- 窗口几何实测:出生即在副屏 `rect=(3900,60) 2197x1456`、`touchedPrimaryScreen=False`、`WS_EX_TOOLWINDOW` 已打。
+- 实测帧率:5000 行滚动 avg **6.9ms** / p95 **7.1ms**(块节点 10000);真 Win32 连续改尺寸 avg **6.9ms** / p95 **7.7ms**。
+- **24 条视觉检查表逐条销项 24/24**(逐条判据见 `docs/2026-10-25-验证清单.md` §4)。
+
+详细判据、复跑命令与踩过的 10 个坑:`docs/2026-10-25-验证清单.md`。
 
 ### 仍未做(明确记录)
-- 大文件策略与实测(5000 行滚动帧率)、**多窗口**(见上,按设计暂不做)、首屏黑 10ms 级采样、24 条视觉检查表逐条销项、更新器"真装一遍"演练。
+- **多窗口**:前端是单窗口 + 多标签设计,拆多窗口要重写状态与 IPC 路由 —— 按设计暂不做(托盘已给"显示/隐藏/退出")。
+- **首屏黑 10ms 级采样补刀**:已有"窗口 `visible:false` → 位置与玻璃就绪才 `show()`"的结构性保证 + 抓帧验证出生即在副屏;10ms 级逐帧采样(需要连拍整屏)留作后续。
+- 窗口**圆角**(R4 范围):当前是干净直角,见 app.css 注释里的 `glass-w9-archive` 标签。
 
 
 

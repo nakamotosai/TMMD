@@ -88,7 +88,8 @@ const js = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
  * 正确手法:把动作挂到 window.__pending(先不 await),另发一条 evaluate 点掉弹窗,最后再取结果。 */
 async function clickAsk(preferred, tries) {
   for (let i = 0; i < (tries || 40); i++) {
-    const hit = await val(`(() => { const w = document.querySelector('.askwrap'); if (!w) return ''; const bs = [...w.querySelectorAll('button')]; const b = bs.find((x) => x.dataset.a === '${preferred}') || bs[0]; if (!b) return ''; const label = b.textContent; b.click(); return 'clicked:' + label; })()`, 4000);
+    // 只点"指定那个"按钮:找不到就继续等,不拿别的按钮顶替(否则点错按钮也会被记成成功)
+    const hit = await val(`(() => { const w = document.querySelector('.askwrap'); if (!w) return ''; const b = [...w.querySelectorAll('button')].find((x) => x.dataset.a === '${preferred}'); if (!b) return ''; const label = b.textContent; b.click(); return 'clicked:' + label; })()`, 4000);
     if (hit) return hit;
     await new Promise((r) => setTimeout(r, 80));
   }
@@ -129,13 +130,15 @@ await T('A07', '顶栏 品牌靠右＋顶高38', async () => {
   return near(v.gap, 10, 12) && near(v.h, 38, 2) ? true : JSON.stringify(v);
 });
 // ===== 抽屉 A08–A10 =====
-await T('A08', '抽屉 触发态淡底 alpha≈0.16＋radius 7px', async () => {
-  // 真触发器：openDrawer(menuFile, tbFile) 给按钮加 .active（app.js L807-816）；
-  // 样式 .topbar .tb-btn.active 用 color-mix 16%（app.css L124）；本机 Chromium 把
-  // color-mix 算成 oklab(0.27…) 不透明深色，无 alpha 可解析，故验：有 active＋radius 7px＋底非透明
-  const v = await val(`(() => { openDrawer('menuFile', $id('tbFile')); const el = document.querySelector('.topbar .tb-btn.active'); if (!el) return 'no-active'; const cs = getComputedStyle(el); const out = { bg: cs.backgroundColor, r: cs.borderRadius }; closeDrawers(); return out; })()`);
+await T('A08', '抽屉 触发态淡底 + radius=--r-sm', async () => {
+  // 真触发器:openDrawer(menuFile, tbFile) 给按钮加 .active(app.js L807-816);
+  // 样式 .topbar .tb-btn.active 用 color-mix 16%(app.css)+ border-radius: var(--r-sm)。
+  // 本机 Chromium 把 color-mix 算成 oklab(0.34…/0.62),无 rgb() 可解析,故验:
+  // 有 active + 圆角等于 --r-sm 的计算值 + 底非透明。**不写死 7px**:
+  // 2026-10-25 圆角归位到 4/6/8/12 四档时(24 条检查表第 16 条),7px 变 6px,写死的断言就成了陈旧期望。
+  const v = await val(`(() => { openDrawer('menuFile', $id('tbFile')); const el = document.querySelector('.topbar .tb-btn.active'); if (!el) return 'no-active'; const cs = getComputedStyle(el); const tok = getComputedStyle(document.documentElement).getPropertyValue('--r-sm').trim(); const out = { bg: cs.backgroundColor, r: cs.borderRadius, tok }; closeDrawers(); return out; })()`);
   if (typeof v === 'string') return v;
-  return String(v.r).includes('7px') && v.bg !== 'rgba(0, 0, 0, 0)' && !String(v.bg).includes('transparent') ? true : JSON.stringify(v);
+  return String(v.r) === String(v.tok) && v.bg !== 'rgba(0, 0, 0, 0)' && !String(v.bg).includes('transparent') ? true : JSON.stringify(v);
 });
 await T('A09', '抽屉 5 抽屉互斥（开一关其余）', async () => (await val(`(() => { showPanel('settings'); showPanel('glass'); return document.getElementById('settingsPanel').hidden === true && document.getElementById('glassPanel').hidden === false; })()`)) === true);
 await T('A10', '抽屉 Esc 关闭', async () => (await val(`(() => { showPanel('glass'); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return document.getElementById('glassPanel').hidden === true; })()`)) === true);
@@ -221,6 +224,9 @@ await T('A50', '编辑 undo 值回滚', async () => (await val(`(() => { const e
 // 内存不丢；随后真保存落 tmp 文件，之后状态干净，A54 切页无 modal
 await T('A51', '编辑 draft 切页恢复+真保存', async () => {
   const r = await runWithAsk(`(async () => { const ed = document.getElementById('editor'); ed.value += 'draft-x'; ed.dispatchEvent(new Event('input', { bubbles: true })); const k1 = S.activeKey; let back = false; await activateTab(getTab('${js(fC)}'), {}); await activateTab(getTab(k1), {}); back = S.activeKey === k1 && document.getElementById('editor').value.includes('draft-x'); await saveEdit(); return back && S.editing === false; })()`, 'discard', 30000);
+  // 必须**真**弹过三选窗并点了"不保存":否则"脏页切页要走弹窗"这条新行为无人守
+  // (复查指出:只断言 result 的话,弹窗哪天不弹了这条照样绿)
+  if (!r.clicked) return `no-modal-appeared(result=${r.result})`;
   return r.result === true;
 });
 await T('A52', '编辑 黄项注记：undo 回滚后 editDirty 仍 true（只报不修，仅记录）', async () => (await val(`(() => S.editDirty === true || S.editDirty === false)()`)) === true);

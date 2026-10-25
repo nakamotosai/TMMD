@@ -538,7 +538,8 @@ fn cage_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
         joined
     };
     if !is_under_root(&root_can, &full) {
-        return Err("路径越界：不在已登记库内".into());
+        // 只留可映射的前缀:中文解释放 i18n 字典里,否则 EN/JA 界面会出现"英文前缀 + 中文后半句"
+        return Err("路径越界".into());
     }
     Ok(full)
 }
@@ -752,9 +753,7 @@ fn write_atomic(p: &Path, bytes: &[u8]) -> Result<(), String> {
     }
     if let Err(e) = fs::rename(&tmp, p) {
         let _ = fs::remove_file(&tmp);
-        return Err(format!(
-            "替换文件失败: {e}(若提示拒绝访问,通常是文件只读或被别的程序占用,关掉占用它的程序再试)"
-        ));
+        return Err(format!("替换文件失败: {e}"));
     }
     Ok(())
 }
@@ -860,7 +859,7 @@ fn recycle(path: &Path) -> Result<(), String> {
     op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT) as u16;
     let rc = unsafe { SHFileOperationW(&mut op) };
     if rc != 0 {
-        return Err(format!("移入回收站失败(代码 {rc},路径 {shown})"));
+        return Err(format!("移入回收站失败: code={rc}, path={shown}"));
     }
     if op.fAnyOperationsAborted != 0 {
         return Err("移入回收站被中断".into());
@@ -1514,7 +1513,7 @@ fn update_check(app: tauri::AppHandle, force: Option<bool>) -> Result<Option<Upd
         .read_to_string()
         .map_err(|e| format!("读更新清单失败: {e}"))?;
     let m: UpdateManifest =
-        serde_json::from_str(&body).map_err(|e| format!("更新清单格式不对: {e}"))?;
+        serde_json::from_str(&body).map_err(|e| format!("更新清单无效: {e}"))?;
     st.last_checked = Some(now);
     if m.sha256.len() != 64 || !m.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("更新清单里的 sha256 不合法".into());
@@ -1585,7 +1584,7 @@ fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<St
     if !got.eq_ignore_ascii_case(&manifest.sha256) {
         let _ = fs::remove_file(&part);
         return Err(format!(
-            "校验失败(下载内容与清单不符),已丢弃:\n期望 {}\n实际 {}",
+            "校验失败: 期望 {}\n实际 {}",
             manifest.sha256, got
         ));
     }

@@ -117,24 +117,54 @@ console.log('== r12f v1.8 运行验证 ==');
   // 反向自检:探针必须真能通过(否则"全绿"是假的)——trErr 是全项目都在用的真实函数
   ok('A3 探针能认出真实存在的函数(trErr)', (await val(`(typeof trErr === 'function') ? 'yes' : 'no'`)) === 'yes');
   // A4 源码级复查:i18n 的 t('...') 绝不能落在"同作用域里也声明了 t"的地方。
-  // 局部 `t`(参数名/局部变量)会把全局 i18n 函数 t 遮蔽 → 运行时变成"把 tab 对象当函数调",
-  // 抛 TypeError。2026-10-25 实测 activateTabRaw(读文件失败提示)与 closeTab(关脏标签冲突)各有这种点位。
-  const blocks = [];
-  for (const m of src.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*\{/g)) {
-    let i = m.index + m[0].length;
-    let depth = 1;
-    while (i < src.length && depth > 0) { if (src[i] === '{') depth++; else if (src[i] === '}') depth--; i++; }
-    blocks.push({ name: m[1], params: m[2], start: m.index, end: i, body: src.slice(m.index, i) });
+  // 局部 `t`(形参 / 局部变量)会把全局 i18n 函数 t 遮蔽 → 运行时变成"把 tab 对象当函数调"。
+  // 2026-10-25 实测 activateTabRaw(读文件失败提示)与 closeTab(关脏标签冲突)各有这种点位。
+  //
+  // 注意两点(初版在这里栽过):
+  // ① 必须在**没剥字符串**的源码上扫 —— 上一版拿剥过字符串的 `src` 去匹配 `t('key')`,
+  //    引号之间的键已被清空,匹配 0 次 ⇒ 这条断言恒真(假绿)。这里用 srcNoComments。
+  // ② 作用域要按"最近的围栏"算,不能拿整个函数体做正则 —— 否则嵌套回调里的 `const t` 会把
+  //    外层函数误判成遮蔽者(误报),而箭头形参 `(t) => ...` 又完全漏掉(漏报)。
+  function scanShadowers(text) {
+    const scopes = [];
+    const re = /function\s+([A-Za-z_$\w]*)\s*\(([^)]*)\)\s*\{|\(([^)]*)\)\s*=>\s*\{|([A-Za-z_$][\w$]*)\s*=>\s*\{/g;
+    let m;
+    while ((m = re.exec(text))) {
+      let i = m.index + m[0].length, depth = 1;
+      while (i < text.length && depth > 0) { if (text[i] === '{') depth++; else if (text[i] === '}') depth--; i++; }
+      scopes.push({ name: m[1] || '(arrow)', params: m[2] || m[3] || m[4] || '', start: m.index, bodyStart: m.index + m[0].length, end: i });
+    }
+    const out = [];
+    for (const call of text.matchAll(/(?<![\w$.])t\('([A-Za-z0-9_.]+)'/g)) {
+      const p = call.index;
+      const infl = scopes.filter((s) => s.bodyStart <= p && p < s.end);
+      if (!infl.length) continue;
+      const s = infl.sort((a, b) => b.bodyStart - a.bodyStart)[0];
+      // 形参文本可能带上抓歪的括号(如 `(t`):先切词再按裸标识符比对
+      const paramNames = s.params.split(',').map((x) => x.trim().replace(/^[^\w$]+|[^\w$]+$/g, '').split(/[:=]/)[0]);
+      const paramShadow = paramNames.includes('t');
+      // 只看**本层直接写的**局部声明:把嵌套作用域的字符挖空再测
+      const chars = text.slice(s.bodyStart, s.end).split('');
+      for (const inner of scopes) {
+        if (inner.start > s.start && inner.end <= s.end) for (let i = inner.start - s.bodyStart; i < inner.end - s.bodyStart; i++) chars[i] = ' ';
+      }
+      const direct = chars.join('');
+      const localShadow = /\b(?:const|let|var)\s+t\b/.test(direct) || /\bfor\s*\(\s*(?:const|let|var)\s+t\s+(?:of|in)\b/.test(direct);
+      if (paramShadow || localShadow) out.push(`${s.name}@${text.slice(0, p).split('\n').length}`);
+    }
+    return out;
   }
-  const shadowed = [];
-  for (const m of src.matchAll(/(?<![\w$.])t\('([A-Za-z0-9_.]+)'/g)) {
-    const b = blocks.filter((x) => x.start < m.index && m.index <= x.end).pop();
-    if (!b) continue;
-    const paramShadow = /(^|,)\s*t\s*(,|$)/.test(b.params);
-    const localShadow = /\b(?:const|let|var)\s+t\b/.test(b.body);
-    if (paramShadow || localShadow) shadowed.push(`${b.name}@${src.slice(0, m.index).split('\n').length}`);
-  }
+  const srcNoComments = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/[^\n]*/g, ' ');
+  const shadowed = scanShadowers(srcNoComments);
   ok('A4 i18n 的 t() 不被局部 t 遮蔽', shadowed.length === 0, shadowed);
+  // A5 自检:扫描器必须**真会报**(否则 A4 又是恒真假绿)——
+  // 喂三段合成样本:形参遮蔽、局部遮蔽、干净代码,期望分别 1/1/0。
+  const s1 = scanShadowers('function f(t) { toast(t(\'toast.x\')); }\n').length;
+  const s2 = scanShadowers('function g() { const t = getTab(1); return t(\'toast.y\'); }\n').length;
+  const s3 = scanShadowers('function h() { return t(\'toast.z\'); }\n').length;
+  const s4 = scanShadowers('outer();\nS.tabs.forEach((t) => { t(\'toast.w\'); });\n').length;   // 箭头形参(初版漏报)
+  const s5 = scanShadowers('function k() { fn(() => { const t = 1; t(); }); return t(\'toast.v\'); }\n').length; // 嵌套局部(初版误报)
+  ok('A5 遮蔽扫描器自检(形参/局部/箭头/嵌套)', s1 === 1 && s2 === 1 && s3 === 0 && s4 === 1 && s5 === 0, { s1, s2, s3, s4, s5 });
 }
 
 /** 每节开头把实例恢复干净:关掉残留弹窗、退出编辑态(否则切页会弹三选窗,evaluate 必卡死)。 */
@@ -265,6 +295,32 @@ async function reset() {
   // E10 ERR_MAP / ERR_TAIL_MAP 里引用的键必须都在字典里(这类引用是变量形式,普通扫不出来)
   const errKeys = await val(`(() => { const m1 = [...ERR_MAP, ...ERR_TAIL_MAP].map((x) => x[1]); const miss = [...new Set(m1)].filter((k) => !(k in I18N)); return { total: m1.length, miss }; })()`, 10000);
   ok('E10 错误映射引用的键都在字典里', errKeys && errKeys.miss.length === 0, errKeys);
+  // E11 **覆盖度**(2026-10-25 复查后新增):把 src-tauri/src/lib.rs 里全部"命令层可能返回给 UI 的
+  // 中文错误串"抽出来,喂进 trErr —— EN 结果一个中文字都不许剩。只查映射表存在是没用的
+  // (E10 的写法漏掉了"表没写全"这种情形:路径越界/无法读取文件/回收站失败… 全都会漏)。
+  // 动态段({e}/{rel}/{path})用 ASCII 占位符替掉,所以残留的 CJK 只可能来自"没被规则吃掉的中文说明"。
+  const rustSrc = readFileSync(join(REPO, 'src-tauri/src/lib.rs'), 'utf8').replace(/^\s*\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, ' ');
+  const rustMsgs = new Set();
+  for (const m of rustSrc.matchAll(/Err\(\s*(?:format!\()?\s*"((?:[^"\\]|\\.)*)"/g)) {
+    const s = m[1];
+    if (/[\u4e00-\u9fff]/.test(s)) rustMsgs.add(s.replace(/\{[^}]*\}/g, 'X').replace(/\\n/g, ' '));
+  }
+  for (const m of rustSrc.matchAll(/format!\(\s*"((?:[^"\\]|\\.)*)"/g)) {
+    const s = m[1];
+    if (/[\u4e00-\u9fff]/.test(s) && /失败|错误|不支持|不存在|非法|异常|不可信|过大|越界|无效/.test(s)) rustMsgs.add(s.replace(/\{[^}]*\}/g, 'X').replace(/\\n/g, ' '));
+  }
+  const list = [...rustMsgs];
+  const cov = await val(`(() => {
+    const out = [];
+    setLang('en');
+    for (const s of ${JSON.stringify(list)}) {
+      const r = trErr(s);
+      if (/[\\u4e00-\\u9fff]/.test(r)) out.push(s + '  =>  ' + r);
+    }
+    setLang('zh');
+    return { total: ${JSON.stringify(list)}.length, leaks: out };
+  })()`, 20000);
+  ok('E11 后端命令层中文错误串在 EN 下零残留', cov && cov.leaks.length === 0, cov && { total: cov.total, leaks: cov.leaks.slice(0, 12) });
   await val(`(() => { toast(t('toast.refreshed')); return document.getElementById('toast').textContent; })()`, 5000);
 }
 
@@ -310,8 +366,18 @@ async function reset() {
   console.log(`  帧率样本: ${JSON.stringify(fps)}`);
 }
 
-// ---------- 收尾 ----------
-try { await val(`(() => { try { leaveEdit(); } catch (e) {} return 1; })()`, 3000); } catch {}
+// 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
+// 为什么必须:r12d 的 A16/A17 验的是"空态(没有任何文档)里那两个按钮",而 G 段开的 5000 行文档
+// 会一直挂在标签栏上 → 空态不渲染 → 后面那条跑道假失败(2026-10-25 实测踩到)。
+await val(`(async () => {
+  try { leaveEdit(); } catch (e) {}
+  const root = ${JSON.stringify(winPath(ROOT))}.toLowerCase();
+  S.tabs = S.tabs.filter((t) => !String(t.abs).toLowerCase().startsWith(root));
+  if (!S.tabs.length) { S.activeKey = null; S.cur = null; renderEmpty(); }
+  else if (!S.tabs.some((t) => t.abs === S.activeKey)) { S.activeKey = S.tabs[0].abs; S.cur = { abs: S.tabs[0].abs, raw: S.tabs[0].raw }; }
+  persistTabs(); renderTabs();
+  return 1;
+})()`, 10000);
 console.log(`\n== r12f: pass=${results.pass} fail=${results.fail} ==`);
 if (results.fail) { console.log('failures:'); results.fails.forEach((f) => console.log('  - ' + f)); }
 console.log(`sandbox kept for inspection: ${ROOT}`);
