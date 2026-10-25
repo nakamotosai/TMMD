@@ -37,12 +37,14 @@ const PALETTES = {
 const SWATCH_COLORS = {
   'charcoal': '#e0a458', 'paper': '#b3541e', 'gruvbox': '#fe8019',
 };
-// R12b Round-2 氛围三预设：中 = R12a 默认(12/25/35/30)，弱接近清水，强深度磨砂；底色透明度(base)随预设走，后端 alpha 同源
+// R12b Round-2 氛围三预设：中 = R12a 默认(12/25/35/30)，弱接近清水，强深度磨砂；底色透明度(base)随预设走，后端 alpha 按拆分份额走(v1.8)
 // R12b 字号三预设：阅读 = 旧默认(1.75/16/14)，代码放大代码，演示整体放大
+/* v1.8 整窗一整块玻璃:氛围档不再分四路浓度,只给**一个总浓度**(percent)。
+ * medium = 45 就是 pebrel 的 opacity(0.45)—— 两边同一起点才好对观感。 */
 const ATMOS_PRESETS = {
-  weak: { base: 6, chrome: 10, reader: 14, pop: 12, text: 100 },
-  medium: { base: 12, chrome: 25, reader: 35, pop: 30, text: 100 },
-  strong: { base: 30, chrome: 50, reader: 60, pop: 55, text: 100 },
+  weak: { conc: 20, text: 100 },
+  medium: { conc: 45, text: 100 },
+  strong: { conc: 70, text: 100 },
 };
 const FONT_PRESETS = {
   read: { h1: 1.75, body: 16, code: 14 },
@@ -58,9 +60,19 @@ function migrateGlass(g) {
   out.material = (g.material === 'none' || g.material === 'acrylic' || g.material === 'mica') ? g.material : 'acrylic';
   if (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) out.tint = g.tint;
   const num = (v) => (Number.isFinite(+v) ? +v : NaN);
+  // v1.8:四路(base/chrome/reader/pop)→ 单一 conc。老存档按"正文区实际合成浓淡"折算:
+  // 1-(1-base)(1-reader)(旧模型里 html+body 各画一次 base,此处按一次算,差值落在预设档内)。
+  const eff = (Number.isFinite(num(g.base)) && Number.isFinite(num(g.reader)))
+    ? 100 * (1 - (1 - num(g.base) / 100) * (1 - num(g.reader) / 100)) : NaN;
+  const savedConc = Number.isFinite(num(g.conc)) ? num(g.conc) : eff;
+  if (Number.isFinite(savedConc)) out.conc = Math.round(Math.min(100, Math.max(1, savedConc)));
   const avg = (num(g.chrome) + num(g.reader) + num(g.pop)) / 3;
-  out.atmos = Number.isFinite(avg) ? (avg >= 45 ? 'strong' : avg <= 18 ? 'weak' : 'medium') : 'medium';
+  out.atmos = Number.isFinite(out.conc)
+    ? (out.conc >= 60 ? 'strong' : out.conc <= 25 ? 'weak' : 'medium')
+    : (Number.isFinite(avg) ? (avg >= 45 ? 'strong' : avg <= 18 ? 'weak' : 'medium') : 'medium');
   Object.assign(out, ATMOS_PRESETS[out.atmos]);
+  // 用户存过自定义浓度时保留它(氛围档只负责回显高亮)
+  if (Number.isFinite(savedConc)) out.conc = Math.round(Math.min(100, Math.max(1, savedConc)));
   return out;
 }
 // R12b 存档净化：tintDraft 是内存草稿，永不落盘（误点可取消的根基）
@@ -1182,25 +1194,30 @@ function applyEnhance() {
   $id('setCodeLnOn')?.classList.toggle('active', S.codeLn !== false);
   $id('setCodeLnOff')?.classList.toggle('active', S.codeLn === false);
 }
-/* R12b 玻璃质感：S.glass 数值恒由氛围预设写入，本函数只负责落 CSS 变量 + 面板回显。
- * opaque=true 强制全不透明（开机首帧用，避开透明窗冷启动合成坑）；平时走存储值。
- * S.glass.tintDraft 为内存草稿（取色器未点应用前），回显优先显示草稿，后端预览见 bindSettings。 */
+/* v1.8 浓度拆分:总浓度 conc% 拆成 DWM 份额与页面层份额,两边相乘 = conc。
+ * 为什么不让一边独占:DWM 的 accent 不能给 alpha=0(部分版本会跳过,玻璃直接没了),
+ * 而且 DWM 那层带系统自带的压暗/降噪,压亮壁纸比纯 CSS 一味透明更稳;
+ * 页面层则负责"跟随主题色"的那份浓度。dwm 份额取 45%,其余给页面。
+ * 例:conc=45 → dwm 20 → 页面 31 → 合成 1-(1-0.2)(1-0.31)=45%。 */
+function glassSplit(conc) {
+  const total = Math.min(100, Math.max(1, Number(conc) || 45));
+  const dwm = Math.max(1, Math.round(total * 0.45));
+  const css = 100 * (1 - (1 - total / 100) / (1 - dwm / 100));
+  return { dwm, css: Math.round(Math.min(100, Math.max(0, css))) };
+}
+/* R12b 玻璃质感:S.glass 数值恒由氛围预设写入,本函数只负责落 CSS 变量 + 面板回显。
+ * opaque=true 强制全不透明(开机首帧用,避开透明窗冷启动合成坑);平时走存储值。
+ * S.glass.tintDraft 为内存草稿(取色器未点应用前),回显优先显示草稿,后端预览见 bindSettings。 */
 function applyGlass(opaque) {
   if (!S.glass || typeof S.glass !== 'object') S.glass = migrateGlass(null);
   const on = opaque ? false : (S.glass.on !== false && !S.sysNoEffects);
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
-  // v1.7:分量滑条已由氛围预设取代(预设刻意做得很透,是产品卖点),这里只对**文字整体透明度**
-  // 设 70% 下限(正文可读性保底,见下一行 text 的 lo=70);代码块/图片/卡片另有不透明底板兜底。
-  const base = num(S.glass.base, 12, 1, 100);
-  const chrome = num(S.glass.chrome, 25, 1, 100);
-  const reader = num(S.glass.reader, 35, 1, 100);
-  const pop = num(S.glass.pop, 30, 1, 100);
-  const text = num(S.glass.text, 100, 70, 100);   // v1.7 文字整体透明度下限 70%(再低正文掉对比度)
+  // v1.8:浓度只有一路(conc)。页面层承担的那份 = 总浓度减去 DWM 份额(拆分见 glassSplit);
+  // 铬层/正文区/浮层不再各有各的浓度 —— 那正是"不像一整块"的来源。
+  const conc = num(S.glass.conc, 45, 1, 100);
+  const text = num(S.glass.text, 100, 70, 100);   // 文字整体透明度下限 70%(再低正文掉对比度)
   const root = document.documentElement.style;
-  root.setProperty('--glass-base', (on ? base : 100) + '%');
-  root.setProperty('--glass-chrome', (on ? chrome : 100) + '%');
-  root.setProperty('--glass-reader', (on ? reader : 100) + '%');
-  root.setProperty('--glass-pop', (on ? pop : 100) + '%');
+  root.setProperty('--glass', (on ? glassSplit(conc).css : 100) + '%');
   root.setProperty('--text-opa', String(on ? text / 100 : 1));
   // 面板控件回显（面板关闭时节点仍在，?. 守无）
   $id('setGlassOn')?.classList.toggle('active', on);
@@ -1244,8 +1261,9 @@ async function applyGlassMaterial(force, tintOverride) {
   const n = parseInt(tint.slice(1), 16);
   // 连续映射：底色滑杆 1–100 → DWM alpha 1–255（磨砂霜跟着滑杆走，不透明↔透明一杆到底）；
   // 直透通道渐变恒零，透明度全由页面层承担。开机/回焦重放带 force 穿透去重（DWM 丢状态自愈）。
-  const bs = Math.min(100, Math.max(1, Number(g.base) || 12));
-  const alpha = Math.max(1, Math.round(bs * 255 / 100));
+  // v1.8:总浓度拆两半 —— DWM 出 45% 的份额(模糊 + 系统自带的压暗),页面层出其余(见 glassSplit)。
+  const dwmPct = glassSplit(Number(g.conc) || 45).dwm;
+  const alpha = Math.max(1, Math.round(dwmPct * 255 / 100));
   try {
     await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha, dark, force: !!force });
     glassDbg('mat:' + material + ':ok');
