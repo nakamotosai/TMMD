@@ -308,7 +308,7 @@ function leaveEdit() {
   syncHistBtns();
 }
 function enterEdit() {
-  if (!S.cur) return toast('还没有打开文档');
+  if (!S.cur) return toast(t('toast.noDoc'));
   rememberScroll();
   const ed = $id('editor');
   if (!ed) return;
@@ -389,7 +389,7 @@ async function writeTabContent(tab, content, force) {
     if (tab.relPos) await invoke('write_text', { root: tab.rootPath || S.root.rootPath, rel: tab.relPos, ...args });
     else await invoke('save_path', { path: tab.abs, ...args });
   } catch (e) {
-    const msg = String((e && e.message) || e);
+    const msg = StringtrErr(e);
     if (msg.includes('CONFLICT|')) return 'conflict'; // 后端发现磁盘被外部改过
     throw e;
   }
@@ -501,7 +501,7 @@ async function saveEdit() {
     toast(t('toast.saved'));
     refreshTreeOrder();
     return true;
-  } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return false; }
+  } catch (e) { toast(t('toast.saveFail') + trErr(e)); return false; }
 }
 /* 把所有脏标签逐个落盘(关窗 / 切库前用)。任一失败即停 —— 绝不"存一半就把窗口放走"。
  * 后台标签用它的 draft(切标签时 stash 过的草稿),当前标签用编辑器里的实时内容。 */
@@ -521,7 +521,7 @@ async function saveAllDirty() {
         if (r !== 'ok') return false;
       }
       if (isCur) { leaveEdit(); renderMarkdown(content, tab.abs); }
-    } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return false; }
+    } catch (e) { toast(t('toast.saveFail') + trErr(e)); return false; }
   }
   persistTabs();
   renderTabs();
@@ -533,7 +533,7 @@ function anyDirty() {
   return S.tabs.some((t) => (t.abs === curAbs ? !!(S.editing && S.editDirty) : !!t.editDirty));
 }
 async function refreshCurrent() {
-  if (!S.cur) return toast('还没有打开文档');
+  if (!S.cur) return toast(t('toast.noDoc'));
   if (!(await confirmLeaveEdit())) return;
   leaveEdit();
   rememberScroll();
@@ -547,8 +547,8 @@ async function refreshCurrent() {
     renderMarkdown(md, S.cur.abs);
     persistTabs();
     renderTabs();
-    toast('已刷新');
-  } catch (e) { toast('刷新失败：' + ((e && e.message) || e)); }
+    toast(t('toast.refreshed'));
+  } catch (e) { toast(t('toast.refreshFail') + trErr(e)); }
 }
 /// 保存后按 mtime 重排文件树（最新在前）
 async function refreshTreeOrder() {
@@ -572,7 +572,7 @@ async function newDoc() {
     await openInRoot(rel);       // 建完直接打开
     if (!S.editing) enterEdit(); // 新建即改(不然还得再点一次编辑)
     toast(t('toast.created'));
-  } catch (e) { toast(t('toast.createFail') + ((e && e.message) || e)); }
+  } catch (e) { toast(t('toast.createFail') + trErr(e)); }
 }
 async function saveAsDoc() {
   if (!S.cur) { toast(t('toast.noDoc')); return; }
@@ -587,7 +587,7 @@ async function saveAsDoc() {
     // 原文档的改动并没有写回原文件:如实说,不假装"保存成功"
     if (S.editing && getTab(S.cur.abs) && getTab(S.cur.abs).editDirty) toast(t('toast.saveAsDirty'));
     else toast(t('toast.saveAs', { name: String(path).split(/[\\/]/).pop() }));
-  } catch (e) { toast(t('toast.saveFail') + ((e && e.message) || e)); }
+  } catch (e) { toast(t('toast.saveFail') + trErr(e)); }
 }
 async function renameDoc() {
   const t0 = S.cur && getTab(S.cur.abs);
@@ -611,7 +611,7 @@ async function renameDoc() {
     persistTabs();
     renderTabs();
     toast(t('toast.renamed'));
-  } catch (e) { toast(t('toast.renameFail') + ((e && e.message) || e)); }
+  } catch (e) { toast(t('toast.renameFail') + trErr(e)); }
 }
 async function deleteDoc() {
   const tb = S.cur && getTab(S.cur.abs);
@@ -633,7 +633,7 @@ async function deleteDoc() {
     persistTabs();
     renderTabs();
     toast(t('toast.deleted'));
-  } catch (e) { toast(t('toast.deleteFail') + ((e && e.message) || e)); }
+  } catch (e) { toast(t('toast.deleteFail') + trErr(e)); }
 }
 
 /* ==================== 编辑态查找替换(2026-10-25 编辑第二批) ====================
@@ -736,7 +736,7 @@ function editFindReplaceAll() {
   prevEditValue = ed.value;
   S.editDirty = true;
   renderTabs();
-  toast('已替换 ' + n + ' 处');
+  toast(t('toast.replaced', { n }));
   editFindRun(0);
 }
 
@@ -746,7 +746,7 @@ async function openExternal(abs) {
 }
 async function openInRoot(rel) {
   const root = S.root;
-  if (!root || !root.scan || !root.rootPath) return toast('请先打开文件夹');
+  if (!root || !root.scan || !root.rootPath) return toast(t('toast.needRoot'));
   const abs = root.rootPath.split('/').join('\\') + '\\' + rel.split('/').join('\\');
   await openTab({ abs, relPos: rel, rootPath: root.rootPath, kind: 'root' });
 }
@@ -805,7 +805,7 @@ async function activateTabRaw(t, opts) {
       t.stale = false;
     }
   } catch (e) {
-    toast('读取失败：' + ((e && e.message) || e));
+    toast(t('toast.readFail') + trErr(e));
     S.tabs = S.tabs.filter((x) => x !== t);
     if (S.activeKey === t.abs) { S.activeKey = null; S.cur = null; renderEmpty(); }
     persistTabs();
@@ -846,7 +846,7 @@ async function closeTab(abs) {
           const r = await writeTabContent(t, content, false);
           // 后台标签不做"覆盖"确认(弹窗里没有上下文):冲突时保守拦下,让用户切过去处理
           if (r !== 'ok') { toast(t('conflict.title')); return; }
-        } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return; }
+        } catch (e) { toast(t('toast.saveFail') + trErr(e)); return; }
       }
     }
   }
@@ -962,12 +962,12 @@ function isFavorited(abs) { return S.favorites.includes(abs); }
 function toggleFavorite(abs, btnEl) {
   if (isFavorited(abs)) {
     S.favorites = S.favorites.filter((f) => f !== abs);
-    toast('已取消收藏');
+    toast(t('toast.unfav'));
   } else {
     S.favorites = S.favorites.filter((f) => f !== abs);
     S.favorites.unshift(abs);
     if (S.favorites.length > 200) S.favorites.length = 200;
-    toast('已收藏');
+    toast(t('toast.fav'));
   }
   LS.set('sr_favorites', S.favorites);
   if (btnEl) renderFavDocBtn(btnEl);
@@ -1363,7 +1363,7 @@ async function checkUpdate(force) {
     setUpdateStatus(t('upd.available', { v: m.version }));
     return m;
   } catch (e) {
-    setUpdateStatus(t('upd.fail') + ((e && e.message) || e));
+    setUpdateStatus(t('upd.fail') + trErr(e));
     return null;
   }
 }
@@ -1386,7 +1386,7 @@ async function runUpdate(m) {
     toast(t('upd.byebye'));
     setTimeout(() => { invoke('allow_close').catch(() => {}); }, 700);
   } catch (e) {
-    const msg = (e && e.message) || String(e);
+    const msg = trErr(e);
     setUpdateStatus(t('upd.fail') + msg);
     toast(t('upd.fail') + msg);
   } finally {
@@ -1423,6 +1423,32 @@ function scheduleUpdateCheck() {
 /* 更新器:文案与状态自检(供 e2e 与肉眼核对,不改状态) */
 function updateDebugInfo() {
   return { hasRow: !!$id('updState'), statusText: $id('updState') ? $id('updState').textContent : null };
+}
+
+/* 后端错误串是中文(命令层直接返回人话)。这里做一层**常见前缀**映射,让 EN/JA 界面不至于
+ * 夹一整句中文;未命中的原样返回 —— 宁可露出中文,也不能把错误信息吞掉或改写成语义不同的句子。 */
+const ERR_MAP = [
+  [/^仅支持/, 'err.onlyExt'],
+  [/^文件过大/, 'err.tooBig'],
+  [/^路径越界/, 'err.outOfCage'],
+  [/^读文件失败/, 'err.read'],
+  [/^读取失败/, 'err.read'],
+  [/^写临时文件失败/, 'err.writeTmp'],
+  [/^替换文件失败/, 'err.replace'],
+  [/^写文件失败|^保存失败/, 'err.write'],
+  [/^删除失败/, 'err.delete'],
+  [/^重命名失败/, 'err.rename'],
+  [/^已存在同名文件|^目标已存在/, 'err.exists'],
+  [/^下载失败|^读下载流失败/, 'err.download'],
+  [/^校验失败/, 'err.sha'],
+  [/^取更新清单失败|^读更新清单失败|^更新清单/, 'err.manifest'],
+];
+function trErr(e) {
+  const msg = String((e && e.message) || e || '');
+  for (const [re, key] of ERR_MAP) {
+    if (re.test(msg)) return t(key) + msg.replace(re, '');
+  }
+  return msg;
 }
 
 /* ==================== 拖放(Tauri webview 事件拿磁盘路径) ==================== */
@@ -1572,11 +1598,11 @@ function autoFoldSide() {
   const narrow = window.innerWidth < 640;
   if (!narrow) {
     sideManualLock = false;
-    if (sideAutoFolded && S.sideCollapsed) { applySideCollapsed(false); toast('窗口恢复，已展开侧栏'); }
+    if (sideAutoFolded && S.sideCollapsed) { applySideCollapsed(false); toast(t('toast.sideExpanded')); }
     sideAutoFolded = false;
     return;
   }
-  if (!sideManualLock && !S.sideCollapsed) { applySideCollapsed(true); sideAutoFolded = true; toast('窗口较窄，已自动收起侧栏'); }
+  if (!sideManualLock && !S.sideCollapsed) { applySideCollapsed(true); sideAutoFolded = true; toast(t('toast.sideFolded')); }
 }
 /* ==================== 窗口拖动 ==================== */
 // WebView2 不认 CSS -webkit-app-region: drag（computed 生效但系统忽略，2026-08-06 实证），
@@ -1744,7 +1770,7 @@ async function applyGlassMaterial(force, tintOverride) {
     glassDbg('mat:' + material + ':ok');
   } catch (e) {
     glassDbg('mat:' + material + ':ERR');
-    toast('玻璃材质应用失败：' + ((e && e.message) || e));
+    toast(t('toast.glassFail') + trErr(e));
   }
 }
 function renderPaletteSwatches() {
@@ -1913,7 +1939,7 @@ function installDragEnterNative() {
 async function onOpenFolder() {
   if (!(await confirmLeaveEdit())) return;   // 2026-10-25:换库前也要问(此前直接 loadRoot,脏内容静默留/丢)
   const p = await invoke('pick_folder').catch(() => null);
-  if (!p) return toast('未选择文件夹');
+  if (!p) return toast(t('toast.noFolder'));
   const rootMeta = { id: 'r' + Date.now(), name: p.name, path: p.path };
   S.roots = S.roots.filter((r) => r.path !== p.path);
   S.roots.unshift(rootMeta);
@@ -1926,7 +1952,7 @@ async function loadRoot(rootMeta) {
     const scan = await invoke('list_md_tree', { root: rootMeta.path });
     S.root = { scan, rootPath: rootMeta.path, name: rootMeta.name };
     setView('tree');
-  } catch (e) { toast('读取目录失败：' + ((e && e.message) || e)); }
+  } catch (e) { toast(t('toast.readDirFail') + trErr(e)); }
 }
 async function pickOpenFile() {
   if (!invoke) return;
@@ -2076,8 +2102,8 @@ function wire() {
   $id('setTbIcon')?.addEventListener('click', () => { S.toolbarMode = 'icon'; LS.set('sr_tb_mode', 'icon'); applyToolbarMode(); });
   $id('setTbText')?.addEventListener('click', () => { S.toolbarMode = 'text'; LS.set('sr_tb_mode', 'text'); applyToolbarMode(); });
   $id('btnFileAssoc')?.addEventListener('click', async () => {
-    try { await invoke('open_default_apps_settings'); } catch (e) { toast('打不开系统设置：' + e); return; }
-    toast('已打开系统"默认应用"页：搜 .md → 选 TMMD');
+    try { await invoke('open_default_apps_settings'); } catch (e) { toast(t('toast.sysSettingsFail') + e); return; }
+    toast(t('toast.sysSettingsOpened'));
     refreshFileAssoc();
   });
   $id('reader').addEventListener('scroll', () => {
@@ -2127,7 +2153,7 @@ async function boot() {
   // R12c(d)：纯图标模式一次性引导（sr_tb_guide_seen 落盘，一生一次；延迟 1.2s 避开开机 toast 拥挤）
   if (!LS.get('sr_tb_guide_seen', null)) {
     LS.set('sr_tb_guide_seen', 1);
-    if (S.toolbarMode === 'icon') setTimeout(() => toast('顶栏为纯图标模式：悬停看名称，可在设置→阅读→工具栏切换'), 1200);
+    if (S.toolbarMode === 'icon') setTimeout(() => toast(t('toast.iconModeHint')), 1200);
   }
   refreshFileAssoc();
   wire();
@@ -2153,7 +2179,7 @@ async function boot() {
   setTimeout(layoutToolbar, 300);
   window.addEventListener('load', layoutToolbar);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutToolbar());
-  if (!invoke) { toast('请通过 TMMD 桌面应用打开'); return; }
+  if (!invoke) { toast(t('toast.needDesktop')); return; }
   S.roots = await invoke('load_roots').catch(() => []);
   if (S.roots.length) await loadRoot(S.roots[0]);
   await restoreTabs();   // R7：恢复上次标签页（内容重读，draft 不恢复）
@@ -2276,6 +2302,34 @@ const I18N = {
   'pdf.working': ['正在生成 PDF…(用系统 Edge 无头打印)', 'Generating PDF… (headless Edge)', 'PDF を生成中…(ヘッドレス Edge)'],
   'pdf.done': ['PDF 已生成:{p}', 'PDF created: {p}', 'PDF を作成しました: {p}'],
   'pdf.fail': ['PDF 生成失败:{e}(可用「打印 / 存 PDF」手动另存)', 'PDF failed: {e} (fall back to Print / Save as PDF)', 'PDF の生成に失敗: {e}(「印刷 / PDF 保存」も使えます)'],
+  'toast.refreshed': ['已刷新', 'Reloaded', '再読込しました'],
+  'toast.refreshFail': ['刷新失败:', 'Reload failed: ', '再読込に失敗: '],
+  'toast.readFail': ['读取失败:', 'Read failed: ', '読み込みに失敗: '],
+  'toast.readDirFail': ['读取目录失败:', 'Reading the folder failed: ', 'フォルダの読み込みに失敗: '],
+  'toast.replaced': ['已替换 {n} 处', 'Replaced {n} occurrence(s)', '{n} 件置換しました'],
+  'toast.unfav': ['已取消收藏', 'Removed from favorites', 'お気に入りを解除しました'],
+  'toast.fav': ['已收藏', 'Added to favorites', 'お気に入りに追加しました'],
+  'toast.sideExpanded': ['窗口恢复,已展开侧栏', 'Window restored — sidebar expanded', 'ウィンドウ復帰:サイドバーを展開'],
+  'toast.sideFolded': ['窗口较窄,已自动收起侧栏', 'Narrow window — sidebar auto-collapsed', 'ウィンドウが狭いためサイドバーを自動格納'],
+  'toast.glassFail': ['玻璃材质应用失败:', 'Applying the glass material failed: ', 'グラス材質の適用に失敗: '],
+  'toast.noFolder': ['未选择文件夹', 'No folder selected', 'フォルダが選択されていません'],
+  'toast.sysSettingsFail': ['打不开系统设置:', 'Could not open system settings: ', 'システム設定を開けません: '],
+  'toast.sysSettingsOpened': ['已打开系统「默认应用」页:搜 .md → 选 TMMD', 'Opened Default apps — search ".md" then pick TMMD', '「既定のアプリ」を開きました: .md を検索して TMMD を選択'],
+  'toast.iconModeHint': ['顶栏为纯图标模式:悬停看名称,可在设置→阅读→工具栏切换', 'Icon-only toolbar: hover for names; switch in Settings → Reading → Toolbar', 'アイコンのみのツールバー: ホバーで名称表示、設定→閲覧→ツールバーで切替'],
+  'toast.needDesktop': ['请通过 TMMD 桌面应用打开', 'Please open this inside the TMMD desktop app', 'TMMD デスクトップアプリから開いてください'],
+  'err.onlyExt': ['文件类型不支持,仅支持 ', 'Unsupported file type; only ', '未対応のファイル形式です(対応: '],
+  'err.tooBig': ['文件过大', 'File too large', 'ファイルが大きすぎます'],
+  'err.outOfCage': ['路径不在已登记的文件夹内', 'Path is outside the registered folders', '登録フォルダ外のパスです'],
+  'err.read': ['读文件失败', 'Reading the file failed', 'ファイルの読み込みに失敗'],
+  'err.write': ['写入失败', 'Writing failed', '書き込みに失敗'],
+  'err.writeTmp': ['写临时文件失败(可能是磁盘满或目录只读)', 'Writing the temp file failed (disk full or read-only folder)', '一時ファイルの書き込みに失敗(容量不足/読み取り専用の可能性)'],
+  'err.replace': ['替换文件失败(可能被其他程序占用)', 'Replacing the file failed (maybe locked by another program)', 'ファイルの置換に失敗(他プロセスが使用中の可能性)'],
+  'err.delete': ['删除失败', 'Delete failed', '削除に失敗'],
+  'err.rename': ['重命名失败', 'Rename failed', '名前の変更に失敗'],
+  'err.exists': ['目标已存在', 'Target already exists', '対象は既に存在します'],
+  'err.download': ['下载失败', 'Download failed', 'ダウンロードに失敗'],
+  'err.sha': ['校验失败(下载内容与发布清单不符,已丢弃)', 'Checksum mismatch — download discarded', 'チェックサム不一致のため破棄しました'],
+  'err.manifest': ['取更新清单失败', 'Fetching the update manifest failed', '更新マニフェストの取得に失敗'],
   'toast.fsReloaded': ['磁盘上的文件已更新,已重新加载', 'File changed on disk — reloaded', 'ディスク上の変更を再読込しました'],
   'toast.fsEditing': ['磁盘文件已变更(编辑中,未覆盖你的草稿)', 'File changed on disk (editing — draft kept)', 'ディスク上で変更されました(編集中のため保持)'],
   'toast.fsStale': ['磁盘上的文件已更新(切到该标签时重读)', 'File changed on disk — reloaded when you switch to that tab', 'ディスク上の変更(タブを切り替えると再読込)'],
@@ -2656,7 +2710,7 @@ async function runLibrarySearch() {
     S.search.hits = Array.isArray(hits) ? hits : [];
   } catch (e) {
     S.search.hits = [];
-    if (meta) meta.textContent = String((e && e.message) || e);
+    if (meta) meta.textContent = StringtrErr(e);
     return;
   }
   if (String(S.search.q).trim() !== q) return;   // 过期结果丢弃
@@ -2786,7 +2840,7 @@ async function exportCurrentHtml() {
       : t('toast.exported', { p: target }));
     return target;
   } catch (e) {
-    toast(t('toast.exportFail', { e: (e && e.message) || e }));
+    toast(t('toast.exportFail', { e: trErr(e) }));
     return null;
   }
 }
@@ -2803,13 +2857,13 @@ async function exportCurrentPdf() {
     toast(t('pdf.done', { p }));
     try { await invoke('open_any', { path: p }); } catch { /* 打不开就只是没自动打开,路径已给 */ }
   } catch (e) {
-    toast(t('pdf.fail', { e: (e && e.message) || e }));
+    toast(t('pdf.fail', { e: trErr(e) }));
   }
 }
 async function printCurrent() {
   const p = await exportCurrentHtml();
   if (!p) return;
-  try { await invoke('open_any', { path: p }); } catch (e) { toast(String((e && e.message) || e)); }
+  try { await invoke('open_any', { path: p }); } catch (e) { toast(StringtrErr(e)); }
 }
 
 /* ---------------- 系统透明效果回落 ---------------- */
