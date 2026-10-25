@@ -36,6 +36,7 @@
     "allow-watch-file",
     "allow-search-library",
     "allow-export-file",
-    "allow-open-any"
+    "allow-open-any",
+    "allow-allow-close"
   ]
 }

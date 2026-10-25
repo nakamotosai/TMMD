@@ -129,6 +129,11 @@ description = "Allow export_file (导出 .html/.htm 并返回绝对路径)"
 commands.allow = ["export_file"]
 
 [[permission]]
+identifier = "allow-allow-close"
+description = "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)"
+commands.allow = ["allow_close"]
+
+[[permission]]
 identifier = "allow-open-any"
 description = "Allow open_any (ShellExecute 打开任意文件/目录,不限扩展名)"
 commands.allow = ["open_any"]

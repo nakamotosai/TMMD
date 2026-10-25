@@ -86,13 +86,38 @@ pub struct RootMeta {
     pub path: String,
 }
 
+/// 文档扩展名(唯一真源):2026-10-25 统一。此前 is_doc 列了 .mdx/.html/.htm,而
+/// open_path/save_path 只认 .md/.markdown —— 于是"树里有、点开报错""库里能改、库外打不开"。
+/// 现在树、打开、保存、写回全部走同一份清单。
+const DOC_EXTS: [&str; 5] = ["md", "markdown", "mdx", "html", "htm"];
+/// 显式打开额外放行的纯文本:用户自己挑的文件(对话框 / 拖入 / 文件关联)允许 .txt。
+const TEXT_EXTS: [&str; 1] = ["txt"];
+
+fn ext_of(p: &Path) -> String {
+    p.extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default()
+}
+
 fn is_doc(name: &str) -> bool {
-    let lower = name.to_ascii_lowercase();
-    lower.ends_with(".md")
-        || lower.ends_with(".markdown")
-        || lower.ends_with(".mdx")
-        || lower.ends_with(".html")
-        || lower.ends_with(".htm")
+    DOC_EXTS.contains(&ext_of(Path::new(name)).as_str())
+}
+
+/// 能否打开/保存:文档族 + 纯文本族。
+fn is_openable(p: &Path) -> bool {
+    let e = ext_of(p);
+    DOC_EXTS.contains(&e.as_str()) || TEXT_EXTS.contains(&e.as_str())
+}
+
+/// 给用户的扩展名提示(与 is_openable 同源,不会说一套做一套)。
+fn ext_hint() -> String {
+    DOC_EXTS
+        .iter()
+        .chain(TEXT_EXTS.iter())
+        .map(|e| format!(".{e}"))
+        .collect::<Vec<_>>()
+        .join(" / ")
 }
 
 fn skip_dir_name(name: &str) -> bool {
@@ -574,33 +599,142 @@ fn list_md_tree(root: String) -> Result<ScanResult, String> {
     })
 }
 
-/// 写回文件（文件夹浏览模式）：囚笼内校验 + 大小上限，与 read_text 对称。
+/// 本应用"读出来过"的文件指纹:mtime_ns + size。保存时用来发现"磁盘已被外部改过"。
+/// 只记我们自己读过的路径,不扫描全盘;写成功后刷新,避免把自己的写入误判成冲突。
+static LAST_READ: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, (u128, u64)>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn fingerprint(p: &Path) -> Option<(u128, u64)> {
+    let m = fs::metadata(p).ok()?;
+    let t = m
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    Some((t, m.len()))
+}
+
+fn remember_read(p: &Path) {
+    if let Some(fp) = fingerprint(p) {
+        if let Ok(mut m) = LAST_READ.lock() {
+            m.insert(p.to_string_lossy().to_string(), fp);
+        }
+    }
+}
+
+/// 原文件风格:编辑器里的 textarea 会把 CRLF 归一成 LF,保存时必须还原,否则"改一个字"
+/// 会把整个文件的换行风格改掉(VS Code 同款回归)。BOM 按原样保留。
+struct FileStyle {
+    crlf: bool,
+    bom: bool,
+}
+
+fn probe_style(p: &Path) -> FileStyle {
+    let mut st = FileStyle {
+        crlf: false,
+        bom: false,
+    };
+    if let Ok(bytes) = fs::read(p) {
+        st.bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
+        let crlf = bytes.windows(2).filter(|w| *w == b"\r\n").count();
+        let lf = bytes.iter().filter(|b| **b == b'\n').count();
+        st.crlf = crlf > 0 && crlf * 2 >= lf; // 多数行是 CRLF 就按 CRLF 写回
+    }
+    st
+}
+
+/// 原子写:同目录临时文件 → sync → rename 覆盖。中途失败(崩溃/断电/杀进程)不会留下
+/// 半截正文,原文件保持不动。失败清理临时文件。
+fn write_atomic(p: &Path, bytes: &[u8]) -> Result<(), String> {
+    let dir = p.parent().ok_or_else(|| "无父目录".to_string())?;
+    let name = p
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "doc".into());
+    let tmp = dir.join(format!(".{name}.tmmd-tmp"));
+    fs::write(&tmp, bytes).map_err(|e| format!("写临时文件失败: {e}"))?;
+    if let Ok(f) = fs::File::open(&tmp) {
+        let _ = f.sync_all();
+    }
+    if let Err(e) = fs::rename(&tmp, p) {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("替换文件失败: {e}"));
+    }
+    Ok(())
+}
+
+/// 保存统一收尾:冲突检测(force=false 时对比读入指纹)→ 还换行/BOM → 原子写 → 刷新指纹。
+/// 冲突以 `CONFLICT|<path>` 返回给前端,由前端决定覆盖 / 另存 / 取消(不静默覆盖)。
+fn save_guarded(path: &Path, content: &str, force: bool) -> Result<(), String> {
+    if !is_openable(path) {
+        return Err(format!("仅支持 {} 文件", ext_hint()));
+    }
+    let key = path.to_string_lossy().to_string();
+    if !force {
+        let known = LAST_READ.lock().ok().and_then(|m| m.get(&key).copied());
+        if let (Some(k), Some(now)) = (known, fingerprint(path)) {
+            if k != now {
+                return Err(format!("CONFLICT|{key}"));
+            }
+        }
+    }
+    let st = probe_style(path);
+    let lf = content.replace("\r\n", "\n");
+    let body = if st.crlf {
+        lf.replace('\n', "\r\n")
+    } else {
+        lf
+    };
+    let mut bytes = Vec::with_capacity(body.len() + 3);
+    if st.bom {
+        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+    }
+    bytes.extend_from_slice(body.as_bytes());
+    write_atomic(path, &bytes)?;
+    if let Ok(mut m) = LAST_READ.lock() {
+        if let Some(fp) = fingerprint(path) {
+            m.insert(key, fp);
+        }
+    }
+    Ok(())
+}
+
+/// 写回文件(文件夹浏览模式):囚笼内校验 + 大小上限 + 原子写,与 read_text 对称。
+/// force=true 跳过冲突检测(前端已确认覆盖)。
 #[tauri::command]
-fn write_text(root: String, rel: String, content: String) -> Result<(), String> {
+fn write_text(root: String, rel: String, content: String, force: Option<bool>) -> Result<(), String> {
     if content.len() as u64 > MAX_BYTES {
-        return Err(format!("内容过大（超过 {}MB）", MAX_BYTES / 1024 / 1024));
+        return Err(format!("内容过大(超过 {}MB)", MAX_BYTES / 1024 / 1024));
     }
     let root_pb = PathBuf::from(&root);
     let full = cage_join(&root_pb, &rel)?;
-    fs::write(&full, content).map_err(|e| format!("写文件失败: {e}"))
+    save_guarded(&full, &content, force.unwrap_or(false))
 }
 
-/// 写回单文件（双击/拖拽模式）：与 open_path 相同扩展名校验。
+/// 写回单文件(双击/拖拽模式):与 open_path 同一份扩展名清单 + 原子写 + 冲突检测。
 #[tauri::command]
-fn save_path(path: String, content: String) -> Result<(), String> {
+fn save_path(path: String, content: String, force: Option<bool>) -> Result<(), String> {
     if content.len() as u64 > MAX_BYTES {
-        return Err(format!("内容过大（超过 {}MB）", MAX_BYTES / 1024 / 1024));
+        return Err(format!("内容过大(超过 {}MB)", MAX_BYTES / 1024 / 1024));
     }
-    let p = Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
-    if ext != "md" && ext != "markdown" {
-        return Err("仅支持 .md / .markdown 文件".into());
+    let p = PathBuf::from(&path);
+    save_guarded(&p, &content, force.unwrap_or(false))
+}
+
+/// 关窗守卫:前端拿数据安全当命,关窗前必须先问过它。
+/// 未放行时 CloseRequested 只发 `close-requested` 事件、不真关;前端处理完(该存的存了)
+/// 再调 `allow_close` 放行 —— 这样"点 X 丢未保存内容"这条路彻底堵死。
+static CLOSE_OK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[tauri::command]
+fn allow_close(app: tauri::AppHandle) -> Result<(), String> {
+    CLOSE_OK.store(true, std::sync::atomic::Ordering::SeqCst);
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.close();
     }
-    fs::write(p, content).map_err(|e| format!("写文件失败: {e}"))
+    Ok(())
 }
 
 #[tauri::command]
@@ -617,7 +751,9 @@ fn read_text(root: String, rel: String) -> Result<String, String> {
             MAX_BYTES / 1024 / 1024
         ));
     }
-    fs::read_to_string(&full).map_err(|e| format!("读文件失败: {e}"))
+    let md = fs::read_to_string(&full).map_err(|e| format!("读文件失败: {e}"))?;
+    remember_read(&full); // 记指纹:保存时用来发现"外部已改"
+    Ok(md)
 }
 
 #[tauri::command]
@@ -651,7 +787,7 @@ fn save_roots(app: tauri::AppHandle, roots: Vec<RootMeta>) -> Result<(), String>
 #[tauri::command]
 fn pick_file() -> Result<Option<PickedFile>, String> {
     let picked = rfd::FileDialog::new()
-        .add_filter("Markdown", &["md", "markdown"])
+        .add_filter("Markdown / Text", &["md", "markdown", "mdx", "txt", "html", "htm"])
         .pick_file();
     Ok(picked.map(|p| PickedFile {
         name: p
@@ -667,22 +803,19 @@ fn pick_file() -> Result<Option<PickedFile>, String> {
 #[tauri::command]
 fn open_path(path: String) -> Result<String, String> {
     let p = Path::new(&path);
-    let ext = p
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|s| s.to_ascii_lowercase())
-        .unwrap_or_default();
-    if ext != "md" && ext != "markdown" {
-        return Err("仅支持 .md / .markdown 文件".into());
+    if !is_openable(p) {
+        return Err(format!("仅支持 {} 文件", ext_hint()));
     }
     let meta = fs::metadata(p).map_err(|e| format!("无法读取文件: {e}"))?;
     if !meta.is_file() {
         return Err("不是文件".into());
     }
     if meta.len() > MAX_BYTES {
-        return Err("文件过大（超过 8MB）".into());
+        return Err("文件过大(超过 8MB)".into());
     }
-    fs::read_to_string(p).map_err(|e| format!("读取失败: {e}"))
+    let md = fs::read_to_string(p).map_err(|e| format!("读取失败: {e}"))?;
+    remember_read(p); // 记指纹:保存时用来发现"外部已改"
+    Ok(md)
 }
 
 // ───────────────────────── 库级全文搜索 ─────────────────────────
@@ -951,12 +1084,19 @@ pub fn run() {
                 tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_) => {
                     queue_window_save(window, &app)
                 }
-                tauri::WindowEvent::CloseRequested { .. } => flush_window_save(window, &app),
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    flush_window_save(window, &app);
+                    if !CLOSE_OK.load(std::sync::atomic::Ordering::SeqCst) {
+                        api.prevent_close();
+                        let _ = window.emit("close-requested", ());
+                    }
+                }
                 _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
             desktop_info,
+            allow_close,
             open_path,
             pick_folder,
             pick_file,
@@ -1439,7 +1579,7 @@ fn set_glass_material(
 /// 前端下拉只发 none/acrylic，正常链路不受影响。
 /// 每个 arm 都是完整独立序列，结尾统一刷 frame，互不残留。
 /// 复用流程（零污染）：debug-launch.ps1 起调试实例 → cdp-eval.mjs 调 set_glass_material 切 arm +
-/// 内存覆盖 --glass-*（不写 localStorage）→ 真屏截图对比。2026-09-16 直透即用此法定案（TG state 2）。
+/// 内存覆盖 --glass(v1.8 起单一浓度;旧 --glass-base/chrome/reader/pop 已废)（不写 localStorage）→ 真屏截图对比。2026-09-16 直透即用此法定案（TG state 2）。
 #[cfg(target_os = "windows")]
 fn probe_glass(
     win: &tauri::WebviewWindow,

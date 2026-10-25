@@ -278,11 +278,13 @@ function rememberScroll() {
 }
 
 /* ==================== 刷新 / 编辑 ==================== */
-function confirmLeaveEdit() {
-  if (S.editing && S.editDirty) {
-    return window.confirm('当前编辑有未保存的修改，放弃修改继续吗？');
-  }
-  return true;
+/* 离开编辑态前的守卫:2026-10-25 起走三选弹窗(保存 / 不保存 / 取消),
+ * 不再是 window.confirm 的"只有放弃"。返回 true 表示可以继续。 */
+async function confirmLeaveEdit() {
+  if (!(S.editing && S.editDirty)) return true;
+  const a = await askUnsaved();
+  if (a === 'save') return await saveEdit();
+  return a === 'discard';
 }
 function leaveEdit() {
   if (!S.editing) return;
@@ -363,27 +365,113 @@ function doRedo() {
   syncHistBtns();
   renderTabs();
 }
+/* 落盘一个标签的内容(唯一写入口)。返回 'ok' | 'conflict';其它错误抛出,由调用方提示。
+ * force=true 跳过后端冲突检测(用户已确认覆盖)。写成功后同步标签与 S.cur 状态。 */
+async function writeTabContent(tab, content, force) {
+  const args = { content, force: !!force };
+  try {
+    if (tab.relPos) await invoke('write_text', { root: tab.rootPath || S.root.rootPath, rel: tab.relPos, ...args });
+    else await invoke('save_path', { path: tab.abs, ...args });
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    if (msg.includes('CONFLICT|')) return 'conflict'; // 后端发现磁盘被外部改过
+    throw e;
+  }
+  tab.raw = content;
+  tab.draft = null;
+  tab.editDirty = false;
+  tab.stale = false;
+  if (S.cur && normPath(S.cur.abs) === normPath(tab.abs)) { S.cur.raw = content; S.editDirty = false; }
+  return 'ok';
+}
+/* 未保存三选弹窗(替代 window.confirm 的"只有放弃")。mode='conflict' 时是覆盖确认。
+ * 返回 'save' | 'discard' | 'cancel'。Escape / 点背景 = 取消。 */
+function askUnsaved(mode) {
+  return new Promise((resolve) => {
+    const conflict = mode === 'conflict';
+    const wrap = document.createElement('div');
+    wrap.className = 'askwrap';
+    wrap.innerHTML = '<div class="askcard" role="dialog" aria-modal="true">'
+      + '<div class="ask-title"></div><div class="ask-sub"></div><div class="ask-btns"></div></div>';
+    wrap.querySelector('.ask-title').textContent = t(conflict ? 'conflict.title' : 'unsaved.title');
+    wrap.querySelector('.ask-sub').textContent = t(conflict ? 'conflict.sub' : 'unsaved.sub');
+    const btns = wrap.querySelector('.ask-btns');
+    const mk = (label, act, primary) => {
+      const b = document.createElement('button');
+      b.textContent = label;
+      b.dataset.a = act;
+      if (primary) b.className = 'active';
+      btns.appendChild(b);
+    };
+    if (conflict) { mk(t('conflict.overwrite'), 'save', true); mk(t('unsaved.cancel'), 'cancel'); }
+    else { mk(t('unsaved.save'), 'save', true); mk(t('unsaved.discard'), 'discard'); mk(t('unsaved.cancel'), 'cancel'); }
+    const done = (a) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(a); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('cancel'); } };
+    document.addEventListener('keydown', onKey, true);
+    wrap.addEventListener('click', (e) => {
+      const a = e.target && e.target.dataset ? e.target.dataset.a : null;
+      if (a) done(a);
+      else if (e.target === wrap) done('cancel');
+    });
+    document.body.appendChild(wrap);
+    const first = btns.querySelector('button');
+    if (first) first.focus();
+  });
+}
 async function saveEdit() {
-  if (!S.cur || !S.editing) return;
+  if (!S.cur || !S.editing) return false;
+  const tb = getTab(S.cur.abs) || { abs: S.cur.abs, relPos: S.cur.relPos, rootPath: S.cur.rootPath };
   const content = $id('editor').value;
   try {
-    if (S.cur.relPos) await invoke('write_text', { root: S.cur.rootPath || S.root.rootPath, rel: S.cur.relPos, content });
-    else await invoke('save_path', { path: S.cur.abs, content });
-    S.cur.raw = content;
-    S.editDirty = false;
-    const tb = getTab(S.cur.abs);
-    if (tb) { tb.raw = content; tb.draft = null; tb.editing = false; tb.editDirty = false; }
+    let r = await writeTabContent(tb, content, false);
+    if (r === 'conflict') {                                  // 不静默覆盖外部改动
+      if ((await askUnsaved('conflict')) !== 'save') return false;
+      r = await writeTabContent(tb, content, true);
+      if (r !== 'ok') return false;
+    }
+    tb.editing = false;
+    tb.editDirty = false;
     renderMarkdown(content, S.cur.abs);   // 恢复进入编辑前的滚动位置
     leaveEdit();
     persistTabs();
     renderTabs();
-    toast('已保存');
+    toast(t('toast.saved'));
     refreshTreeOrder();
-  } catch (e) { toast('保存失败：' + ((e && e.message) || e)); }
+    return true;
+  } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return false; }
+}
+/* 把所有脏标签逐个落盘(关窗 / 切库前用)。任一失败即停 —— 绝不"存一半就把窗口放走"。
+ * 后台标签用它的 draft(切标签时 stash 过的草稿),当前标签用编辑器里的实时内容。 */
+async function saveAllDirty() {
+  const curAbs = S.cur && S.cur.abs;
+  for (const tab of S.tabs.slice()) {
+    const isCur = tab.abs === curAbs;
+    const dirty = isCur ? !!(S.editing && S.editDirty) : !!tab.editDirty;
+    if (!dirty) continue;
+    const content = isCur ? $id('editor').value : (tab.draft != null ? tab.draft : tab.raw);
+    if (typeof content !== 'string') continue;
+    try {
+      let r = await writeTabContent(tab, content, false);
+      if (r === 'conflict') {
+        if ((await askUnsaved('conflict')) !== 'save') return false;
+        r = await writeTabContent(tab, content, true);
+        if (r !== 'ok') return false;
+      }
+      if (isCur) { leaveEdit(); renderMarkdown(content, tab.abs); }
+    } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return false; }
+  }
+  persistTabs();
+  renderTabs();
+  return true;
+}
+/* 还有未保存内容吗(关窗守卫与提示用)。 */
+function anyDirty() {
+  const curAbs = S.cur && S.cur.abs;
+  return S.tabs.some((t) => (t.abs === curAbs ? !!(S.editing && S.editDirty) : !!t.editDirty));
 }
 async function refreshCurrent() {
   if (!S.cur) return toast('还没有打开文档');
-  if (!confirmLeaveEdit()) return;
+  if (!(await confirmLeaveEdit())) return;
   leaveEdit();
   rememberScroll();
   try {
@@ -428,11 +516,14 @@ function persistTabs() {
   LS.set('sr_tabs', S.tabs.map((t) => ({ abs: t.abs, relPos: t.relPos || null, rootPath: t.rootPath || null })));
   LS.set('sr_active_tab', S.activeKey);
 }
-function getTab(abs) { return S.tabs.find((t) => t.abs === abs); }
+/* 路径比较统一走这里:后端(Tauri/notify)可能回反斜杠路径,而树/标签里是正斜杠拼的,
+ * 直接 === 会静默不匹配(v1.7.0 的 watcher 就是这么死的)。只用于**比较**,不改存储值。 */
+function normPath(p) { return String(p == null ? '' : p).replace(/\\/g, '/').toLowerCase(); }
+function getTab(abs) { const k = normPath(abs); return S.tabs.find((t) => normPath(t.abs) === k); }
 function stashTab() {
   rememberScroll();
   const t = getTab(S.activeKey);
-  if (!t || !S.cur || S.cur.abs !== t.abs) return;
+  if (!t || !S.cur || normPath(S.cur.abs) !== normPath(t.abs)) return;
   t.raw = S.cur.raw;
   if (S.editing) { const ed = $id('editor'); t.draft = ed ? ed.value : null; t.editing = true; t.editDirty = S.editDirty; }
   else { t.draft = null; t.editing = false; t.editDirty = false; }
@@ -456,16 +547,19 @@ async function openTabInner(spec) {
 async function activateTabRaw(t, opts) {
   opts = opts || {};
   if (t.abs !== S.activeKey) {
-    if (!confirmLeaveEdit()) return false;
+    if (!(await confirmLeaveEdit())) return false;
     stashTab();
     leaveEdit();
   }
   S.activeKey = t.abs;
   try {
-    if (t.raw == null) {
+    if (t.raw == null || (t.stale && !t.editDirty)) {
+      // raw==null:首次打开;stale:后台标签在磁盘上被改过(见 onFsChanged),
+      // 且该标签没有未保存草稿时才敢覆盖 —— 有草稿就保留,避免顺手吃掉用户的字。
       t.raw = t.relPos
         ? await invoke('read_text', { root: t.rootPath, rel: t.relPos })
         : await invoke('open_path', { path: t.abs });
+      t.stale = false;
     }
   } catch (e) {
     toast('读取失败：' + ((e && e.message) || e));
@@ -492,12 +586,27 @@ async function activateTabRaw(t, opts) {
   renderTabs();
   return true;
 }
-function closeTab(abs) {
+async function closeTab(abs) {
   const t = getTab(abs);
   if (!t) return;
-  const isActive = (S.activeKey === abs);
+  const isActive = normPath(S.activeKey) === normPath(abs);
   const dirty = isActive ? (S.editing && S.editDirty) : !!t.editDirty;
-  if (dirty && !window.confirm('当前编辑有未保存的修改，放弃修改继续吗？')) return;
+  if (dirty) {
+    if (isActive) {
+      if (!(await confirmLeaveEdit())) return;
+    } else {
+      const a = await askUnsaved();
+      if (a === 'cancel') return;
+      if (a === 'save') {
+        const content = t.draft != null ? t.draft : t.raw;
+        try {
+          const r = await writeTabContent(t, content, false);
+          // 后台标签不做"覆盖"确认(弹窗里没有上下文):冲突时保守拦下,让用户切过去处理
+          if (r !== 'ok') { toast(t('conflict.title')); return; }
+        } catch (e) { toast('保存失败:' + ((e && e.message) || e)); return; }
+      }
+    }
+  }
   if (isActive) { stashTab(); leaveEdit(); }
   const idx = S.tabs.indexOf(t);
   S.tabs.splice(idx, 1);
@@ -953,6 +1062,10 @@ function layoutToolbar() {
 }
 
 /* ==================== 拖放（Tauri webview 事件拿磁盘路径） ==================== */
+/* 可打开/可编辑的扩展名(前端唯一真源,必须与后端 DOC_EXTS + TEXT_EXTS 一致:
+ * lib.rs 的 is_openable)。拖放、文件对话框、树过滤都走它,避免"树里有、点开报错"。 */
+const DOC_EXT_RE = /\.(md|markdown|mdx|txt|html|htm)$/i;
+
 function bindDragDrop() {
   if (wview && typeof wview.onDragDropEvent === 'function') {
     let depth = 0;
@@ -963,7 +1076,7 @@ function bindDragDrop() {
       else if (p.type === 'leave') { if (--depth <= 0) { depth = 0; document.body.classList.remove('dragover'); } }
       else if (p.type === 'drop') {
         depth = 0; document.body.classList.remove('dragover');
-        const paths = (p.paths || []).filter((x) => /\.(md|markdown)$/i.test(x));
+        const paths = (p.paths || []).filter((x) => DOC_EXT_RE.test(x));
         (async () => { for (const ph of paths) await openExternal(ph); })();   // R7：多文件依次进标签页
       }
     });
@@ -976,7 +1089,7 @@ function bindDragDrop() {
   window.addEventListener('drop', (e) => {
     e.preventDefault(); depth2 = 0; document.body.classList.remove('dragover');
     Array.from(e.dataTransfer.files || [])
-      .filter((f) => /\.(md|markdown)$/i.test(f.name))
+      .filter((f) => DOC_EXT_RE.test(f.name))
       .forEach((f) => { const r = new FileReader(); r.onload = () => renderMarkdown(String(r.result), f.name); r.readAsText(f); });
   });
 }
@@ -1378,10 +1491,10 @@ function bindSettings() {
     const p = ATMOS_PRESETS[k]; if (!p) return;
     const g = glassOn();
     g.atmos = k;
-    g.base = p.base; g.chrome = p.chrome; g.reader = p.reader; g.pop = p.pop; g.text = p.text;
+    g.conc = p.conc; g.text = p.text;   // v1.8:单一浓度;旧四路键已废,别再往存档里塞 undefined
     LS.set('sr_glass', persistGlass());
     applyGlass(false);
-    applyGlassMaterial(false); // base 变了 alpha 跟着变，键不同必穿透去重
+    applyGlassMaterial(false); // conc 变了 DWM 份额跟着变,键不同必穿透去重
   };
   $id('setAtmosWeak')?.addEventListener('click', () => applyAtmos('weak'));
   $id('setAtmosMedium')?.addEventListener('click', () => applyAtmos('medium'));
@@ -1436,6 +1549,7 @@ function installDragEnterNative() {
   window.addEventListener('drop', (e) => e.preventDefault());
 }
 async function onOpenFolder() {
+  if (!(await confirmLeaveEdit())) return;   // 2026-10-25:换库前也要问(此前直接 loadRoot,脏内容静默留/丢)
   const p = await invoke('pick_folder').catch(() => null);
   if (!p) return toast('未选择文件夹');
   const rootMeta = { id: 'r' + Date.now(), name: p.name, path: p.path };
@@ -1476,6 +1590,7 @@ function wire() {
     const k = e.key.toLowerCase();
     if (k === 'z') { e.preventDefault(); if (e.shiftKey) doRedo(); else doUndo(); }
     else if (k === 'y') { e.preventDefault(); doRedo(); }
+    else if (k === 's') { e.preventDefault(); saveEdit(); }   // 2026-10-25:编辑态补上 Ctrl+S(此前根本没有保存快捷键)
   });
   $id('editor')?.addEventListener('input', () => {
     if (histLock) return; // doUndo/doRedo 编程赋值不记历史（防栈污染/弹跳）
@@ -1625,6 +1740,16 @@ async function boot() {
   await restoreTabs();   // R7：恢复上次标签页（内容重读，draft 不恢复）
   if (listen) {
     try { listen('open-file', (e) => { if (e && typeof e.payload === 'string') openExternal(e.payload); }); } catch {}
+    // 关窗守卫:后端 CloseRequested 只发事件不真关;这里先处理未保存内容,再放行 allow_close。
+    try {
+      listen('close-requested', async () => {
+        if (!anyDirty()) { invoke('allow_close').catch(() => {}); return; }
+        const a = await askUnsaved();
+        if (a === 'cancel') return;                       // 用户要留下自己处理
+        if (a === 'save' && !(await saveAllDirty())) return; // 存失败就别关
+        invoke('allow_close').catch(() => {});
+      });
+    } catch {}
   }
   try {
     const pending = await invoke('pending_open');
@@ -1725,6 +1850,16 @@ const I18N = {
   'toast.exportFail': ['导出失败:{e}', 'Export failed: {e}', '書き出しに失敗: {e}'],
   'toast.fsReloaded': ['磁盘上的文件已更新,已重新加载', 'File changed on disk — reloaded', 'ディスク上の変更を再読込しました'],
   'toast.fsEditing': ['磁盘文件已变更(编辑中,未覆盖你的草稿)', 'File changed on disk (editing — draft kept)', 'ディスク上で変更されました(編集中のため保持)'],
+  'toast.fsStale': ['磁盘上的文件已更新(切到该标签时重读)', 'File changed on disk — reloaded when you switch to that tab', 'ディスク上の変更(タブを切り替えると再読込)'],
+  'unsaved.title': ['有未保存的修改', 'Unsaved changes', '未保存の変更があります'],
+  'unsaved.save': ['保存', 'Save', '保存'],
+  'unsaved.discard': ['不保存', "Don't save", '保存しない'],
+  'unsaved.cancel': ['取消', 'Cancel', 'キャンセル'],
+  'unsaved.sub': ['关掉/切走前先处理它,或取消。', 'Deal with it before leaving, or cancel.', '閉じる前に処理するか、キャンセルしてください。'],
+  'conflict.title': ['磁盘上的文件已被别处修改', 'This file changed on disk', 'ディスク上のファイルが変更されました'],
+  'conflict.sub': ['覆盖会丢掉磁盘上的改动。', 'Overwriting discards the on-disk changes.', '上書きするとディスク上の変更は失われます。'],
+  'conflict.overwrite': ['覆盖', 'Overwrite', '上書き'],
+  'toast.saved': ['已保存', 'Saved', '保存しました'],
   'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
   'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
   'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],
@@ -2152,7 +2287,9 @@ async function applySystemEffects() {
 /* ---------------- 外部文件变更监听 ---------------- */
 async function syncWatch() {
   if (!invoke) return;
-  const cur = getTab(S.cur);
+  // 2026-10-25 修:v1.7.0 起这里传的是 S.cur(**对象**),而 getTab 按字符串 abs 查 → 恒 undefined
+  // → 每次都以 null 调 watch_file → 后端直接 return,外部变更监听**从未生效**(与 README 里的承诺不符)。
+  const cur = getTab(S.cur && S.cur.abs);
   try { await invoke('watch_file', { path: cur ? cur.abs : null }); } catch { /* 后端未支持则静默 */ }
 }
 async function onFsChanged(p) {
@@ -2160,9 +2297,14 @@ async function onFsChanged(p) {
   if (!tab) return;
   if (Date.now() - (tab.lastFs || 0) < 800) return;
   tab.lastFs = Date.now();
-  if (S.cur === p && S.editing) { toast(t('toast.fsEditing')); return; }
-  if (S.cur === p) { await refreshCurrent(); toast(t('toast.fsReloaded')); }
-  else toast(t('toast.fsReloaded'));
+  // 同上:别拿 S.cur(对象)跟路径字符串比,恒假会让"编辑中保护"和"自动重载"两条分支全部失效。
+  const isCur = !!(S.cur && normPath(S.cur.abs) === normPath(p));
+  if (isCur && S.editing) { toast(t('toast.fsEditing')); return; }
+  if (isCur) { await refreshCurrent(); toast(t('toast.fsReloaded')); return; }
+  if (tab.editing) { toast(t('toast.fsEditing')); return; }
+  // 后台标签:不假装"已重载",打个 stale 标,切过去时由 activateTab 重读。
+  tab.stale = true;
+  toast(t('toast.fsStale'));
 }
 
 /* ---------------- v1.7 绑定 ---------------- */

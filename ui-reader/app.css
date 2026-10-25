@@ -322,7 +322,7 @@ body.settings-open #layout { visibility: hidden; }
 .setpage-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .setpage-search {
   height: 74px; flex-shrink: 0; display: flex; align-items: center; gap: 8px;
-  padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--surface-base);
+  padding: 0 20px; border-bottom: 1px solid var(--border); background: transparent;
 }
 .setpage-search .set-text { max-width: 420px; }
 .setpage-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 20px 40px; }
@@ -515,6 +515,20 @@ html { transition: background-color var(--dur-slow) var(--ease); }
 .markdown-body { animation: sr-doc-in var(--dur-slow) var(--ease); }
 @keyframes sr-doc-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 .toast { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+/* 未保存三选弹窗:遮罩 + 卡片,复用玻璃/层级 token,不引入新堆叠层(z 600 高于 toast 500)。 */
+.askwrap {
+  position: fixed; inset: 0; z-index: 600; display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, .38); backdrop-filter: none;
+}
+.askcard {
+  min-width: 300px; max-width: 420px; padding: 18px 20px 14px;
+  background: color-mix(in srgb, var(--bg2) 96%, transparent);
+  border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--elev-flyout);
+}
+.ask-title { font-size: 15px; font-weight: 600; color: var(--fg); }
+.ask-sub { margin-top: 6px; font-size: 13px; color: var(--fg-dim); line-height: 1.5; }
+.ask-btns { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+
 /* 玻璃开关的"结霜"过渡:底色变量变化时按 220ms 缓动 */
 .layout, .side, .topbar { transition: background-color var(--dur-slow) var(--ease); }
 body.no-effects { --glass: 100%; }

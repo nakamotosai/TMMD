@@ -177,6 +177,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)",
+          "type": "string",
+          "const": "allow-allow-close",
+          "markdownDescription": "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)"
+        },
+        {
           "description": "Allow app_hide (hide main window to tray)",
           "type": "string",
           "const": "allow-app-hide",
