@@ -5,7 +5,9 @@
 ### 整窗一整块玻璃(用户定调:对标 pebrel 的"一整块玻璃",不走规范式分层)
 - **单一浓度**:四路 `--glass-base/chrome/reader/pop` 收成 `--glass`;氛围档 weak/medium/strong = 20/45/70(medium 即 pebrel 配置里的 `opacity=0.45`)。老存档按 `1-(1-base)(1-reader)` 折算成单一浓度,视觉不跳。
 - **只画一层**:`html` / `.layout` / 铬层 / 正文区不再各自叠浓度(旧模型 base 被叠 2–3 次,总浓度不受控);`body` 成为唯一浓度层。
-- **DWM 份额拆分**:`glassSplit(conc)` 把总浓度拆成 DWM 45% 份额 + 页面其余(两边相乘 = 总浓度),`applyGlassMaterial` 的 alpha 由拆分取值。
+- **DWM 只做模糊**(与 pebrel 实测配方对齐):`glassSplit(conc)` 现在返回 `{ dwm: 1, css: conc }` —— 浓度全由页面层画,DWM 只保住 accent 通道(alpha 不能取 0,否则部分 DWM 版本会跳过,玻璃整块消失;pebrel 同样写 `0x01000000`)。依据其源码:`blur=acrylic` 首选 WinAppSDK `DesktopAcrylicController`(`tint=0`、`luminosity=0`),回落 `WCA accent state 4`;它的 `opacity=0.45` **只乘自己画的背景色**(壳色/标题栏/侧栏/卡底),文字与图标始终不透明 —— 与我们"单一浓度 + 文字 alpha 独立"的模型一致,滑条也因此诚实(写 45% 就得到 45%)。
+- **实测(副屏真实合成像素,同一张壁纸)**:跨表面边界同高度取样(顶栏→正文、侧栏→正文、侧栏底→正文、设置页导航→主体)Δ = 0.0–1.4 luma → **"一整块"成立**;正文留白沿壁纸连续变化(135→133→108→96→103→131→127),无分块跳变。最坏情况对比度(`--fg` 压在窗内最亮壁纸带):conc 45 → 中位 3.71:1 / 最坏 2.15:1;conc 70 → 6.35:1 / 3.21:1(纯白壁纸模型对应 2.17:1 / 4.55:1)。**默认浓度待用户定**。
+- 另注:只设 `DWMWA_USE_HOSTBACKDROPBRUSH=1` 而不接 WinAppSDK 的 composition target **无任何视觉变化**(实测前后像素完全一致);pebrel 那条现代路线需要 ~200 行 COM 互操作(WinAppSDK 1.8 + `DesktopWindowTarget`),而我们的 WCA 回落路径与它的回落路径同级。
 - **内容板不再是补丁**:31 处 `background: var(--bg2|--bg3|--code-bg|--bg)` 换成 `--surface-plate`(浓度 +22)/`--surface-plate-strong`(+40);代码块不再强制不透明。
 - 修:`applyAtmos` 还在往存档写已废的 `base/chrome/reader/pop`(全是 `undefined`)→ 氛围档按钮失效;`.setpage-search` 在设置页里又垫了一层窗口级浓度。
 - 实测(副屏抓真实合成像素):Mica 确认真机生效(`backdrop 1 → 2`);系统 Win11 backdrop(2/3)**不透明**,透不出壁纸 → "看得见的整块玻璃"只能走 legacy accent 通道。最坏情况对比度已量化(45% 浓度下亮壁纸处约 2.1:1,70% 约 4.5:1),默认浓度待用户定。

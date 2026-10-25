@@ -1307,16 +1307,15 @@ function applyEnhance() {
   $id('setCodeLnOn')?.classList.toggle('active', S.codeLn !== false);
   $id('setCodeLnOff')?.classList.toggle('active', S.codeLn === false);
 }
-/* v1.8 浓度拆分:总浓度 conc% 拆成 DWM 份额与页面层份额,两边相乘 = conc。
- * 为什么不让一边独占:DWM 的 accent 不能给 alpha=0(部分版本会跳过,玻璃直接没了),
- * 而且 DWM 那层带系统自带的压暗/降噪,压亮壁纸比纯 CSS 一味透明更稳;
- * 页面层则负责"跟随主题色"的那份浓度。dwm 份额取 45%,其余给页面。
- * 例:conc=45 → dwm 20 → 页面 31 → 合成 1-(1-0.2)(1-0.31)=45%。 */
+/* v1.8 浓度拆分(与 pebrel 对齐):**DWM 只做模糊,不承担浓度** —— 浓度全由页面层画。
+ * 依据是同门产品的实测配方:`blur=acrylic` 首选 WinAppSDK DesktopAcrylicController(tint=0/luminosity=0),
+ * 回落 WCA accent state 4 时 gradient_color = 0x01000000(alpha=1);两种都等于"纯模糊、不加底色",
+ * 它那 0.45 的浓度完全来自自己画的壳色/卡底。我们照抄这条,顺带让滑条诚实:写 45% 就得到 45%。
+ * alpha 不取 0:部分 DWM 版本会直接跳过 alpha=0 的 accent,玻璃会整个消失(pebrel 也踩过,故写 1)。 */
+const GLASS_DWM_ALPHA = 1; // /255 ≈ 0.4%,仅用来保住 accent 通道
 function glassSplit(conc) {
   const total = Math.min(100, Math.max(1, Number(conc) || 45));
-  const dwm = Math.max(1, Math.round(total * 0.45));
-  const css = 100 * (1 - (1 - total / 100) / (1 - dwm / 100));
-  return { dwm, css: Math.round(Math.min(100, Math.max(0, css))) };
+  return { dwm: GLASS_DWM_ALPHA, css: Math.round(total) };
 }
 /* R12b 玻璃质感:S.glass 数值恒由氛围预设写入,本函数只负责落 CSS 变量 + 面板回显。
  * opaque=true 强制全不透明(开机首帧用,避开透明窗冷启动合成坑);平时走存储值。
@@ -1374,9 +1373,8 @@ async function applyGlassMaterial(force, tintOverride) {
   const n = parseInt(tint.slice(1), 16);
   // 连续映射：底色滑杆 1–100 → DWM alpha 1–255（磨砂霜跟着滑杆走，不透明↔透明一杆到底）；
   // 直透通道渐变恒零，透明度全由页面层承担。开机/回焦重放带 force 穿透去重（DWM 丢状态自愈）。
-  // v1.8:总浓度拆两半 —— DWM 出 45% 的份额(模糊 + 系统自带的压暗),页面层出其余(见 glassSplit)。
-  const dwmPct = glassSplit(Number(g.conc) || 45).dwm;
-  const alpha = Math.max(1, Math.round(dwmPct * 255 / 100));
+  // v1.8:DWM 只出模糊(alpha=1,pebrel 配方),浓度全在页面层 —— 见 glassSplit。
+  const alpha = glassSplit(Number(g.conc) || 45).dwm;
   try {
     await invoke('set_glass_material', { material, r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, alpha, dark, force: !!force });
     glassDbg('mat:' + material + ':ok');
