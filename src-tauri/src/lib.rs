@@ -1246,9 +1246,20 @@ fn watch_file(path: Option<String>) -> Result<(), String> {
 
 // ───────────────────────── 导出与打开 ─────────────────────────
 
+/// 无头打印最多等多少秒。到点就收摊报错 —— 判据是**产物文件**,不是浏览器肯不肯退出。
+const PDF_WAIT_SECS: u64 = 30;
+
 /// 导出 PDF:用系统自带的 Edge/Chrome **无头**模式,把导出的独立 HTML 打成 PDF —— 零新增依赖。
 /// 纪律:全程 `CREATE_NO_WINDOW`,失败只返回可读错误字符串,**绝不弹任何 UI**(用户明确要求过);
 /// 生成物不出现就报错,不做"假装成功"。
+///
+/// 2026-10-26 实测(ego lite 的 Chromium,本机唯一内核):`--headless=new --print-to-pdf` 会**挂住**:
+/// 整个无头进程树(gpu/renderer/crashpad)都活着、157s 也不吐文件、也不退出。旧写法 `cmd.status()`
+/// 会一直等它退出 —— 用户点「导出 PDF」就永久卡在"正在生成"。所以这里三条纪律:
+/// ① 判据是**产物出现**(大小连续两次一致才算写完),不是浏览器退出码;
+/// ② 到点必须 `taskkill /T` 把整树收干净,不给机器留一窝无头进程;
+/// ③ 给无头进程一个**一次性 user-data-dir** —— 否则它会去抢用户正开着的浏览器的 profile
+///    (或者被交接给已有实例,那条路根本不会打印)。
 #[tauri::command]
 fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
     if !Path::new(&html_path).is_file() {
@@ -1256,22 +1267,52 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
     }
     let browser = find_headless_browser()?;
     let url = format!("file:///{}", html_path.replace('\\', "/").replace(' ', "%20"));
+    let profile = std::env::temp_dir().join(format!("tmmd-pdf-profile-{}", std::process::id()));
     let mut cmd = hidden_cmd(&browser);
     cmd.args([
+        // 2026-10-26 实测:本机唯一内核(ego lite 的 Chromium)在 `--headless=new` 与旧式 `--headless`
+        // 下**都不产出文件** —— 所以这里保持原样 `--headless=new`(Chrome/Edge ≥112 的正路),
+        // 不为一个不打印的分支换旗号;真正的修法是下面那套"到点收摊"。
         "--headless=new",
         "--disable-gpu",
         "--no-first-run",
         "--no-default-browser-check",
         "--no-pdf-header-footer",
+        &format!("--user-data-dir={}", profile.display()),
         &format!("--print-to-pdf={pdf_path}"),
         &url,
     ]);
-    let status = cmd.status().map_err(|e| format!("起无头浏览器失败: {e}"))?;
-    if !Path::new(&pdf_path).is_file() {
-        return Err(format!(
-            "PDF 未生成(浏览器退出码 {:?});可改用「打印 / 存 PDF」手动另存",
-            status.code()
-        ));
+    let mut child = cmd.spawn().map_err(|e| format!("起无头浏览器失败: {e}"))?;
+    let size_of = |p: &str| fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    let deadline = Instant::now() + Duration::from_secs(PDF_WAIT_SECS);
+    let mut last = 0u64; // 连续两次量到同一个大小才算写完(避免读到半截 PDF)
+    let mut produced = false;
+    while Instant::now() < deadline {
+        let now = size_of(&pdf_path);
+        if now > 0 && now == last {
+            produced = true;
+            break;
+        }
+        last = now;
+        if child.try_wait().ok().flatten().is_some() && now > 0 {
+            // 浏览器自己退了、产物也在 → 就是成功(有些分支交接完就立刻退出)
+            produced = true;
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let pid = child.id();
+    let _ = child.kill();
+    let _ = child.wait();
+    // `kill` 只收直接子进程;无头浏览器带一窝子进程,按 pid 整树收掉(pid 是我们自己起的那个,不碰用户实例)
+    let _ = hidden_cmd("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .output();
+    let _ = fs::remove_dir_all(&profile);
+    if !produced {
+        // 文案必须能被前端 ERR_MAP(^PDF 未生成)+ ERR_TAIL_MAP(可改用「打印 / 存 PDF」手动另存)
+        // 完整吃掉:E11 会拿本文件全部中文错误串喂 trErr,EN 面留一个汉字就是红的。
+        return Err("PDF 未生成;可改用「打印 / 存 PDF」手动另存".to_string());
     }
     Ok(pdf_path)
 }

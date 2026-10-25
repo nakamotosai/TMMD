@@ -84,9 +84,10 @@ npm run build     # 发布构建 → NSIS/MSI 安装包位于 src-tauri/target/r
 - **本版**:v1.8 窗口/玻璃 + 编辑 + 更新器 —— **整窗一整块玻璃**(默认浓度 **40%**,弱/中/强 = 20/40/70;对比度实测见 `docs/CHANGELOG.md` v1.8.1),DWM 只做模糊不再分摊浓度;编辑补齐(新建/另存为/重命名/删除走回收站、Tab 与多行缩进、编辑态查找替换、撤销栈按标签隔离、原子写、写前冲突检测、关窗守卫);打字机模式;PDF 直出;导出图片内联;库级搜索排序;窗口几何按物理像素存 + 出生就在记忆的那块屏;托盘;自研更新器(清单检查 + SHA-256 + 交接安装);界面 zh/en/ja。**架构:单窗口 + 多标签**,不做多窗口。
 - **依据**:`docs/2026-10-24-竞品与差距分析.md`;验证回执:`docs/2026-10-25-验证清单.md`
 - **已知项**(2026-10-25):
-  1. PDF 直出**正例本机无法验证** —— 这台机器没有任何 Chromium 内核(无 Edge/Chrome/Brave/Vivaldi,WebView2 运行时也不能当无头 CLI)。此时应用给可读提示并指向「打印 / 存 PDF」;跑道就断言这一支,并在**有内核的机器上硬要求真产出 `%PDF-`**。
+  1. PDF 直出**正例仍无法在本机验证**,但原因 2026-10-26 查清了:本机没有**候选表里**的内核(无 Edge/Chrome/Brave/Vivaldi;WebView2 运行时当不了无头 CLI,实测 exit 13);本机唯一的 Chromium 是 **ego lite**(`$LOCALAPPDATA\Citro Labs\ego lite\Application\ego.exe`),它不在候选表里,而且**实测它的无头打印根本不产出文件** —— `--headless=new` 与旧式 `--headless` 都试过:整棵无头进程树(gpu/renderer/crashpad)都活着、157s 不吐文件、也不退出。用 `TMMD_PDF_BROWSER` 指向它就能复现。跑道因此仍断言"可读拒绝 + 不留假 PDF"这一支,并在**有可用内核的机器上硬要求真产出 `%PDF-`**。顺带修了这一支里的真 bug:旧代码用 `cmd.status()` 一直等浏览器退出 → 用户点「导出 PDF」会**永久卡在"正在生成"**;现在判据改成产物文件出现、30s 到点收摊、`taskkill /T` 清干净、并给无头进程一次性 `user-data-dir`(见 `docs/CHANGELOG.md` 未发布节)。
   2. 默认 40% 在窗内最亮壁纸带上的对比度:中位 **5.57:1** / 最坏 **2.67:1**(同壁纸同文档 A/B:45% → 5.88 / 2.98,70% → 8.37 / 5.61)。这是 40% 定调的代价,设置里的浓度滑条就是出口。
-  3. 窗口圆角 —— 未做(已明示范围)。
+  3. 窗口圆角 —— 未做(已明示范围)。**用户 2026-10-26 明确拍板:不做。**
+  4. 卸载残留(2026-10-26 实测):安装器把 `.md` / `.markdown` 的默认 ProgID 写成 `Markdown`(Tauri NSIS 的 `APP_ASSOCIATE`),而卸载器只删 `HKCU\Software\Classes\Markdown`,**没清扩展名那一侧的默认指向** → 卸完 `.md` 指向一个已经不存在的 ProgID(双击大概会落到"选择打开方式",推断:该 ProgID 下已无 `shell\open\command`)。另外 `HKCU\Software\Classes\TMMD.md` 与 `.md\OpenWithProgids` 里的 TMMD.md 也会留下。修法:NSIS `installerHooks` 的 `NSIS_HOOK_POSTUNINSTALL` 里比对后删除 —— 待拍板是否发版修。
 - **双仓**:GitHub(SSOT)+ Gitea(备份)双端同 HEAD(v1.8.11,核 `git ls-remote`)
 
 ---
