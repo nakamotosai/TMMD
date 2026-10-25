@@ -77,7 +77,7 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
     const once = cnt();
     localStorage.setItem('sr_glass_dbg', '[]');
     await openTab({ abs: S.cur.abs, kind: 'ext' });        // 渲染/重绘文档
-    const sc = document.querySelector('.reader-scroll') || document.scrollingElement;
+    const sc = document.querySelector('#reader') || document.scrollingElement;
     sc.scrollTop = 600; sc.scrollTop = 0;
     await new Promise(r => setTimeout(r, 300));
     const afterRender = cnt();
@@ -169,10 +169,12 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('12', 'backdrop-filter 祖先无 opacity/filter/mask', r && r.bad.length === 0, r);
 }
 
-/* 13 5000 行滚动帧率:见 r12f G 段(实测 p95 7.1ms ≤ 16.7ms);这里做一次快速复核 */
+/* 13 帧时间(短文档/空闲):这里只做**帧时间烟测** —— 本跑道当前屏上是短文档,#reader 无可滚内容
+ * (实测 tallest == clientH、moved == 0),硬要求"滚动发生"只会变成假失败。
+ * **滚动期**的真实覆盖在 r12f 的 G 组(那里开 5000 行文档,并有 G4 "moved > 0" 防空转)。 */
 {
-  const r = await val(`(async () => { const sc = document.querySelector('.reader-scroll') || document.scrollingElement; const frames = []; let last = performance.now(); for (let i = 0; i < 30; i++) { await new Promise(res => requestAnimationFrame(() => res())); const now = performance.now(); frames.push(now - last); last = now; sc.scrollTop = (sc.scrollHeight - sc.clientHeight) * (i / 29); } frames.shift(); const s = [...frames].sort((a, b) => a - b); return { p95: Math.round(s[Math.floor(s.length * 0.95)] * 10) / 10, avg: Math.round((frames.reduce((a, b) => a + b, 0) / frames.length) * 10) / 10 }; })()`, 30000);
-  ok('13', '滚动帧时间 p95 ≤ 16.7ms(≥95% 帧达标)', r && r.p95 <= 16.7, r);
+  const r = await val(`(async () => { const sc = document.querySelector('#reader') || document.scrollingElement; const frames = []; let last = performance.now(); let moved = 0; for (let i = 0; i < 30; i++) { await new Promise(res => requestAnimationFrame(() => res())); const now = performance.now(); frames.push(now - last); last = now; sc.scrollTop = (sc.scrollHeight - sc.clientHeight) * (i / 29); if (sc.scrollTop > moved) moved = sc.scrollTop; } frames.shift(); const s = [...frames].sort((a, b) => a - b); return { p95: Math.round(s[Math.floor(s.length * 0.95)] * 10) / 10, avg: Math.round((frames.reduce((a, b) => a + b, 0) / frames.length) * 10) / 10, moved: Math.round(moved), tallest: sc.scrollHeight, clientH: sc.clientHeight }; })()`, 30000);
+  ok('13', '帧时间 p95 ≤ 16.7ms(短文档;滚动期覆盖见 r12f G4)', r && r.p95 <= 16.7, r);
 }
 
 /* 14 缩放路径:窗口**程序化 setSize 被 capability 拦着**(core:window:allow-set-size 未授权),

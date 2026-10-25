@@ -121,6 +121,8 @@ body { text-shadow: var(--text-halo); }
 /* Chromium 的 UA 样式表会把 button/input/select/textarea 的 text-shadow 重置为 none —— body 上的覆盖不到它们,
  * 必须显式接回继承链,否则按钮/输入框文字在亮壁纸上照样被洗没。 */
 button, input, select, textarea { text-shadow: inherit; }
+/* placeholder 在 UA 的 shadow tree 里,TreeWalker 扫不到 —— 显式写明契约,别指望继承 */
+input::placeholder, textarea::placeholder { text-shadow: inherit; }
 /* 标题级用更强一档(层级口径:按"文本节点 × 阴影档位"统计,不是看规则数) */
 .markdown-body h1, .markdown-body h2, .markdown-body h3,
 .set-section-title, .settings-header span, .brand, .side-bottom-head { text-shadow: var(--title-halo); }
@@ -172,7 +174,7 @@ body.tb-text .tb-btn .ic { display: none; }
 .win-ctrl { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .win-btn { width: 30px; height: 26px; padding: 0; background: transparent; border: none; color: var(--fg-dim); justify-content: center; }
 .win-btn:hover { background: var(--surface-plate); color: var(--fg); border: none; }
-.win-close:hover { background: var(--red); color: #1d2021; }
+.win-close:hover { background: var(--red); color: #1d2021; text-shadow: 0 0 1px rgba(255,255,255,.95), 0 1px 2px rgba(255,255,255,.9); }
 
 .tabbar { flex: 1 1 auto; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 4px;
   padding: 6px 2px; overflow-x: auto; overflow-y: hidden; user-select: none; scrollbar-width: none; }
@@ -694,7 +696,7 @@ body.settings-open .findbar { display: none; }
 .findbar .find-count { font-size: 12px; color: var(--fg-faint); min-width: 44px; text-align: center; }
 .findbar .tb-btn { width: 26px; height: 24px; padding: 0; justify-content: center; }
 mark.srh-hit { background: color-mix(in srgb, var(--accent2) 42%, transparent); color: inherit; border-radius: var(--r-xs); padding: 0 1px; }
-mark.srh-hit.now { background: var(--accent); color: #1d2021; }
+mark.srh-hit.now { background: var(--accent); color: #1d2021; text-shadow: 0 0 1px rgba(255,255,255,.95), 0 1px 2px rgba(255,255,255,.9); }
 
 /* —— 侧栏:全文搜索视图 —— */
 .search-box { padding: 8px 10px 6px; }

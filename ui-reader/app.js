@@ -2935,7 +2935,7 @@ async function buildStandaloneHtml() {
 <title>${escHtml((cur.abs || '').split(/[\\/]/).pop() || 'TMMD')}</title>
 <style>${css || fallback}
 body{background:transparent}main.reader-inner{max-width:var(--measure,34em)}
-@media print{@page{margin:18mm}body{background:#fff;color:#111}}
+@media print{@page{margin:18mm}:root,[data-theme="light"]{--text-halo:none;--title-halo:none}body{background:#fff;color:#111}}
 </style></head>
 <body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
   return { html, inlined };

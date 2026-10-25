@@ -1,5 +1,25 @@
 # Changelog · TMMD
 
+## v1.8.7 · 2026-10-25(复核抓到的 5 处:帧率假绿 / 同极反噬 / 打印灰影 / 断言太松)
+
+只读复核对 v1.8.6 的文字晕提了 5 条,全部落实:
+
+1. **帧率核验一直是空转(既有假绿)**。`r12f` G 组与 `r12g` 第 13 条找的是 `.reader-scroll` —— 全仓没有这个类,
+   于是回落到 `document.scrollingElement`(html);而 `html,body{height:100%}` + `body{overflow:hidden}` +
+   `.layout{overflow:hidden}` 把视口锁死 ⇒ `scrollTop` **恒为 0**,60 帧全是空闲帧。也就是说"5000 行滚动 p95 7.1ms"
+   从来没滚过那篇文档,文字晕的光栅成本从未被量到。修:换成真正的滚动容器 `#reader`,并加
+   `G4 滚动真的发生了(scrollTop > 0)` / r12g 第 13 条同口径断言,防止再退化成空转。
+2. **深色主题里"深字压亮底"被深晕反噬**:`mark.srh-hit.now`(橙底 + `#1d2021` 字,原本 6.5:1)与
+   `.win-close:hover`(红底深字)被暗晕把紧邻底压暗 → 2.1:1 ✗。这两处改成**反相亮晕**。
+3. **导出/打印会带灰影**:app.css 被原样内联进导出 HTML,而导出模板的 `@media print` 强制 `background:#fff;color:#111`
+   —— 深色主题的黑晕落在白纸上,每个字一圈淡灰。修:打印块里把 `--text-halo / --title-halo` 置 `none`。
+4. **断言只判"非 none"**:换成看不见的 `0 0 0 transparent` 也能全绿。升级为"**可用**":≥2 层、至少一层 α≥0.5、带几何。
+5. **控件只抽第一个 / placeholder 是盲区**:改为全部 `button/input/select/textarea` + 全部 `::placeholder` 各扫一遍;
+   并在 CSS 里显式写 `input::placeholder, textarea::placeholder { text-shadow: inherit }`(placeholder 在 UA shadow tree 里,
+   TreeWalker 扫不到,不能靠"碰巧继承")。
+
+回归:r12f 51→53 条(G4 + I4),合计 **183**(81+25+53+24)。
+
 ## v1.8.6 · 2026-10-25(玻璃模式下文字被亮壁纸洗没 → 全站文字晕)
 
 用户实拍:侧栏在玻璃模式下"字完全消失"。量了那张图,不是错觉:

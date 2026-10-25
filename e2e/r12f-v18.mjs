@@ -359,22 +359,28 @@ async function reset() {
   writeFileSync(big5k, '# 5000 行压力测试\n\n' + body.join('\n'), 'utf8');
   await val(`(async () => { await openTab({ abs: ${q(winPath(big5k))}, kind: 'ext' }); await new Promise(r => setTimeout(r, 900)); return 1; })()`, 30000);
   const fps = await val(`(async () => {
-    const sc = document.querySelector('.reader-scroll') || document.scrollingElement;
-    const frames = []; let last = performance.now();
+    // 滚动容器是 #reader(app.css: .reader{overflow:auto})。
+    // 2026-10-25 复核抓到:原来写的是 .reader-scroll —— 全仓没有这个类,回落到 document.scrollingElement(html),
+    // 而 html/body 被 height:100% + overflow:hidden 锁死 ⇒ scrollTop 恒 0,**60 帧全是空转**,G2/G3 一直在给假绿。
+    // 现在改成 #reader,并加 G4 断言"真的滚动了",防止再退化成空转。
+    const sc = document.querySelector('#reader') || document.scrollingElement;
+    const frames = []; let last = performance.now(); let moved = 0;
     const steps = 60;
     for (let i = 0; i < steps; i++) {
       await new Promise(r => requestAnimationFrame(() => r()));
       const now = performance.now(); frames.push(now - last); last = now;
       sc.scrollTop = (sc.scrollHeight - sc.clientHeight) * (i / (steps - 1));
+      if (sc.scrollTop > moved) moved = sc.scrollTop;
     }
     frames.shift();
     const sorted = [...frames].sort((a, b) => a - b);
     const p = (q) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))];
-    return { n: frames.length, avg: Math.round(frames.reduce((a, b) => a + b, 0) / frames.length * 10) / 10, p50: Math.round(p(0.5) * 10) / 10, p95: Math.round(p(0.95) * 10) / 10, max: Math.round(sorted[sorted.length - 1] * 10) / 10, nodes: document.querySelectorAll('#readerInner h2, #readerInner p, #readerInner li').length, tallest: sc.scrollHeight };
+    return { n: frames.length, avg: Math.round(frames.reduce((a, b) => a + b, 0) / frames.length * 10) / 10, p50: Math.round(p(0.5) * 10) / 10, p95: Math.round(p(0.95) * 10) / 10, max: Math.round(sorted[sorted.length - 1] * 10) / 10, nodes: document.querySelectorAll('#readerInner h2, #readerInner p, #readerInner li').length, tallest: sc.scrollHeight, clientH: sc.clientHeight, moved: Math.round(moved) };
   })()`, 60000);
   ok('G1 5000 行文档真渲染(块节点 > 5000)', fps && fps.nodes > 5000, fps);
   ok('G2 滚动均帧 < 20ms(≥50fps)', fps && fps.avg < 20, fps);
   ok('G3 p95 帧 < 40ms(无长时间卡顿)', fps && fps.p95 < 40, fps);
+  ok('G4 滚动真的发生了(scrollTop > 0,防退化成空转)', fps && fps.moved > 0 && fps.tallest > fps.clientH, fps);
   console.log(`  帧率样本: ${JSON.stringify(fps)}`);
 }
 
@@ -425,42 +431,63 @@ async function reset() {
   ok('H3 设置页是右侧抽屉:阅读区在左边且不被覆盖(窄窗回落为全遮)', h3o.ok === true, h3o);
 }
 
-/* ═══════════ I) 媒体上的文字加固:全站文字都有阴影(可量化覆盖) ═══════════
- * 2026-10-25 用户实拍:玻璃模式下侧栏灰字对背景只有 1.18:1 / 1.49:1,字等于没了。
- * 配方(skill over-media-text-readability):文字必须带 shadow 做局部对比;且 button/input 的
- * text-shadow 会被 UA 样式表重置成 none,必须显式接回继承。判据:逐**非空白文本节点**取父元素计算值,坏数=0。 */
+/* ═══════════ I) 媒体上的文字加固:全站文字都有**可用**的阴影 ═══════════
+ * 2026-10-25 用户实拍:玻璃模式下侧栏灰字对背景只有 1.31:1 / 1.34:1(米白也才 2.71),字等于没了。
+ * 配方(skill over-media-text-readability):文字必须带 shadow 做局部对比;button/input 的 text-shadow
+ * 会被 UA 样式表重置成 none,必须显式接回继承;placeholder 在 UA shadow tree 里,TreeWalker 扫不到。
+ * 判据(2026-10-25 复核后加强):不是"非 none"就算过 —— 必须**可用**:≥2 层、至少一层 α≥0.5、带几何(blur/offset);
+ * 控件与 placeholder 全量;深浅主题各验极性(深色不许出现白色晕、浅色必须全是亮晕)。 */
 {
   console.log('-- I 文字阴影覆盖 --');
+  const AUDIT = `(() => {
+    const usable = (ts) => {
+      if (!ts || ts === 'none') return false;
+      const layers = ts.split(/,(?![^(]*\\))/).length;
+      const alphas = [...ts.matchAll(/rgba?\\(([^)]+)\\)/g)].map((m) => { const p = m[1].split(',').map((s) => parseFloat(s)); return p.length === 4 ? p[3] : 1; });
+      return layers >= 2 && alphas.length > 0 && Math.max(...alphas) >= 0.5 && /\\d+(\\.\\d+)?px/.test(ts);
+    };
+    const isWhite = (ts) => /255, 255, 255/.test(ts);
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let n = 0; const bad = []; let whiteNodes = 0; let okNodes = 0;
+    while (w.nextNode()) {
+      const t = w.currentNode;
+      if (!t.textContent || !t.textContent.trim()) continue;
+      const el = t.parentElement; if (!el) continue;
+      n++;
+      const ts = getComputedStyle(el).textShadow;
+      if (!usable(ts)) { bad.push(el.tagName + '.' + String(el.className).slice(0, 18) + ' :: ' + t.textContent.trim().slice(0, 14)); continue; }
+      okNodes++;
+      if (isWhite(ts)) whiteNodes++;
+    }
+    const ctlBad = [];
+    const ctls = [...document.querySelectorAll('button,input,select,textarea')];
+    for (const el of ctls) {
+      const ts = getComputedStyle(el).textShadow;
+      if (!usable(ts)) ctlBad.push((el.id || el.tagName) + ':' + String(ts).slice(0, 26));
+    }
+    const phs = [...document.querySelectorAll('input[placeholder],textarea[placeholder]')];
+    const phBad = [];
+    for (const el of phs) {
+      const ts = getComputedStyle(el, '::placeholder').textShadow;
+      if (!usable(ts)) phBad.push((el.id || el.tagName) + ':' + String(ts).slice(0, 26));
+    }
+    return JSON.stringify({ n, badCount: bad.length, bad: bad.slice(0, 6), okNodes, whiteNodes,
+      ctls: ctls.length, ctlBad: ctlBad.slice(0, 5), phCount: phs.length, phBad: phBad.slice(0, 5),
+      bodyTs: getComputedStyle(document.body).textShadow.slice(0, 60) });
+  })()`;
   const audit = async (theme) => {
-    const r = await val(`(() => {
-      S.theme = ${JSON.stringify(theme)}; applySettings();
-      showPanel('settings');
-      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      let n = 0; const bad = [];
-      while (w.nextNode()) {
-        const t = w.currentNode;
-        if (!t.textContent || !t.textContent.trim()) continue;
-        const el = t.parentElement; if (!el) continue;
-        n++;
-        const ts = getComputedStyle(el).textShadow;
-        if (!ts || ts === 'none') bad.push(el.tagName + '.' + String(el.className).slice(0, 18) + ' :: ' + t.textContent.trim().slice(0, 14));
-      }
-      const ctl = ['button', 'input', 'select', 'textarea'].map((sel) => {
-        const e = document.querySelector(sel);
-        return sel + ':' + (e ? (getComputedStyle(e).textShadow === 'none' ? 'none' : 'ok') : 'n/a');
-      });
-      const halo = getComputedStyle(document.body).textShadow;
-      showPanel(null);
-      return JSON.stringify({ n, badCount: bad.length, bad: bad.slice(0, 6), ctl, halo: halo.slice(0, 70) });
-    })()`, 25000);
-    return JSON.parse(r || '{}');
+    await val(`(() => { S.theme = ${JSON.stringify(theme)}; applySettings(); showPanel('settings'); return 1; })()`, 12000);
+    const r = JSON.parse((await val(AUDIT, 30000)) || '{}');
+    await val('(() => { showPanel(null); return 1; })()', 12000);
+    return r;
   };
   const dark = await audit('dark');
-  ok('I1 深色:每个非空白文本节点都有 text-shadow', dark && dark.n > 50 && dark.badCount === 0, dark);
-  ok('I2 深色:控件(button/input/select/textarea)阴影已接回继承', dark && dark.ctl && dark.ctl.every((c) => !/:none$/.test(c)), dark && dark.ctl);
+  ok('I1 深色:每个非空白文本节点都有**可用**的晕(≥2 层、α≥0.5、带几何)', dark && dark.n > 50 && dark.badCount === 0, dark);
+  ok('I2 深色:全部控件 + placeholder 都有可用晕(不再只抽第一个)', dark && dark.ctls > 0 && dark.ctlBad.length === 0 && dark.phCount > 0 && dark.phBad.length === 0, dark);
+  ok('I3 深色:没有节点误用白色晕(极性正确)', dark && dark.whiteNodes === 0, dark && { whiteNodes: dark.whiteNodes, okNodes: dark.okNodes });
   const light = await audit('light');
-  ok('I3 浅色:覆盖同样 0 坏,且晕反相(亮晕,不是深色的暗晕)', light && light.badCount === 0 && light.halo !== dark.halo && /255, 255, 255/.test(light.halo), light);
-  await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 10000);
+  ok('I4 浅色:全部文本 + 控件 + placeholder 都是反相亮晕,坏数 0', light && light.badCount === 0 && light.ctlBad.length === 0 && light.phBad.length === 0 && light.okNodes > 0 && light.whiteNodes === light.okNodes, light);
+  await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
 }
 
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
