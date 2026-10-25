@@ -1290,36 +1290,70 @@ function absOfRel(rel) {
 }
 
 /* ==================== 工具栏双模式 + 溢出进 ⋮ 抽屉 ==================== */
+/* 2026-10-25 用户实拍:窗口 1502px 很宽,工具栏却一直折叠着(主题/设置/玻璃缩在 ⋮ 里)。
+ * 根因(实测复现):旧判据是"栏内各项宽 + 每项 5px ≤ #actions 的 clientWidth",而 #actions 是
+ *   `flex: 0 1 auto; min-width: 148px` —— **宽度等于自己的内容宽**,拿它对内容求和是自指:
+ *   ① 每项多算一个 5px(gap 只在项与项之间,N 项只有 N−1 个 gap)⇒ 落进 min-width 后恒为真;
+ *   ② 折叠会让容器跟着变窄 ⇒ "放不下"永远成立 ⇒ **折进去就再也回不来**(用户看到的正是这个)。
+ * 新判据:整条顶栏的**自然宽度** ≤ 顶栏可用宽度(全部可见项按真实尺寸 + gap 求和,减去顶栏 padding)。
+ * 按钮折进抽屉后 offsetWidth = 0,自然宽走缓存 TB_W;切模式(图标↔文字)按钮宽会变 ⇒ 缓存作废并先全部归位再量。 */
+let TB_W = new WeakMap();
+function tbNatural(el) {
+  const w = el.offsetWidth;
+  if (w > 0) TB_W.set(el, w);                 // 只在可见时才能量到真尺寸
+  return w > 0 ? w : (TB_W.get(el) || 34);    // 34 ≈ 图标模式按钮宽,仅当它从没在可见态被量过
+}
+function tbGap(el) { return parseFloat(getComputedStyle(el).columnGap) || 0; }
+function tbBarWidth() {
+  const bar = $id('actions'), moreBtn = $id('tbMore');
+  if (!bar) return 0;
+  let w = 0, n = 0;
+  for (const c of bar.children) {
+    if (c === moreBtn || c.hidden || getComputedStyle(c).display === 'none') continue;
+    w += tbNatural(c); n++;
+  }
+  return n ? w + tbGap(bar) * (n - 1) : 0;
+}
+function tbFits(extra) {
+  const bar = $id('actions'), moreBtn = $id('tbMore'), top = bar && bar.parentElement;
+  if (!bar || !top) return true;
+  let w = 0, n = 0;
+  for (const c of top.children) {
+    if (c === moreBtn || c.hidden || getComputedStyle(c).display === 'none') continue;
+    // 非工具栏项用 max(offsetWidth, scrollWidth):标签栏被 flex 压窄后 offsetWidth 是压窄值,
+    // 拿它求和会**低估**需求 ⇒ 折叠来得太晚,按钮会溢出压到品牌字上。
+    w += (c === bar ? tbBarWidth() : Math.max(c.offsetWidth, c.scrollWidth || 0)); n++;
+  }
+  if (extra) { w += tbNatural(extra) + tbGap(bar); n++; }   // 归还一个:栏内多一个项、多一个 gap
+  const topCS = getComputedStyle(top);
+  const pad = (parseFloat(topCS.paddingLeft) || 0) + (parseFloat(topCS.paddingRight) || 0);
+  const need = n ? w + tbGap(top) * (n - 1) : 0;
+  return need <= top.clientWidth - pad - 2;                 // 2px 余量:防缩放/取整在边界抖动
+}
 function applyToolbarMode() {
   document.body.classList.toggle('tb-icon', S.toolbarMode === 'icon');
   document.body.classList.toggle('tb-text', S.toolbarMode === 'text');
   const bi = $id('setTbIcon'); if (bi) bi.classList.toggle('active', S.toolbarMode === 'icon');
   const bt = $id('setTbText'); if (bt) bt.classList.toggle('active', S.toolbarMode === 'text');
+  // 按钮宽随模式变(图标 30 / 文字更宽):缓存作废,且**先全部归位**——折在抽屉里量不到真宽度
+  TB_W = new WeakMap();
+  const bar = $id('actions'), moreBtn = $id('tbMore'), box = $id('docMore');
+  if (bar && moreBtn && box) while (box.firstElementChild) bar.insertBefore(box.firstElementChild, moreBtn);
   layoutToolbar();
-}
-function tbFits(extra) {
-  const bar = $id('actions');
-  const moreBtn = $id('tbMore');
-  if (!bar) return true;
-  let w = 0;
-  Array.from(bar.children).forEach((c) => {
-    if (c === moreBtn) return; // 溢出目标自身不计入可用宽度（防自举：tbMore 一旦可见就撑爆判定）
-    w += c.offsetWidth + 5;
-  });
-  if (extra) w += extra.offsetWidth + 5;
-  return w <= bar.clientWidth;
 }
 function layoutToolbar() {
   const bar = $id('actions');
   const moreBtn = $id('tbMore');
   const box = $id('docMore');
   if (!bar || !moreBtn || !box) return;
-  // 归还：空间足够时按序把溢出按钮移回 ⋮ 前
-  while (box.firstChild && tbFits(box.firstChild)) bar.insertBefore(box.firstChild, moreBtn);
-  // 溢出：从右往左把放不下的按钮挪进 ⋮ 抽屉（prepend 保持原顺序）
+  for (const c of bar.children) if (c !== moreBtn) tbNatural(c);   // 先把可见项量下来
+  // 归还:空间足够时按序把溢出按钮移回 ⋮ 前
   let guard = 0;
+  while (box.firstElementChild && tbFits(box.firstElementChild) && guard++ < 20) bar.insertBefore(box.firstElementChild, moreBtn);
+  // 溢出:从右往左把放不下的按钮挪进 ⋮ 抽屉(prepend 保持原顺序)
+  guard = 0;
   while (!tbFits(null) && guard++ < 20) {
-    const els = Array.from(bar.children).filter((c) => c.dataset.overflow === '1');
+    const els = Array.from(bar.children).filter((c) => c.dataset && c.dataset.overflow === '1');
     if (!els.length) break;
     box.prepend(els[els.length - 1]);
   }

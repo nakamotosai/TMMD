@@ -278,6 +278,37 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
 // 收尾:回到阅读态、关掉沙箱标签
 await val(`(async () => { try { leaveEdit(); } catch (e) {} try { const t = getTab(${JSON.stringify(winPath(MD))}); if (t) { S.tabs = S.tabs.filter(x => x !== t); if (S.activeKey === t.abs) { S.activeKey = null; S.cur = null; } persistTabs(); renderTabs(); renderEmpty(); } } catch (e) {} return 1; })()`, 8000);
 
+/* 25 工具栏只在真放不下时折叠(2026-10-25 用户实拍:1502px 宽还折叠着,主题/设置/玻璃缩在 ⋮ 里)。
+ * 旧判据拿"内容宽"当"可用空间"(#actions 是 flex:0 1 auto),折叠后容器跟着变窄 ⇒ 折了就回不来。
+ * 三条一起钉:宽窗不许折 / 真挤时必须折 / 挤完放开必须全部归还(不许卡住)。 */
+{
+  const r = await val(`(() => {
+    const bar = document.getElementById('actions');
+    const box = document.getElementById('docMore');
+    const more = document.getElementById('tbMore');
+    const top = bar.parentElement;
+    const overflowBtns = () => [...bar.children].filter((c) => c !== more && c.dataset.overflow === '1');
+    const ids = () => [...bar.children].filter((c) => c !== more).map((c) => c.id);
+    const wideFolded = box.children.length;
+    const total = ids().length + box.children.length;
+    const filler = document.createElement('div');
+    filler.style.cssText = 'width:1200px;height:1px;flex:0 0 auto';
+    top.appendChild(filler); layoutToolbar();
+    const narrowFolded = box.children.length;
+    filler.remove(); layoutToolbar();
+    const afterWide = box.children.length; const restoredIds = ids();
+    while (overflowBtns().length) box.prepend(overflowBtns().pop());
+    const stuck = box.children.length;
+    layoutToolbar();
+    const afterStuck = box.children.length; const backIds = ids();
+    return JSON.stringify({ wideFolded, total, narrowFolded, afterWide, restoredIds, stuck, afterStuck, backIds, moreHidden: more.hidden });
+  })()`, 20000);
+  const o = JSON.parse(r || '{}');
+  ok('25', '工具栏只在放不下时折叠:宽窗 0 折叠 / 塞满后真折叠 / 放开后全部归还(含手动全塞的极端回归)',
+    o.wideFolded === 0 && o.narrowFolded > 0 && o.afterWide === 0 && o.afterStuck === 0 &&
+    o.restoredIds && o.restoredIds.length === o.total && o.backIds && o.backIds.length === o.total, o);
+}
+
 console.log(`\n== r12g: pass=${results.pass} fail=${results.fail} ==`);
 if (results.fail) { console.log('failures:'); results.fails.forEach((f) => console.log('  - ' + f)); }
 ws.close();
