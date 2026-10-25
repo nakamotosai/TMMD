@@ -22,6 +22,7 @@
         "fullscreen": false,
         "decorations": false,
         "transparent": true,
+        "visible": false,
         "backgroundColor": "#00000000",
         "shadow": true,
         "additionalBrowserArgs": "--ignore-gpu-blocklist --enable-zero-copy"

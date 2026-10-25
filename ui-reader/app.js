@@ -385,39 +385,84 @@ async function writeTabContent(tab, content, force) {
   if (S.cur && normPath(S.cur.abs) === normPath(tab.abs)) { S.cur.raw = content; S.editDirty = false; }
   return 'ok';
 }
-/* 未保存三选弹窗(替代 window.confirm 的"只有放弃")。mode='conflict' 时是覆盖确认。
- * 返回 'save' | 'discard' | 'cancel'。Escape / 点背景 = 取消。 */
-function askUnsaved(mode) {
+/* 通用小弹窗:标题 + 可选说明 + 可选单行输入 + 按钮。返回 { action, value }。
+ * action 取按钮的 data-a;输入值在 value。Escape / 点背景 = cancel。 */
+function openDialog(opts) {
   return new Promise((resolve) => {
-    const conflict = mode === 'conflict';
     const wrap = document.createElement('div');
     wrap.className = 'askwrap';
     wrap.innerHTML = '<div class="askcard" role="dialog" aria-modal="true">'
-      + '<div class="ask-title"></div><div class="ask-sub"></div><div class="ask-btns"></div></div>';
-    wrap.querySelector('.ask-title').textContent = t(conflict ? 'conflict.title' : 'unsaved.title');
-    wrap.querySelector('.ask-sub').textContent = t(conflict ? 'conflict.sub' : 'unsaved.sub');
+      + '<div class="ask-title"></div><div class="ask-sub"></div>'
+      + (opts.input != null ? '<input class="ask-input" type="text" spellcheck="false" />' : '')
+      + '<div class="ask-btns"></div></div>';
+    wrap.querySelector('.ask-title').textContent = opts.title || '';
+    const sub = wrap.querySelector('.ask-sub');
+    if (opts.sub) sub.textContent = opts.sub;
+    else sub.remove();
+    const inp = wrap.querySelector('.ask-input');
+    let done;
+    if (inp) {
+      inp.value = opts.input || '';
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); done(opts.primary || 'ok', inp.value); }
+      });
+    }
     const btns = wrap.querySelector('.ask-btns');
-    const mk = (label, act, primary) => {
-      const b = document.createElement('button');
-      b.textContent = label;
-      b.dataset.a = act;
-      if (primary) b.className = 'active';
-      btns.appendChild(b);
+    (opts.buttons || []).forEach((b) => {
+      const el = document.createElement('button');
+      el.textContent = b.label;
+      el.dataset.a = b.a;
+      if (b.primary) el.className = 'active';
+      btns.appendChild(el);
+    });
+    done = (a, v) => {
+      document.removeEventListener('keydown', onKey, true);
+      wrap.remove();
+      resolve({ action: a, value: v });
     };
-    if (conflict) { mk(t('conflict.overwrite'), 'save', true); mk(t('unsaved.cancel'), 'cancel'); }
-    else { mk(t('unsaved.save'), 'save', true); mk(t('unsaved.discard'), 'discard'); mk(t('unsaved.cancel'), 'cancel'); }
-    const done = (a) => { document.removeEventListener('keydown', onKey, true); wrap.remove(); resolve(a); };
     const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done('cancel'); } };
     document.addEventListener('keydown', onKey, true);
     wrap.addEventListener('click', (e) => {
       const a = e.target && e.target.dataset ? e.target.dataset.a : null;
-      if (a) done(a);
+      if (a) done(a, inp ? inp.value : undefined);
       else if (e.target === wrap) done('cancel');
     });
     document.body.appendChild(wrap);
-    const first = btns.querySelector('button');
-    if (first) first.focus();
+    if (inp) { inp.focus(); inp.select(); }
+    else { const f = btns.querySelector('button'); if (f) f.focus(); }
   });
+}
+/* 未保存三选弹窗(替代 window.confirm 的"只有放弃")。mode='conflict' 时是覆盖确认。
+ * 返回 'save' | 'discard' | 'cancel'。 */
+async function askUnsaved(mode) {
+  const conflict = mode === 'conflict';
+  const r = await openDialog({
+    title: t(conflict ? 'conflict.title' : 'unsaved.title'),
+    sub: t(conflict ? 'conflict.sub' : 'unsaved.sub'),
+    primary: 'save',
+    buttons: conflict
+      ? [{ label: t('conflict.overwrite'), a: 'save', primary: true }, { label: t('unsaved.cancel'), a: 'cancel' }]
+      : [{ label: t('unsaved.save'), a: 'save', primary: true }, { label: t('unsaved.discard'), a: 'discard' }, { label: t('unsaved.cancel'), a: 'cancel' }],
+  });
+  return r.action;
+}
+/* 单行输入弹窗:返回去空白后的字符串,取消返回 null。 */
+async function askText(title, value, sub) {
+  const r = await openDialog({
+    title, sub, input: value, primary: 'ok',
+    buttons: [{ label: t('dlg.ok'), a: 'ok', primary: true }, { label: t('unsaved.cancel'), a: 'cancel' }],
+  });
+  if (r.action !== 'ok') return null;
+  const v = String(r.value || '').trim();
+  return v || null;
+}
+/* 两选确认弹窗。 */
+async function askConfirm(title, sub, okLabel) {
+  const r = await openDialog({
+    title, sub, primary: 'ok',
+    buttons: [{ label: okLabel, a: 'ok', primary: true }, { label: t('unsaved.cancel'), a: 'cancel' }],
+  });
+  return r.action === 'ok';
 }
 async function saveEdit() {
   if (!S.cur || !S.editing) return false;
@@ -498,7 +543,83 @@ async function refreshTreeOrder() {
   } catch { /* 静默：树保持现状 */ }
 }
 
-/* ==================== 打开文件（R7：统一进标签页） ==================== */
+/* ==================== 新建 / 另存为 / 重命名 / 删除(2026-10-25 编辑第二批) ====================
+ * 全部走囚笼校验(Rust 侧 cage_join),前端只负责问清楚、刷新树、维护标签状态。 */
+async function newDoc() {
+  if (!S.root || !S.root.rootPath) { toast(t('toast.needRoot')); return; }
+  const rel = await askText(t('dlg.newTitle'), '未命名.md', t('dlg.newSub'));
+  if (!rel) return;
+  try {
+    await invoke('create_file', { root: S.root.rootPath, rel, content: `# ${rel.split('/').pop().replace(/\.(md|markdown|txt)$/i, '')}\n\n` });
+    await refreshTreeOrder();
+    await openInRoot(rel);       // 建完直接打开
+    if (!S.editing) enterEdit(); // 新建即改(不然还得再点一次编辑)
+    toast(t('toast.created'));
+  } catch (e) { toast(t('toast.createFail') + ((e && e.message) || e)); }
+}
+async function saveAsDoc() {
+  if (!S.cur) { toast(t('toast.noDoc')); return; }
+  const content = S.editing ? $id('editor').value : (S.cur.raw || '');
+  const base = String(S.cur.abs).split(/[\\/]/).pop() || '未命名.md';
+  try {
+    const path = await invoke('pick_save', { defaultName: base });
+    if (!path) return;
+    // 用户从系统对话框里选的路径 = 明确目标,force=true(覆盖与否由对话框负责)
+    await invoke('save_path', { path, content, force: true });
+    await openTab({ abs: path, kind: 'ext' });
+    // 原文档的改动并没有写回原文件:如实说,不假装"保存成功"
+    if (S.editing && getTab(S.cur.abs) && getTab(S.cur.abs).editDirty) toast(t('toast.saveAsDirty'));
+    else toast(t('toast.saveAs', { name: String(path).split(/[\\/]/).pop() }));
+  } catch (e) { toast(t('toast.saveFail') + ((e && e.message) || e)); }
+}
+async function renameDoc() {
+  const t0 = S.cur && getTab(S.cur.abs);
+  if (!t0 || !t0.relPos) { toast(t('toast.renameOutOfRoot')); return; }
+  const newRel = await askText(t('dlg.renameTitle'), t0.relPos, t('dlg.renameSub'));
+  if (!newRel || newRel === t0.relPos) return;
+  try {
+    await invoke('rename_file', { root: t0.rootPath || S.root.rootPath, rel: t0.relPos, newRel });
+    // 标签跟着改名,否则它指向一个已经不存在的路径
+    const oldAbs = t0.abs;
+    t0.relPos = newRel;
+    t0.abs = absOfRel(newRel) || oldAbs;
+    if (S.cur && normPath(S.cur.abs) === normPath(oldAbs)) {
+      S.cur.abs = t0.abs;
+      if (S.cur.relPos) S.cur.relPos = newRel;
+    }
+    S.activeKey = t0.abs;
+    LS.del('sr_scr_' + oldAbs);
+    if (S.fav && S.fav[oldAbs]) { delete S.fav[oldAbs]; }
+    await refreshTreeOrder();
+    persistTabs();
+    renderTabs();
+    toast(t('toast.renamed'));
+  } catch (e) { toast(t('toast.renameFail') + ((e && e.message) || e)); }
+}
+async function deleteDoc() {
+  const tb = S.cur && getTab(S.cur.abs);
+  if (!tb || !tb.relPos) { toast(t('toast.deleteOutOfRoot')); return; }
+  const okDel = await askConfirm(t('dlg.deleteTitle'), t('dlg.deleteSub', { name: tb.relPos }), t('menu.delete'));
+  if (!okDel) return;
+  try {
+    await invoke('delete_file', { root: tb.rootPath || S.root.rootPath, rel: tb.relPos });
+    const abs = tb.abs;
+    leaveEdit();
+    S.tabs = S.tabs.filter((x) => x !== tb);
+    if (normPath(S.activeKey) === normPath(abs)) {
+      const next = S.tabs[S.tabs.length - 1];
+      S.activeKey = next ? next.abs : null;
+      if (next) activateTab(next, {}); else { S.cur = null; renderEmpty(); }
+    }
+    LS.del('sr_scr_' + abs);
+    await refreshTreeOrder();
+    persistTabs();
+    renderTabs();
+    toast(t('toast.deleted'));
+  } catch (e) { toast(t('toast.deleteFail') + ((e && e.message) || e)); }
+}
+
+/* ==================== 打开文件(R7:统一进标签页) ==================== */
 async function openExternal(abs) {
   await openTab({ abs, kind: 'ext' });
 }
@@ -748,6 +869,11 @@ function refreshFavDocBtn() {
   renderFavDocBtn(btn);
   const rf = $id('btnRefresh'); if (rf) rf.disabled = !S.cur;
   const ed = $id('btnEdit'); if (ed) ed.disabled = !S.cur;
+  // 编辑第二批:另存为任何时候只要打开着文档就能用;重命名/删除只对"库内文件"开放(库外不支持)
+  const inRoot = !!(S.cur && getTab(S.cur.abs) && getTab(S.cur.abs).relPos);
+  const sa = $id('btnSaveAs'); if (sa) sa.disabled = !S.cur;
+  const rn = $id('btnRenameDoc'); if (rn) rn.disabled = !inRoot;
+  const dl = $id('btnDeleteDoc'); if (dl) dl.disabled = !inRoot;
 }
 
 /* ==================== 侧栏 ==================== */
@@ -1582,6 +1708,11 @@ function wire() {
   $id('btnBackToTree').addEventListener('click', () => setView('tree'));
   $id('btnFavDoc').addEventListener('click', () => { if (S.cur) toggleFavorite(S.cur.abs); });
   $id('btnRefresh')?.addEventListener('click', refreshCurrent);
+  // 编辑第二批入口(抽屉按钮 + 快捷键共用同一批函数)
+  $id('btnNewDoc')?.addEventListener('click', () => { closeDrawersSafe(); newDoc(); });
+  $id('btnSaveAs')?.addEventListener('click', () => { closeDrawersSafe(); saveAsDoc(); });
+  $id('btnRenameDoc')?.addEventListener('click', () => { closeDrawersSafe(); renameDoc(); });
+  $id('btnDeleteDoc')?.addEventListener('click', () => { closeDrawersSafe(); deleteDoc(); });
   $id('btnEdit')?.addEventListener('click', () => { if (!S.cur) return; if (S.editing) saveEdit(); else enterEdit(); });
   $id('btnUndo')?.addEventListener('click', () => { if (S.editing) doUndo(); });
   $id('btnRedo')?.addEventListener('click', () => { if (S.editing) doRedo(); });
@@ -1613,6 +1744,9 @@ function wire() {
     const fav = isFavorited(abs);
     showCtxMenu(e.clientX, e.clientY, [
       { label: '打开', fn: () => openInRoot(rel) },
+      { label: '重命名…', fn: () => { openInRoot(rel).then(() => renameDoc()); } },
+      { label: '删除(进回收站)', fn: () => { openInRoot(rel).then(() => deleteDoc()); } },
+      { label: '新建文档…', fn: () => newDoc() },
       fav ? { label: '取消收藏', fn: () => toggleFavorite(abs) } : { label: '收藏', fn: () => toggleFavorite(abs) },
     ]);
   });
@@ -1647,12 +1781,20 @@ function wire() {
   });
   // 单一 Esc：抽屉 + 任一面板一起关（单例路由 showPanel 全关；R12c(e)：右键菜单同车，不另起监听）
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeCtxMenu(); closeDrawers(); showPanel(null); } });
-  // R7 标签页快捷键：Ctrl+W 关当前，Ctrl+Tab / Ctrl+Shift+Tab 轮切（浏览器同感；编辑框内同样生效）
+  // R7 标签页快捷键:Ctrl+W 关当前,Ctrl+Tab / Ctrl+Shift+Tab 轮切(浏览器同感;编辑框内同样生效)
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
     const k = e.key.toLowerCase();
     if (k === 'w') { e.preventDefault(); if (S.activeKey) closeTab(S.activeKey); }
     else if (k === 'tab') { e.preventDefault(); cycleTab(e.shiftKey ? -1 : 1); }
+    else if (k === 'n' && !e.shiftKey) { e.preventDefault(); newDoc(); }             // 新建文档
+    else if (k === 's' && e.shiftKey) { e.preventDefault(); saveAsDoc(); }           // 另存为(编辑态的 Ctrl+S 在 editor 上处理)
+  });
+  // F2 重命名 / Delete 删除(只在非编辑态生效:编辑框里的 F2、Delete 是文本操作)
+  document.addEventListener('keydown', (e) => {
+    if (S.editing) return;
+    if (e.key === 'F2') { e.preventDefault(); renameDoc(); }
+    else if (e.key === 'Delete' && S.cur) { e.preventDefault(); deleteDoc(); }
   });
   $id('setTbIcon')?.addEventListener('click', () => { S.toolbarMode = 'icon'; LS.set('sr_tb_mode', 'icon'); applyToolbarMode(); });
   $id('setTbText')?.addEventListener('click', () => { S.toolbarMode = 'text'; LS.set('sr_tb_mode', 'text'); applyToolbarMode(); });
@@ -1782,6 +1924,10 @@ const I18N = {
   'file.openFile': ['打开文件', 'Open file', 'ファイルを開く'],
   'file.exportHtml': ['导出 HTML', 'Export HTML', 'HTML 書き出し'],
   'file.print': ['打印 / 存 PDF', 'Print / Save as PDF', '印刷 / PDF 保存'],
+  'file.new': ['新建文档', 'New document', '新規ドキュメント'],
+  'file.saveAs': ['另存为...', 'Save as...', '名前を付けて保存...'],
+  'file.rename': ['重命名...', 'Rename...', '名前を変更...'],
+  'file.delete': ['删除', 'Delete', '削除'],
   'edit.undo': ['撤销', 'Undo', '元に戻す'],
   'edit.redo': ['恢复', 'Redo', 'やり直す'],
   'edit.edit': ['编辑文档', 'Edit document', '文書を編集'],
@@ -1860,6 +2006,30 @@ const I18N = {
   'conflict.sub': ['覆盖会丢掉磁盘上的改动。', 'Overwriting discards the on-disk changes.', '上書きするとディスク上の変更は失われます。'],
   'conflict.overwrite': ['覆盖', 'Overwrite', '上書き'],
   'toast.saved': ['已保存', 'Saved', '保存しました'],
+  'menu.new': ['新建文档', 'New document', '新規ドキュメント'],
+  'menu.saveAs': ['另存为…', 'Save as…', '名前を付けて保存…'],
+  'menu.rename': ['重命名…', 'Rename…', '名前を変更…'],
+  'menu.delete': ['删除', 'Delete', '削除'],
+  'dlg.ok': ['确定', 'OK', 'OK'],
+  'dlg.newTitle': ['新建文档', 'New document', '新規ドキュメント'],
+  'dlg.newSub': ['在已打开的文件夹下新建;可带子目录,如 notes/idea.md', 'Created under the open folder; subfolders allowed, e.g. notes/idea.md', '開いているフォルダ配下に作成。サブフォルダ可(例 notes/idea.md)'],
+  'dlg.renameTitle': ['重命名', 'Rename', '名前を変更'],
+  'dlg.renameSub': ['相对库根的路径,可连目录一起改', 'Path relative to the library root; folders allowed too', 'ライブラリ根部からの相対パス(フォルダ変更も可)'],
+  'dlg.deleteTitle': ['删除这个文件?', 'Delete this file?', 'このファイルを削除しますか?'],
+  'dlg.deleteSub': ['{name} 会移入系统回收站,可恢复', '{name} goes to the Recycle Bin and can be restored', '{name} はゴミ箱へ移動(復元可)'],
+  'toast.created': ['已新建并进入编辑', 'Created — editing', '作成しました(編集モード)'],
+  'toast.createFail': ['新建失败:', 'Create failed: ', '作成に失敗: '],
+  'toast.saveAs': ['已另存为 {name}', 'Saved as {name}', '{name} として保存しました'],
+  'toast.saveAsDirty': ['已另存为新文件;原文档的修改仍未保存', 'Saved as a new file — the original still has unsaved changes', '別名保存しました(元の変更は未保存)'],
+  'toast.saveFail': ['保存失败:', 'Save failed: ', '保存に失敗: '],
+  'toast.renamed': ['已重命名', 'Renamed', '名前を変更しました'],
+  'toast.renameFail': ['重命名失败:', 'Rename failed: ', '名前の変更に失敗: '],
+  'toast.deleted': ['已移入回收站', 'Moved to Recycle Bin', 'ゴミ箱へ移動しました'],
+  'toast.deleteFail': ['删除失败:', 'Delete failed: ', '削除に失敗: '],
+  'toast.needRoot': ['先打开一个文件夹', 'Open a folder first', '先にフォルダを開いてください'],
+  'toast.noDoc': ['还没有打开文档', 'No document open', 'ドキュメントが開かれていません'],
+  'toast.renameOutOfRoot': ['这个文件不在已登记的文件夹内,暂不支持重命名', 'Not inside a registered folder — rename unavailable', '登録フォルダ外のファイルは名前変更できません'],
+  'toast.deleteOutOfRoot': ['这个文件不在已登记的文件夹内,请在资源管理器里删', 'Not inside a registered folder — delete it in Explorer', '登録フォルダ外はエクスプローラーで削除してください'],
   'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
   'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
   'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],
@@ -1869,6 +2039,7 @@ const I18N_TARGETS = [
   ['#tbDoc', 'menu.doc', 'title'], ['#btnTheme', 'menu.theme', 'title'], ['#btnSettings', 'menu.settings', 'title'],
   ['#btnGlass', 'menu.glass', 'title'], ['#btnSide', 'menu.side', 'title'],
   ['#btnOpenFolder span', 'file.openFolder'], ['#btnOpenFile span', 'file.openFile'],
+  ['#btnNewDoc span', 'file.new'], ['#btnSaveAs span', 'file.saveAs'], ['#btnRenameDoc span', 'file.rename'], ['#btnDeleteDoc span', 'file.delete'],
   ['#btnExportHtml span', 'file.exportHtml'], ['#btnPrint span', 'file.print'],
   ['#btnUndo span', 'edit.undo'], ['#btnRedo span', 'edit.redo'], ['#btnEdit span', 'edit.edit'], ['#btnRefresh span', 'edit.refresh'],
   ['#btnTree span', 'view.tree'], ['#btnToc span', 'view.toc'], ['#btnMap span', 'view.map'], ['#btnFindLib span', 'view.search'],

@@ -79,6 +79,26 @@ description = "Allow export_file (导出 .html/.htm 并返回绝对路径)"
 commands.allow = ["export_file"]
 
 [[permission]]
+identifier = "allow-create-file"
+description = "Allow create_file (囚笼内新建文档;目标已存在则拒绝)"
+commands.allow = ["create_file"]
+
+[[permission]]
+identifier = "allow-rename-file"
+description = "Allow rename_file (囚笼内重命名/移动;目标已存在则拒绝)"
+commands.allow = ["rename_file"]
+
+[[permission]]
+identifier = "allow-delete-file"
+description = "Allow delete_file (囚笼内删除:移入系统回收站,不永久删)"
+commands.allow = ["delete_file"]
+
+[[permission]]
+identifier = "allow-pick-save"
+description = "Allow pick_save (另存为:系统保存对话框,只回路径)"
+commands.allow = ["pick_save"]
+
+[[permission]]
 identifier = "allow-allow-close"
 description = "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)"
 commands.allow = ["allow_close"]

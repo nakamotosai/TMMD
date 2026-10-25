@@ -37,6 +37,10 @@
     "allow-search-library",
     "allow-export-file",
     "allow-open-any",
-    "allow-allow-close"
+    "allow-allow-close",
+    "allow-create-file",
+    "allow-rename-file",
+    "allow-delete-file",
+    "allow-pick-save"
   ]
 }

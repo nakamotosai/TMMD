@@ -183,6 +183,18 @@
           "markdownDescription": "Allow allow_close (关窗守卫放行:前端确认无未保存内容后才真关)"
         },
         {
+          "description": "Allow create_file (囚笼内新建文档;目标已存在则拒绝)",
+          "type": "string",
+          "const": "allow-create-file",
+          "markdownDescription": "Allow create_file (囚笼内新建文档;目标已存在则拒绝)"
+        },
+        {
+          "description": "Allow delete_file (囚笼内删除:移入系统回收站,不永久删)",
+          "type": "string",
+          "const": "allow-delete-file",
+          "markdownDescription": "Allow delete_file (囚笼内删除:移入系统回收站,不永久删)"
+        },
+        {
           "description": "Allow desktop_info command",
           "type": "string",
           "const": "allow-desktop-info",
@@ -255,10 +267,22 @@
           "markdownDescription": "Allow pick_folder native dialog"
         },
         {
+          "description": "Allow pick_save (另存为:系统保存对话框,只回路径)",
+          "type": "string",
+          "const": "allow-pick-save",
+          "markdownDescription": "Allow pick_save (另存为:系统保存对话框,只回路径)"
+        },
+        {
           "description": "Allow read_text under path cage",
           "type": "string",
           "const": "allow-read-text",
           "markdownDescription": "Allow read_text under path cage"
+        },
+        {
+          "description": "Allow rename_file (囚笼内重命名/移动;目标已存在则拒绝)",
+          "type": "string",
+          "const": "allow-rename-file",
+          "markdownDescription": "Allow rename_file (囚笼内重命名/移动;目标已存在则拒绝)"
         },
         {
           "description": "Allow save_path single-file write",

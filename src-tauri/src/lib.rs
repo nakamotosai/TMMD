@@ -184,9 +184,16 @@ fn app_handle() -> Result<tauri::AppHandle, String> {
         .ok_or_else(|| "应用句柄尚未初始化".to_string())
 }
 
-/// 窗口几何(window.json,**逻辑像素**,与缩放无关)。
+/// 窗口几何(window.json)。
+/// **v2(2026-10-25)起 x/y/w/h 一律是物理像素**,并带版本号:v=0/1 的老文件按旧语义(逻辑像素、
+/// 只在主屏工作区内校验)读,读完自然升级;v>=2 走"按坐标找显示器 + 该显示器物理工作区校验"。
+/// 为什么改:老写法存的是 `物理 / 当前缩放`,而还原走 LogicalPosition(乘的是**还原时**的缩放),
+/// 跨显示器(225% 主屏 ↔ 200% 副屏)来回一次几何就失真 —— 副屏上存的 965×659 回到主屏直接不 fits,
+/// 记忆退化成默认值。
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct WindowState {
+    #[serde(default)]
+    pub v: u32,
     pub w: f64,
     pub h: f64,
     pub x: f64,
@@ -282,6 +289,7 @@ fn default_window_state(wx: f64, wy: f64, ww: f64, wh: f64) -> WindowState {
     let w = (ww * WIN_FRACTION).clamp(WIN_FLOOR_W.min(ww), ww);
     let h = (wh * WIN_FRACTION).clamp(WIN_FLOOR_H.min(wh), wh);
     WindowState {
+        v: 0, // 默认值本身按逻辑像素立即落地,不需要 v2 语义
         w,
         h,
         x: wx + (ww - w) / 2.0,
@@ -289,23 +297,72 @@ fn default_window_state(wx: f64, wy: f64, ww: f64, wh: f64) -> WindowState {
     }
 }
 
-/// 启动:还原上次几何(必须完整落在当前显示器工作区内),否则按工作区默认尺寸居中。
-/// 全程 **逻辑像素**(与 monitor.scale_factor 配套;见 work_area_logical 的真机注释)。
+/// 包含该物理点的显示器(找不到 None):v2 几何靠它决定"上次那块屏还在不在"。
+fn monitor_at(win: &tauri::WebviewWindow, x: i32, y: i32) -> Option<tauri::Monitor> {
+    win.available_monitors()
+        .ok()?
+        .into_iter()
+        .find(|m| {
+            let p = m.position();
+            let s = m.size();
+            x >= p.x && y >= p.y && x < p.x + s.width as i32 && y < p.y + s.height as i32
+        })
+}
+
+/// 物理像素下"完整落在该显示器工作区"(±2px 容差,兼容贴边吸附)。
+fn state_fits_physical(st: &WindowState, wx: i32, wy: i32, ww: u32, wh: u32) -> bool {
+    const EPS: f64 = 2.0;
+    if st.w < 320.0 || st.h < 240.0 {
+        return false;
+    }
+    let (wx, wy, ww, wh) = (wx as f64, wy as f64, ww as f64, wh as f64);
+    if st.w > ww + EPS || st.h > wh + EPS {
+        return false;
+    }
+    if st.x < wx - EPS || st.y < wy - EPS {
+        return false;
+    }
+    st.x + st.w <= wx + ww + EPS && st.y + st.h <= wy + wh + EPS
+}
+
+/// 启动:还原上次几何。v2 用物理坐标 + "落在哪块屏就用哪块屏的工作区"校验(副屏也能原样还原);
+/// 老文件(v<2)沿用逻辑像素 + 主屏工作区校验。
+/// **调用方负责随后 show()** —— 窗口现在以 visible:false 创建,就是为了先摆好位置再露面,
+/// 免得用户主屏上闪一下再跳走(2026-10-25 用户当场投诉的那一下)。
 fn apply_initial_window(app: &tauri::AppHandle) {
     let Some(win) = app.get_webview_window("main") else {
         return;
     };
+    let saved = read_window_state(app);
+    if let Some(s) = saved {
+        if s.v >= 2 {
+            if let Some(m) = monitor_at(&win, s.x as i32, s.y as i32) {
+                let wa = m.work_area();
+                if state_fits_physical(&s, wa.position.x, wa.position.y, wa.size.width, wa.size.height) {
+                    let _ = win.set_size(tauri::PhysicalSize::new(s.w, s.h));
+                    let _ = win.set_position(tauri::PhysicalPosition::new(s.x, s.y));
+                    return;
+                }
+            }
+            // 上次那块屏不在/放不下:落到主屏默认
+            let (wx, wy, ww, wh) = work_area_logical(&win);
+            let d = default_window_state(wx, wy, ww, wh);
+            let _ = win.set_size(tauri::LogicalSize::new(d.w, d.h));
+            let _ = win.set_position(tauri::LogicalPosition::new(d.x, d.y));
+            return;
+        }
+    }
     let (wx, wy, ww, wh) = work_area_logical(&win);
-    let st = match read_window_state(app) {
-        Some(s) if window_state_fits(&s, wx, wy, ww, wh) => s,
+    let st = match saved {
+        Some(s) if window_state_fits(&s, wx, wy, ww, wh) => s, // 老语义:逻辑像素
         _ => default_window_state(wx, wy, ww, wh),
     };
     let _ = win.set_size(tauri::LogicalSize::new(st.w, st.h));
     let _ = win.set_position(tauri::LogicalPosition::new(st.x, st.y));
 }
 
-/// 归一化当前几何为**逻辑像素**;最大化/最小化/全屏期间返回 None
-/// (那些尺寸不是用户意图,存了会污染下次启动)。
+/// 归一化当前几何为**物理像素**(v2;最大化/最小化/全屏期间返回 None,
+/// 那些尺寸不是用户意图,存了会污染下次启动)。
 fn current_window_state(win: &tauri::Window) -> Option<WindowState> {
     if win.is_maximized().unwrap_or(false)
         || win.is_minimized().unwrap_or(false)
@@ -313,19 +370,15 @@ fn current_window_state(win: &tauri::Window) -> Option<WindowState> {
     {
         return None;
     }
-    let sf = match win.scale_factor() {
-        Ok(s) if s > 0.0 => s,
-        _ => return None,
-    };
     let size = win.inner_size().ok()?;
     let pos = win.outer_position().ok()?;
-    let st = WindowState {
-        w: size.width as f64 / sf,
-        h: size.height as f64 / sf,
-        x: pos.x as f64 / sf,
-        y: pos.y as f64 / sf,
-    };
-    (st.w >= 1.0 && st.h >= 1.0).then_some(st)
+    Some(WindowState {
+        v: 2,
+        w: size.width as f64,
+        h: size.height as f64,
+        x: pos.x as f64,
+        y: pos.y as f64,
+    })
 }
 
 /// Resized/Moved 入口:只更新待写值 + 时间戳,写盘交给后台线程去抖(拖拽过程零写盘)。
@@ -711,6 +764,118 @@ fn save_guarded(path: &Path, content: &str, force: bool) -> Result<(), String> {
     Ok(())
 }
 
+/// 新建文件(囚笼内)。目标已存在则拒绝,避免手滑覆盖;父目录不存在时按需创建。
+#[tauri::command]
+fn create_file(root: String, rel: String, content: Option<String>) -> Result<(), String> {
+    let root_pb = PathBuf::from(&root);
+    let full = cage_join(&root_pb, &rel)?;
+    if full.exists() {
+        return Err(format!("已存在同名文件: {rel}"));
+    }
+    if let Some(dir) = full.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    let body = content.unwrap_or_default();
+    write_atomic(&full, body.as_bytes())?;
+    remember_read(&full);
+    Ok(())
+}
+
+/// 重命名 / 移动(囚笼内):新旧路径都必须落在同一 root 内,目标已存在则拒绝(不静默覆盖)。
+#[tauri::command]
+fn rename_file(root: String, rel: String, new_rel: String) -> Result<(), String> {
+    let root_pb = PathBuf::from(&root);
+    let from = cage_join(&root_pb, &rel)?;
+    let to = cage_join(&root_pb, &new_rel)?;
+    if !from.is_file() {
+        return Err(format!("源文件不存在: {rel}"));
+    }
+    if to.exists() {
+        return Err(format!("目标已存在: {new_rel}"));
+    }
+    if let Some(dir) = to.parent() {
+        fs::create_dir_all(dir).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+    fs::rename(&from, &to).map_err(|e| format!("重命名失败: {e}"))?;
+    if let Ok(mut m) = LAST_READ.lock() {
+        m.remove(&cage_key(&from));
+    }
+    remember_read(&to);
+    Ok(())
+}
+
+/// 删除(囚笼内):**移入系统回收站**,不做永久删除 —— 阅读器里误点一下不该变成数据事故。
+#[cfg(target_os = "windows")]
+fn recycle(path: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        FOF_ALLOWUNDO, FOF_NOCONFIRMATION, FOF_NOERRORUI, FOF_SILENT, FO_DELETE,
+        SHFileOperationW, SHFILEOPSTRUCTW,
+    };
+    // cage_join 给的是 canonicalize 过的 `\\?\C:\...`;SHFileOperation 不认扩展长度前缀
+    // (实测直接返回错误码 124),必须先剥掉 —— UNC 的 `\\?\UNC\` 还原成 `\\`。
+    let mut shown = path.to_string_lossy().replace('/', "\\");
+    if let Some(rest) = shown.strip_prefix(r"\\?\UNC\") {
+        shown = format!(r"\\{rest}");
+    } else if let Some(rest) = shown.strip_prefix(r"\\?\") {
+        shown = rest.to_string();
+    }
+    let mut from: Vec<u16> = std::ffi::OsStr::new(&shown).encode_wide().collect();
+    from.push(0);
+    from.push(0); // pFrom 需要双 nul 结尾
+    let mut op: SHFILEOPSTRUCTW = unsafe { std::mem::zeroed() };
+    op.wFunc = FO_DELETE as u32;
+    op.pFrom = from.as_ptr();
+    op.fFlags = (FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT) as u16;
+    let rc = unsafe { SHFileOperationW(&mut op) };
+    if rc != 0 {
+        return Err(format!("移入回收站失败(代码 {rc},路径 {shown})"));
+    }
+    if op.fAnyOperationsAborted != 0 {
+        return Err("移入回收站被中断".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_file(root: String, rel: String) -> Result<(), String> {
+    let root_pb = PathBuf::from(&root);
+    let full = cage_join(&root_pb, &rel)?;
+    if !full.is_file() {
+        return Err(format!("不是文件: {rel}"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        recycle(&full)?;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        return Err("当前平台未实现回收站删除".into());
+    }
+    if let Ok(mut m) = LAST_READ.lock() {
+        m.remove(&cage_key(&full));
+    }
+    Ok(())
+}
+
+/// 另存为:弹系统保存对话框,只回路径(内容由前端随后调 save_path 写)。
+/// 放在后端是为了拿到原生对话框与扩展名过滤器,并让"用户自己选的目标"这一语义与 save_path 对齐。
+#[tauri::command]
+fn pick_save(default_name: Option<String>) -> Result<Option<String>, String> {
+    let mut dlg = rfd::FileDialog::new()
+        .add_filter("Markdown / Text", &["md", "markdown", "mdx", "txt", "html", "htm"])
+        .set_file_name(default_name.unwrap_or_else(|| "未命名.md".into()));
+    if let Some(dir) = default_dir() {
+        dlg = dlg.set_directory(dir);
+    }
+    Ok(dlg.save_file().map(|p| p.to_string_lossy().to_string()))
+}
+
+/// 保存对话框的起始目录:优先当前文档所在目录(由前端通过环境变量式的临时文件传递太重,这里用 cwd 兜底)。
+fn default_dir() -> Option<PathBuf> {
+    std::env::current_dir().ok()
+}
+
 /// 写回文件(文件夹浏览模式):囚笼内校验 + 大小上限 + 原子写,与 read_text 对称。
 /// force=true 跳过冲突检测(前端已确认覆盖)。
 #[tauri::command]
@@ -1076,7 +1241,7 @@ pub fn run() {
             *app.state::<StartupPending>().0.lock().unwrap() = first;
             // 命令里拿 app(配置目录 / emit 事件)的唯一通道
             let _ = APP_HANDLE.set(app.handle().clone());
-            // 尺寸自适应:还原上次几何(须落在当前显示器工作区内),否则工作区 88% 居中;
+            // 尺寸自适应:还原上次几何(v2=物理坐标+按坐标找屏,副屏也能原样还原),否则主屏工作区 88% 居中;
             // 必须在 paint_glass 之前,避免按旧尺寸先算一遍绘制。
             apply_initial_window(app.handle());
             // R3b 玻璃底:Pebrel 配方 legacy AccentPolicy(tint 沿用 v0.3.2 实测值),
@@ -1085,6 +1250,39 @@ pub fn run() {
                 #[cfg(target_os = "windows")]
                 {
                     let _ = paint_glass(&win, true, 20, 20, 22, 100);
+                }
+                // Show only after the position and glass are final: the window is created with
+                // visible:false, so nothing is painted until here (no flash on the user's primary screen).
+                // TMMD_TEST_NOACTIVATE=1 (automation only): show with SW_SHOWNOACTIVATE so the window
+                // does not steal foreground focus from whatever the user is doing.
+                if std::env::var("TMMD_TEST_NOACTIVATE").is_ok() {
+                    // 留痕:自动化用例要能确认这条分支真的走了(否则会误判"没抢焦点"是代码生效)
+                    let _ = fs::write(
+                        std::env::temp_dir().join("tmmd-noactivate.marker"),
+                        format!("{}", std::process::id()),
+                    );
+                    #[cfg(target_os = "windows")]
+                    {
+                        use windows_sys::Win32::UI::WindowsAndMessaging::{
+                            GWL_EXSTYLE, GetWindowLongPtrW, SW_SHOWNOACTIVATE, SetWindowLongPtrW,
+                            ShowWindow, WS_EX_APPWINDOW, WS_EX_TOOLWINDOW,
+                        };
+                        if let Ok(h) = win.hwnd() {
+                            // 测试实例:摘掉任务栏按钮(WS_EX_TOOLWINDOW)。
+                            // 否则用户主屏的任务栏会多出一个按钮 + 悬停气泡(2026-10-25 被投诉第二次),
+                            // 而测试窗口本来在副屏上跑,不该在用户的任务栏里露脸。
+                            unsafe {
+                                let ex = GetWindowLongPtrW(h.0 as _, GWL_EXSTYLE) as u32;
+                                let ex = (ex | WS_EX_TOOLWINDOW) & !WS_EX_APPWINDOW;
+                                SetWindowLongPtrW(h.0 as _, GWL_EXSTYLE, ex as isize);
+                            }
+                            unsafe { ShowWindow(h.0 as _, SW_SHOWNOACTIVATE) };
+                        }
+                        // 注意:这里不能再 unminimize()/set_focus() —— SW_RESTORE 会激活窗口,前台照样被抢
+                        // (实测:不激活显示 + unminimize 仍是"抢焦点")。
+                    }
+                } else {
+                    let _ = win.show();
                 }
             }
             // 几何落盘去抖线程:Resized/Moved 只投递,静默 500ms 后才写 window.json
@@ -1112,6 +1310,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             desktop_info,
             allow_close,
+            create_file,
+            rename_file,
+            delete_file,
+            pick_save,
             open_path,
             pick_folder,
             pick_file,

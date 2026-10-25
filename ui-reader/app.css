@@ -527,6 +527,12 @@ html { transition: background-color var(--dur-slow) var(--ease); }
 }
 .ask-title { font-size: 15px; font-weight: 600; color: var(--fg); }
 .ask-sub { margin-top: 6px; font-size: 13px; color: var(--fg-dim); line-height: 1.5; }
+.ask-input {
+  margin-top: 12px; width: 100%; padding: 7px 10px; font-family: var(--mono); font-size: 13px;
+  color: var(--fg); background: var(--surface-plate); border: 1px solid var(--border);
+  border-radius: var(--r-sm); outline: none;
+}
+.ask-input:focus { border-color: var(--accent); }
 .ask-btns { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
 
 /* 玻璃开关的"结霜"过渡:底色变量变化时按 220ms 缓动 */
