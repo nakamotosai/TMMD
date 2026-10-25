@@ -25,3 +25,7 @@ milestones.md
 CLAUDE.md
 MASTER-CHECKLIST.md
 scripts/
+
+# python bytecode (tools/verify/*.py 会被 py_compile/导入时生成)
+__pycache__/
+*.pyc
