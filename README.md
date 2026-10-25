@@ -90,8 +90,14 @@ See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for bundled frontend librar
 - **Status**: active (v1.7.0 收官 2026-10-24 — 竞品差距分析路线图全部落地,装机版已升级)
 - **Latest**: v1.7.0 visual & reading overhaul — typography controls (line width/height/body font), WinUI-style layering + motion tokens, material三选 (none/Acrylic/Mica) with transparency/high-contrast fallback, in-document find, library-wide search, footnotes, code copy + line numbers, focus/immersive modes, export HTML + print, remembered window geometry (validated against the current monitor work area), UI i18n (zh/en/ja)
 - **Basis**: `docs/2026-10-24-竞品与差距分析.md` (22 competitors × 22 capabilities, 57-item self-audit, 24-point visual checklist)
-- **Open residuals**: 1 first-screen black 2 version number 3 whole-window glass W0→W4 (Mica base + Acrylic chrome) 4 export image inlining 5 library search ranking
-- **Mirrors**: GitHub (SSOT) + Gitea (self-hosted), dual-repo same HEAD (verify with `git ls-remote`)
+- **Open residuals** (reviewed 2026-10-25, evidence in `docs/2026-10-24-竞品与差距分析.md` §9):
+  1. first-screen black — root cause fixed 2026-08-05 (editor layer painting a black block over the body); 2026-10-25 live startup burst on a real composited display shows no black frame from 120 ms on (darkest sampled frame mean luma 14.4 = dark shell, stable 21 by 420 ms). Sub-120 ms first frame not yet sampled → close it after a 10 ms-resolution burst.
+  2. version number — **closed**: `app.getVersion()` = 1.7.0, settings › About row renders `TMMD v1.7.0`, installed `%LOCALAPPDATA%\TMMD\tmmd.exe` FileVersion 1.7.0, bundle artifacts `TMMD_1.7.0_x64-setup.exe` / `TMMD_1.7.0_x64_en-US.msi`, tag `v1.7.0` = HEAD.
+  3. whole-window glass W0→W4 (Mica base + Acrylic chrome) — **half done**: Mica confirmed rendering on real hardware 2026-10-25 (`get_glass_state` backdrop 1 → 2); the *layered* design (Mica base + Acrylic only on titlebar/sidebar/popovers per MS spec) is not implemented yet.
+  4. export image inlining — open (export still links images).
+  5. library search ranking — open (substring hits, no rank ordering).
+  6. *(new, 2026-10-25)* window geometry is stored as logical pixels without a monitor identity → on multi-DPI setups the remembered position degrades to the 88% default (never off-screen: the work-area check holds). Fix = store physical coords + monitor id.
+- **Mirrors**: GitHub (SSOT) + Gitea `sai/TMMD` (self-hosted) — both were at `94f29cd` (v1.6.0) until the v1.7.0 push on 2026-10-25; verify parity with `git ls-remote`.
 
 ---
 
