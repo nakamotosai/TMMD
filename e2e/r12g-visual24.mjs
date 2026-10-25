@@ -116,17 +116,21 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
 {
   const r = await val(`(() => {
     const d = glassSplit(1), c = glassSplit(40);
+    const legacyDefault = migrateGlass({ on: true, material: 'acrylic', tint: '#26282e', base: 12, chrome: 25, reader: 35, pop: 30 });
+    const customised = migrateGlass({ on: true, material: 'acrylic', tint: '#26282e', base: 20, chrome: 45, reader: 50, pop: 55 });
     return {
       conc: Number(S.glass.conc), atmos: S.glass.atmos,
       dwmLow: d.dwm, dwmDef: c.dwm, cssLow: d.css, cssDef: c.css,
       varNow: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim(),
       preset: (typeof ATMOS_PRESETS !== 'undefined') ? ATMOS_PRESETS.medium.conc : null,
-      fallback: glassSplit(NaN).css
+      fallback: glassSplit(NaN).css,
+      legConc: legacyDefault.conc, custConc: customised.conc
     };
   })()`);
-  ok('06', '默认浓度 40 且拆分契约成立(--glass=40% / 预设=40 / 兜底=40 / dwm 恒 1 / css=conc)',
+  ok('06', '默认浓度 40 + 拆分契约 + 旧档前迁(旧默认档→40 / 自定义值保留)',
     r && r.conc === 40 && r.varNow === '40%' && r.preset === 40 && r.fallback === 40 &&
-    r.dwmLow === 1 && r.dwmDef === 1 && r.cssLow === 1 && r.cssDef === 40, r);
+    r.dwmLow === 1 && r.dwmDef === 1 && r.cssLow === 1 && r.cssDef === 40 &&
+    r.legConc === 40 && r.custConc === 60, r);
 }
 
 /* 7 不用 tertiary 做正文:正文色必须来自 --fg,且 --fg 与 --fg-faint 不同 */

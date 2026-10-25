@@ -66,11 +66,17 @@ function migrateGlass(g) {
   out.material = (g.material === 'none' || g.material === 'acrylic' || g.material === 'mica') ? g.material : 'acrylic';
   if (typeof g.tint === 'string' && /^#[0-9a-fA-F]{6}$/.test(g.tint)) out.tint = g.tint;
   const num = (v) => (Number.isFinite(+v) ? +v : NaN);
+  // v1.8.1:老存档**就是旧默认档**时(12/25/35/30,说明用户从没动过浓度滑条),直接落新默认
+  // (medium = 40);否则按正文区实际浓淡折算 —— 用户真调过的值不能被我覆盖。
+  // 不这么分的话,旧默认档会折算成 43%,等于拿旧默认顶掉了用户新定的 40%(2026-10-25 实测踩到)。
+  const LEGACY_MEDIUM = { base: 12, chrome: 25, reader: 35, pop: 30 };
+  const isLegacyDefault = ['base', 'chrome', 'reader', 'pop'].every((k) => num(g[k]) === LEGACY_MEDIUM[k]);
   // v1.8:四路(base/chrome/reader/pop)→ 单一 conc。老存档按"正文区实际合成浓淡"折算:
   // 1-(1-base)(1-reader)(旧模型里 html+body 各画一次 base,此处按一次算,差值落在预设档内)。
   const eff = (Number.isFinite(num(g.base)) && Number.isFinite(num(g.reader)))
     ? 100 * (1 - (1 - num(g.base) / 100) * (1 - num(g.reader) / 100)) : NaN;
-  const savedConc = Number.isFinite(num(g.conc)) ? num(g.conc) : eff;
+  const savedConc = Number.isFinite(num(g.conc)) ? num(g.conc)
+    : (isLegacyDefault ? ATMOS_PRESETS.medium.conc : eff);
   if (Number.isFinite(savedConc)) out.conc = Math.round(Math.min(100, Math.max(1, savedConc)));
   const avg = (num(g.chrome) + num(g.reader) + num(g.pop)) / 3;
   out.atmos = Number.isFinite(out.conc)
