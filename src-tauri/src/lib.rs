@@ -1282,19 +1282,31 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
         &format!("--print-to-pdf={pdf_path}"),
         &url,
     ]);
+    let started = std::time::SystemTime::now();
+    // 4 **先清掉目标再打印**:判据是"产物出现",而同一个文档导出第二次时上一轮那份 PDF 就在那儿 ——
+    //   不清理就会在浏览器还没打印完时"成功"返回旧文件(2026-10-26 实测:同一文档第二次导出
+    //   665ms 就返回,产物是上一轮的空白页)。清不掉(被 PDF 阅读器占着)时靠下面的 mtime 新鲜度兜底:
+    //   只认本次 spawn **之后**写出来的文件。
+    let _ = fs::remove_file(&pdf_path);
     let mut child = cmd.spawn().map_err(|e| format!("起无头浏览器失败: {e}"))?;
     let size_of = |p: &str| fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+    let fresh = |p: &str| {
+        fs::metadata(p)
+            .and_then(|m| m.modified())
+            .map(|t| t >= started)
+            .unwrap_or(false)
+    };
     let deadline = Instant::now() + Duration::from_secs(PDF_WAIT_SECS);
     let mut last = 0u64; // 连续两次量到同一个大小才算写完(避免读到半截 PDF)
     let mut produced = false;
     while Instant::now() < deadline {
         let now = size_of(&pdf_path);
-        if now > 0 && now == last {
+        if now > 0 && now == last && fresh(&pdf_path) {
             produced = true;
             break;
         }
         last = now;
-        if child.try_wait().ok().flatten().is_some() && now > 0 {
+        if child.try_wait().ok().flatten().is_some() && now > 0 && fresh(&pdf_path) {
             // 浏览器自己退了、产物也在 → 就是成功(有些分支交接完就立刻退出)
             produced = true;
             break;

@@ -105,8 +105,13 @@
  * 深色主题一个字没动(--glass-lift 恒 0);paper 配色仍保留暖纸,那是它的身份,不跟这条走。
  * 字阶沿用 v1.8.13 下压后的**墨量**(在更亮的中性板上只会更好,不再依赖板色补偿):
  *     --fg #2b2724 · --fg-dim #3f382f · --fg-faint #4e4638 · --accent #8d2f02 · --accent2 #584a08
- * 实测(v1.8.14:CDP 透明截图合成到用户截图底色 + 四档壁纸)见 tools/verify/light-contrast.mjs。 */
-[data-theme="light"] {
+ * 实测(v1.8.14:CDP 透明截图合成到用户截图底色 + 四档壁纸)见 tools/verify/light-contrast.mjs。
+ *
+ * 选择器**必须带 `:root`** —— 裸 `[data-theme="light"]` 会连 `<body>` 一起命中(applySettings 把
+ * data-theme 同时写 html 与 body),变量在 body 上被重新声明一次,就压过 html 上的配色覆盖
+ * (`:root[data-theme="light"][data-palette="paper"]`)→ paper 的暖墨/强调色永远上不了屏。
+ * 2026-10-26 实测:两种配色的品牌字心像素都是 #8d2f02(中性强调),paper 的 #8f4318 从未渲染。 */
+:root[data-theme="light"] {
   --bg: #f4f3f0; --bg2: #fbfbfa; --bg3: #ffffff;
   --fg: #2b2724; --fg-dim: #3f382f; --fg-faint: #4e4638;
   --accent: #8d2f02; --accent2: #584a08; --border: #d3d2ce;

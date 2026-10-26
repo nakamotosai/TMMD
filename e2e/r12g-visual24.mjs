@@ -307,7 +307,9 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} try { const t = getT
     const wideFolded = box.children.length;
     const total = ids().length + box.children.length;
     const filler = document.createElement('div');
-    filler.style.cssText = 'width:1200px;height:1px;flex:0 0 auto';
+    // 填充块必须**按视口宽取**,不能写死 1200px:窗口宽 1690 时 1200px 根本没把工具栏挤扁
+    // (实测:innerWidth+300 会折 7 项,1200px 一项都不折)—— 判据不变,仍钉"真挤必须折"。
+    filler.style.cssText = 'width:' + (innerWidth + 400) + 'px;height:1px;flex:0 0 auto';
     top.appendChild(filler); layoutToolbar();
     const narrowFolded = box.children.length;
     filler.remove(); layoutToolbar();

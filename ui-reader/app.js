@@ -2389,7 +2389,7 @@ const I18N = {
   'menu.doc': ['文档', 'Docs', 'ドキュメント'],
   'menu.theme': ['切换深浅主题', 'Toggle theme', 'テーマ切替'],
   'menu.settings': ['显示设置', 'Settings', '設定'],
-  'menu.glass': ['玻璃质感(材质/底色/浓度)', 'Glass material & tint', 'ガラス素材と色'],
+  'menu.glass': ['玻璃质感(材质/底色/浓度)', 'Glass material & tint', 'ガラス素材・地色・濃度'],
   'file.openFolder': ['打开文件夹', 'Open folder', 'フォルダを開く'],
   'file.openFile': ['打开文件', 'Open file', 'ファイルを開く'],
   'file.exportHtml': ['导出 HTML', 'Export HTML', 'HTML 書き出し'],
@@ -2410,10 +2410,10 @@ const I18N = {
   'view.focus': ['专注模式', 'Focus mode', '集中モード'],
   'view.zen': ['无干扰模式', 'Immersive mode', '没入モード'],
   'view.hideSide': ['隐藏侧栏', 'Hide sidebar', 'サイドバーを隠す'],
-  'view.compact': ['精简模式', 'Compact mode', 'コンパクト表示'],
-  'doc.fav': ['收藏本文', 'Star this file', 'この文書をスター'],
+  'view.compact': ['精简模式', 'Compact mode', 'コンパクトモード'],
+  'doc.fav': ['收藏本文', 'Favorite this file', 'この文書をお気に入り'],
   'doc.recent': ['最近打开', 'Recent', '最近'],
-  'doc.favs': ['收藏', 'Starred', 'スター'],
+  'doc.favs': ['收藏', 'Favorites', 'お気に入り'],
   'empty.title': ['还没有打开任何文档', 'No document open', 'ドキュメントを開いていません'],
   'empty.sub': ['轻量本地 Markdown 阅读器', 'A lightweight local Markdown reader', '軽量ローカル Markdown リーダー'],
   'empty.openFolder': ['打开文件夹', 'Open folder', 'フォルダを開く'],
@@ -2433,7 +2433,7 @@ const I18N = {
   'nav.glass': ['玻璃', 'Glass', 'ガラス'],
   'nav.file': ['文件与导出', 'Files & export', 'ファイルと書き出し'],
   'nav.keys': ['快捷键', 'Shortcuts', 'ショートカット'],
-  'nav.about': ['关于', 'About', 'このアプリ'],
+  'nav.about': ['关于', 'About', 'このアプリについて'],
   's.read.preset': ['字号预设', 'Type scale', '文字サイズ'],
   's.read.font': ['正文字体', 'Body font', '本文フォント'],
   's.read.measure': ['行宽', 'Line width', '行幅'],
@@ -2459,11 +2459,11 @@ const I18N = {
   's.file.export': ['导出 / 打印', 'Export / Print', '書き出し / 印刷'],
   's.about.ver': ['版本', 'Version', 'バージョン'],
   's.about.design': ['设计依据', 'Design basis', '設計根拠'],
-  'sys.ok': ['透明效果可用', 'Transparency available', '透明効果:利用可'],
+  'sys.ok': ['透明效果可用', 'Transparency available', '透明効果: 利用できます'],
   'sys.transOff': ['系统已关闭透明效果 → 已回落实色', 'Transparency disabled by system → solid', 'OS の透明効果が無効 → 単色'],
   'sys.hc': ['高对比模式 → 已回落实色', 'High contrast → solid', 'ハイコントラスト → 単色'],
   'sys.reading': ['读取中...', 'Reading…', '読み込み中…'],
-  'search.placeholder': ['搜索所有已注册库(≥2 字)', 'Search all registered libraries', '登録済みライブラリを検索'],
+  'search.placeholder': ['搜索所有已注册库(≥2 字)', 'Search all registered libraries (2+ chars)', '登録済みライブラリを検索(2 文字以上)'],
   'search.hits': ['{n} 条命中', '{n} matches', '{n} 件'],
   'search.none': ['没有匹配', 'No matches', '一致なし'],
   'search.hint': ['输入关键词开始搜索', 'Type a keyword to search', 'キーワードを入力'],
@@ -2487,15 +2487,15 @@ const I18N = {
   'err.tooBig': ['文件过大(超过 8MB)', 'File too large (over 8 MB)', 'ファイルが大きすぎます(8MB 超)'],
   'err.onlyExt': ['仅支持 Markdown / 文本文件', 'Only Markdown / text files are supported', 'Markdown / テキストファイルのみ対応'],
   'err.notFile': ['不是文件', 'Not a file', 'ファイルではありません'],
-  'err.noBrowser': ['找不到 Chromium 内核浏览器(Edge / Chrome / Brave / Vivaldi),无法直出 PDF(可改用「打印 / 存 PDF」)', 'No Chromium-based browser found (Edge / Chrome / Brave / Vivaldi) — cannot export a PDF directly (use Print / Save as PDF instead)', 'Chromium 系ブラウザ(Edge / Chrome / Brave / Vivaldi)が見つからないため PDF を直接書き出せません(「印刷 / PDF に保存」をご利用ください)'],
+  'err.noBrowser': ['找不到 Chromium 内核浏览器(Edge / Chrome / Brave / Vivaldi),无法直出 PDF(可改用「打印 / 存 PDF」)', 'No Chromium-based browser found (Edge / Chrome / Brave / Vivaldi) — cannot export a PDF directly (use Print / Save as PDF instead)', 'Chromium 系ブラウザ(Edge / Chrome / Brave / Vivaldi)が見つからないため PDF を直接書き出せません(「印刷 / PDF 保存」をご利用ください)'],
   'err.tailExitCode': ['(浏览器退出码', ' (browser exit code', '(ブラウザ終了コード'],
-  'err.tailUsePrint': [';可改用「打印 / 存 PDF」手动另存', '; use Print / Save as PDF instead', ';「印刷 / PDF に保存」をご利用ください'],
-  'toast.replaced': ['已替换 {n} 处', 'Replaced {n} occurrence(s)', '{n} 件置換しました'],
+  'err.tailUsePrint': [';可改用「打印 / 存 PDF」手动另存', '; use Print / Save as PDF instead', ';「印刷 / PDF 保存」をご利用ください'],
+  'toast.replaced': ['已替换 {n} 处', 'Replaced {n} matches', '{n} 件置換しました'],
   'toast.unfav': ['已取消收藏', 'Removed from favorites', 'お気に入りを解除しました'],
   'toast.fav': ['已收藏', 'Added to favorites', 'お気に入りに追加しました'],
-  'toast.sideExpanded': ['窗口恢复,已展开侧栏', 'Window restored — sidebar expanded', 'ウィンドウ復帰:サイドバーを展開'],
+  'toast.sideExpanded': ['窗口恢复,已展开侧栏', 'Window restored — sidebar expanded', 'ウィンドウ復帰: サイドバーを展開'],
   'toast.sideFolded': ['窗口较窄,已自动收起侧栏', 'Narrow window — sidebar auto-collapsed', 'ウィンドウが狭いためサイドバーを自動格納'],
-  'toast.glassFail': ['玻璃材质应用失败:', 'Applying the glass material failed: ', 'グラス材質の適用に失敗: '],
+  'toast.glassFail': ['玻璃材质应用失败:', 'Applying the glass material failed: ', 'ガラス素材の適用に失敗: '],
   'toast.noFolder': ['未选择文件夹', 'No folder selected', 'フォルダが選択されていません'],
   'toast.sysSettingsFail': ['打不开系统设置:', 'Could not open system settings: ', 'システム設定を開けません: '],
   'toast.sysSettingsOpened': ['已打开系统「默认应用」页:搜 .md → 选 TMMD', 'Opened Default apps — search ".md" then pick TMMD', '「既定のアプリ」を開きました: .md を検索して TMMD を選択'],
@@ -2503,14 +2503,14 @@ const I18N = {
   'toast.needDesktop': ['请通过 TMMD 桌面应用打开', 'Please open this inside the TMMD desktop app', 'TMMD デスクトップアプリから開いてください'],
   'err.outOfCage': ['路径不在已登记的文件夹内', 'Path is outside the registered folders', '登録フォルダ外のパスです'],
   'err.badPath': ['路径非法', 'Invalid path', '不正なパス'],
-  'err.notDir': ['不是目录: ', 'Not a directory: ', 'ディレクトリではありません: '],
+  'err.notDir': ['不是目录: ', 'Not a folder: ', 'フォルダではありません: '],
   'err.noDir': ['目录不存在: ', 'No such folder: ', 'フォルダが存在しません: '],
   'err.onlyHtml': ['仅支持 .html / .htm 文件', 'Only .html / .htm files are supported', '.html / .htm のみ対応'],
   'err.srcMissing': ['源文件不存在: ', 'Source file not found: ', 'コピー元が存在しません: '],
   'err.mkdir': ['创建目录失败: ', 'Creating the folder failed: ', 'フォルダの作成に失敗: '],
-  'err.recycle': ['移入回收站失败,', 'Moving to the recycle bin failed, ', 'ごみ箱への移動に失敗,'],
-  'err.recycleAbort': ['移入回收站被中断', 'Moving to the recycle bin was interrupted', 'ごみ箱への移動が中断されました'],
-  'err.recycleUnsupported': ['当前平台未实现回收站删除', 'Recycle-bin delete is not implemented on this platform', 'この環境ではごみ箱削除は未実装です'],
+  'err.recycle': ['移入回收站失败,', 'Moving to the Recycle Bin failed, ', 'ごみ箱への移動に失敗,'],
+  'err.recycleAbort': ['移入回收站被中断', 'Moving to the Recycle Bin was interrupted', 'ごみ箱への移動が中断されました'],
+  'err.recycleUnsupported': ['当前平台未实现回收站删除', 'Recycle Bin delete is not implemented on this platform', 'この環境ではごみ箱削除は未実装です'],
   'err.exportHtmlMissing': ['导出 HTML 不存在', 'The exported HTML does not exist', '書き出した HTML が存在しません'],
   'err.export': ['导出失败: ', 'Export failed: ', '書き出しに失敗: '],
   'err.open': ['打开失败: ', 'Opening failed: ', 'オープンに失敗: '],
@@ -2526,17 +2526,17 @@ const I18N = {
   'err.badSize': ['更新包体积异常', 'The update package size looks wrong', '更新パッケージのサイズが異常です'],
   'err.pkgMissing': ['更新包不存在: ', 'Update package not found: ', '更新パッケージが存在しません: '],
   'err.updDir': ['建更新目录失败: ', 'Creating the update folder failed: ', '更新用フォルダの作成に失敗: '],
-  'err.moveFail': ['落位失败: ', 'Moving the package into place failed: ', '配置に失敗: '],
+  'err.moveFail': ['落位失败: ', 'Moving the package into place failed: ', '所定の位置への移動に失敗: '],
   'err.watch': ['监听文件失败: ', 'Watching the file failed: ', 'ファイル監視に失敗: '],
   'err.installScript': ['写安装脚本失败: ', 'Writing the installer hand-off script failed: ', 'インストールスクリプトの作成に失敗: '],
   'err.installSpawn': ['起安装脚本失败: ', 'Starting the installer hand-off script failed: ', 'インストールスクリプトの起動に失敗: '],
   'err.openSettings': ['打开默认应用设置失败: ', 'Opening the Default apps settings failed: ', '既定のアプリ設定を開けません: '],
   'err.readAssoc': ['读默认打开方式失败: ', 'Reading the default-app association failed: ', '既定アプリの関連付けを読めません: '],
   'err.noHwnd': ['取窗口句柄失败: ', 'Getting the window handle failed: ', 'ウィンドウハンドルの取得に失敗: '],
-  'err.glassLock': ['材质记忆锁失败: ', 'The material state lock failed: ', 'マテリアル状態のロックに失敗: '],
+  'err.glassLock': ['材质记忆锁失败: ', 'The material state lock failed: ', 'ガラス設定の保存に失敗: '],
   'err.glassApply': ['玻璃应用失败: ', 'Applying the glass material failed: ', 'ガラス効果の適用に失敗: '],
-  'err.tailExpected': ['期望 ', 'expected ', '期待 '],
-  'err.tailActual': ['实际 ', 'actual ', '実際 '],
+  'err.tailExpected': ['期望 ', 'expected ', '期待値 '],
+  'err.tailActual': ['实际 ', 'actual ', '実際値 '],
   'err.noAppHandle': ['应用句柄尚未初始化', 'The app handle is not ready', 'アプリハンドルが未初期化です'],
   'err.badRoot': ['无法解析根目录: ', 'Cannot resolve the root folder: ', 'ルートフォルダを解決できません: '],
   'err.badPathResolve': ['无法解析路径: ', 'Cannot resolve the path: ', 'パスを解決できません: '],
@@ -2571,9 +2571,9 @@ const I18N = {
   'dlg.newTitle': ['新建文档', 'New document', '新規ドキュメント'],
   'dlg.newSub': ['在已打开的文件夹下新建;可带子目录,如 notes/idea.md', 'Created under the open folder; subfolders allowed, e.g. notes/idea.md', '開いているフォルダ配下に作成。サブフォルダ可(例 notes/idea.md)'],
   'dlg.renameTitle': ['重命名', 'Rename', '名前を変更'],
-  'dlg.renameSub': ['相对库根的路径,可连目录一起改', 'Path relative to the library root; folders allowed too', 'ライブラリ根部からの相対パス(フォルダ変更も可)'],
+  'dlg.renameSub': ['相对库根的路径,可连目录一起改', 'Path relative to the library root; folders allowed too', 'ライブラリルートからの相対パス(フォルダごと変更も可)'],
   'dlg.deleteTitle': ['删除这个文件?', 'Delete this file?', 'このファイルを削除しますか?'],
-  'dlg.deleteSub': ['{name} 会移入系统回收站,可恢复', '{name} goes to the Recycle Bin and can be restored', '{name} はゴミ箱へ移動(復元可)'],
+  'dlg.deleteSub': ['{name} 会移入系统回收站,可恢复', '{name} goes to the Recycle Bin and can be restored', '{name} はごみ箱へ移動(復元可)'],
   'toast.created': ['已新建并进入编辑', 'Created — editing', '作成しました(編集モード)'],
   'toast.createFail': ['新建失败:', 'Create failed: ', '作成に失敗: '],
   'toast.saveAs': ['已另存为 {name}', 'Saved as {name}', '{name} として保存しました'],
@@ -2581,18 +2581,18 @@ const I18N = {
   'toast.saveFail': ['保存失败:', 'Save failed: ', '保存に失敗: '],
   'toast.renamed': ['已重命名', 'Renamed', '名前を変更しました'],
   'toast.renameFail': ['重命名失败:', 'Rename failed: ', '名前の変更に失敗: '],
-  'toast.deleted': ['已移入回收站', 'Moved to Recycle Bin', 'ゴミ箱へ移動しました'],
+  'toast.deleted': ['已移入回收站', 'Moved to Recycle Bin', 'ごみ箱へ移動しました'],
   'toast.deleteFail': ['删除失败:', 'Delete failed: ', '削除に失敗: '],
   'toast.needRoot': ['先打开一个文件夹', 'Open a folder first', '先にフォルダを開いてください'],
   'toast.noDoc': ['还没有打开文档', 'No document open', 'ドキュメントが開かれていません'],
   'toast.renameOutOfRoot': ['这个文件不在已登记的文件夹内,暂不支持重命名', 'Not inside a registered folder — rename unavailable', '登録フォルダ外のファイルは名前変更できません'],
   'toast.deleteOutOfRoot': ['这个文件不在已登记的文件夹内,请在资源管理器里删', 'Not inside a registered folder — delete it in Explorer', '登録フォルダ外はエクスプローラーで削除してください'],
   'upd.row': ['自动更新', 'Updates', '自動更新'],
-  'upd.rowDesc': ['从官方发布取新版,在应用内下载并安装', 'Fetch, download and install inside the app', '公式リリースから取得し、アプリ内で導入します'],
+  'upd.rowDesc': ['从官方发布取新版,在应用内下载并安装', 'Fetch, download and install inside the app', '公式リリースから取得し、アプリ内で導入します。'],
   'upd.check': ['检查更新', 'Check now', '更新を確認'],
   'upd.checking': ['检查中…', 'Checking…', '確認中…'],
   'upd.latest': ['已是最新版本', 'Up to date', '最新版です'],
-  'upd.available': ['发现新版 {v}', 'Version {v} available', '新しいバージョン {v}'],
+  'upd.available': ['发现新版 {v}', 'Version {v} available', '新しいバージョン {v} があります'],
   'upd.title': ['发现新版本 {v}', 'Version {v} is available', '新しいバージョン {v} があります'],
   'upd.sub': ['大小约 {size} MB。下载后先校验 SHA-256,再静默安装并重启到新版。', 'About {size} MB. It verifies SHA-256, installs silently, then restarts into the new version.', '約 {size} MB。SHA-256 検証後にサイレントインストールして再起動します。'],
   'upd.install': ['下载并安装', 'Download and install', 'ダウンロードして導入'],
@@ -2616,7 +2616,7 @@ const I18N = {
   'app.desc': ['透明 Markdown 阅读器,轻量本地优先', 'A transparent, local-first Markdown reader', '透過でローカル優先の Markdown リーダー'],
   // ── 窗口按钮 / 通用词
   'win.min': ['最小化', 'Minimize', '最小化'],
-  'win.max': ['最大化/还原', 'Maximize / Restore', '最大化 / 元に戻す'],
+  'win.max': ['最大化/还原', 'Maximize / Restore', '最大化 / 復元'],
   'win.close': ['关闭', 'Close', '閉じる'],
   'win.more': ['更多', 'More', 'その他'],
   'win.moreTip': ['更多功能', 'More actions', 'その他の操作'],
@@ -2625,18 +2625,17 @@ const I18N = {
   'ui.clear': ['清除', 'Clear', 'クリア'],
   // ── 语言名(endonym:三语下都按本族写法显示)
   'lang.zh': ['中文', '中文', '中文'],
-  'lang.en': ['English', 'English', 'English'],
   'lang.ja': ['日本語', '日本語', '日本語'],
   // ── 设置页:搜索栏与分类
-  's.set.searchPh': ['搜索设置(中文/拼音/英文,如:字号/font/主题/theme/玻璃/glass)', 'Search settings (e.g. font, theme, glass)', '設定を検索(例: フォント / テーマ / ガラス)'],
+  's.set.searchPh': ['搜索设置(中文/拼音/英文,如:字号/font/主题/theme/玻璃/glass)', 'Search settings (e.g. font, theme, glass) (2+ chars)', '設定を検索(2 文字以上。例: フォント / テーマ / ガラス)'],
   's.set.close': ['关闭设置', 'Close settings', '設定を閉じる'],
   's.set.navAria': ['设置分类', 'Settings sections', '設定の分類'],
   // ── 设置页:阅读
-  's.read.fontDesc': ['中文长文建议无衬线;等宽更"工程感"', 'Sans-serif reads better for long CJK text; mono feels more "engineered"', '長文の中国語はサンセリフ推奨。等幅はより「エンジニア的」'],
-  's.read.measureDesc': ['中文规范 32–38 字/行;当前按 em 折算', 'The CJK norm is 32–38 characters per line; shown here in em', '中国語の目安は 1 行 32–38 字(ここでは em 換算)'],
+  's.read.fontDesc': ['中文长文建议无衬线;等宽更"工程感"', 'Sans-serif reads better for long CJK text; mono feels more "engineered"', '長文の CJK テキストにはサンセリフ推奨。等幅のほうがエンジニアらしい印象です。'],
+  's.read.measureDesc': ['中文规范 32–38 字/行;当前按 em 折算', 'The CJK norm is 32–38 characters per line; shown here in em', 'CJK の目安は 1 行 32–38 字(ここでは em 換算)'],
   's.read.lineHDesc': ['正文行距倍数(1.4–2.0)', 'Body line-height multiplier (1.4–2.0)', '本文の行間倍率(1.4–2.0)'],
   's.read.toolbarDesc': ['顶栏按钮显示模式', 'How the toolbar buttons are rendered', 'ツールバーの表示モード'],
-  's.read.sideDesc': ['拖拽侧栏分隔条调整(160–480px,自动记忆)', 'Drag the sidebar splitter (160–480px, remembered)', 'サイドバーの仕切りをドラッグ(160–480px、記憶されます)'],
+  's.read.sideDesc': ['拖拽侧栏分隔条调整(160–480px,自动记忆)', 'Drag the sidebar splitter (160–480px, remembered)', 'サイドバーの仕切りをドラッグ(160–480px、記憶されます)。'],
   's.read.dragTip': ['拖拽调整', 'Drag to adjust', 'ドラッグで調整'],
   's.read.tbIcon': ['仅图标', 'Icons only', 'アイコンのみ'],
   's.read.tbText': ['仅文字', 'Text only', 'テキストのみ'],
@@ -2655,13 +2654,13 @@ const I18N = {
   's.theme.dark': ['深色', 'Dark', 'ダーク'],
   's.theme.light': ['浅色', 'Light', 'ライト'],
   's.theme.themeDesc': ['深色 / 浅色切换', 'Switch between dark and light', 'ダーク / ライトの切替'],
-  's.theme.codeStyleDesc': ['正文里 `这类` 代码怎么画:荧光笔只染下半截、无痕只靠等宽字形 —— 都不再压灰块;引用块跟着同一档。代码块(pre)的浓底不受这里影响。改完看左边正文即可(设置面板是右侧抽屉,不挡正文)', 'How `inline code` is drawn: the highlighter tints only the lower half, plain relies on the monospace face alone — neither paints a grey slab. Blockquotes follow the same style; fenced code blocks keep their own background. The panel is a right-hand drawer, so the text on the left shows the change live.', '本文中の `インラインコード` の描画方法:マーカーは下半分だけを塗り、装飾なしは等幅フォントのみ — どちらもグレーの下地を敷きません。引用ブロックも同じ設定に従い、コードブロック(pre)の背景は影響を受けません。設定は右側のドロワーなので、左の本文で結果を確認できます。'],
+  's.theme.codeStyleDesc': ['正文里 `这类` 代码怎么画:荧光笔只染下半截、无痕只靠等宽字形 —— 都不再压灰块;引用块跟着同一档。代码块(pre)的浓底不受这里影响。改完看左边正文即可(设置面板是右侧抽屉,不挡正文)', 'How `inline code` is drawn: the highlighter tints only the lower half, plain relies on the monospace face alone — neither paints a grey slab. Blockquotes follow the same style; fenced code blocks keep their own background. The panel is a right-hand drawer, so the text on the left shows the change live.', '本文中の `インラインコード` の描画方法: マーカーは下半分だけを塗り、装飾なしは等幅フォントのみ — どちらもグレーの下地を敷きません。引用ブロックも同じ設定に従い、コードブロック(pre)の背景は影響を受けません。設定は右側のドロワーなので、左の本文で結果を確認できます。'],
   's.theme.paletteDesc': ['跟随当前主题的可选配色', 'Palette options for the current theme', '現在のテーマで選べる配色'],
-  's.theme.langDesc': ['中文 / English / 日本語', 'Switch the interface language', '表示言語を切り替えます'],
+  's.theme.langDesc': ['切换界面语言', 'Switch the interface language', '表示言語を切り替えます。'],
   // ── 设置页:玻璃
   's.glass.desc': ['点工具栏「玻璃」按钮微调材质与整窗底色', 'Fine-tune material and tint from the Glass button in the toolbar', 'ツールバーの「ガラス」ボタンで素材と地色を微調整'],
   's.glass.openPanel': ['见玻璃面板', 'Open the glass panel', 'ガラスパネルを開く'],
-  's.glass.floorDesc': ['文字整体透明度下限 70%;代码块/图片/卡片始终不透明(白字直压模糊底实测仅 3.95:1)', 'Text opacity never drops below 70%; code, images and cards stay opaque (white text straight on the blurred backdrop measured only 3.95:1)', 'テキストの不透明度は 70% まで。コード・画像・カードは常に不透明(ぼかし背景に白文字を直置きすると実測 3.95:1)'],
+  's.glass.floorDesc': ['文字整体透明度下限 70%;代码块/图片/卡片始终不透明(白字直压模糊底实测仅 3.95:1)', 'Text opacity never drops below 70%; code, images and cards stay opaque (white text straight on the blurred backdrop measured only 3.95:1)', 'テキストの不透明度の下限は 70%。コード・画像・カードは常に不透明(ぼかし背景に白文字を直置きすると実測 3.95:1)'],
   's.halo.title': ['文字阴影', 'Text shadow', 'テキストの影'],
   's.halo.desc': ['给文字一圈局部对比,亮背景也读得清;拖动条在玻璃面板', 'Adds local contrast around glyphs so text stays readable on bright backdrops; the slider lives in the glass panel', '文字の周囲に局所的なコントラストを付けます。明るい背景でも読めます(スライダーはガラスパネル)'],
   's.glass.sysDesc': ['关闭"透明效果"或高对比模式时自动退为实色', 'Falls back to a solid colour when transparency or high contrast is on', '透明効果オフ / ハイコントラスト時は自動で単色にフォールバック'],
@@ -2669,7 +2668,7 @@ const I18N = {
   's.file.assocDesc': ['跳转系统默认应用页设为 TMMD', 'Opens Default apps so you can pick TMMD', '「既定のアプリ」を開いて TMMD を選択'],
   's.file.assocSet': ['设为默认打开...', 'Set as default...', '既定に設定...'],
   's.file.currentDesc': ['系统当前 .md 默认程序', 'The current .md handler in the system', 'システム上の .md 既定アプリ'],
-  's.file.exportDesc': ['导出为独立 HTML,再交给浏览器打印成 PDF', 'Exports a standalone HTML, then hands it to the browser to print as PDF', '単体 HTML を書き出し、ブラウザで PDF 印刷します'],
+  's.file.exportDesc': ['导出为独立 HTML,再交给浏览器打印成 PDF', 'Exports a standalone HTML, then hands it to the browser to print as PDF', '単体 HTML を書き出し、ブラウザで PDF 印刷します。'],
   's.file.printBtn': ['打印', 'Print', '印刷'],
   // ── 设置页:快捷键 / 关于
   's.keys.find': ['文内查找(Enter 下一个 / Shift+Enter 上一个)', 'Find in document (Enter for next, Shift+Enter for previous)', '文書内検索(Enter で次 / Shift+Enter で前)'],
@@ -2728,7 +2727,7 @@ const I18N = {
   'ctx.unfav': ['取消收藏', 'Remove from favorites', 'お気に入りを解除'],
   'ctx.fav': ['收藏', 'Add to favorites', 'お気に入りに追加'],
   'ctx.forget': ['移除这条记录', 'Remove from history', 'この記録を削除'],
-  'doc.favOn': ['已收藏', 'Starred', 'スター済み'],
+  'doc.favOn': ['已收藏', 'Favorited', 'お気に入り済み'],
   'doc.favTipOn': ['取消收藏本文', 'Remove from favorites', 'お気に入りを解除'],
   'side.show': ['显示侧栏', 'Show sidebar', 'サイドバーを表示'],
   'side.expand': ['展开侧栏', 'Expand sidebar', 'サイドバーを展開'],
@@ -3156,14 +3155,47 @@ async function buildStandaloneHtml() {
   const css = [await readAssetText('app.css'), await readAssetText('vendor/katex.min.css'), await readAssetText('vendor/hljs-atom-one-dark.min.css')].join('\n');
   const fallback = 'html,body{background:#1d2021;color:#ebdbb2;font:16px/1.7 system-ui,"Microsoft YaHei UI",sans-serif;margin:0}main{max-width:34em;margin:0 auto;padding:40px 24px}pre{background:#282828;padding:12px;border-radius:6px;overflow:auto}table{border-collapse:collapse}th,td{border:1px solid #3c3836;padding:6px 12px}img{max-width:100%}';
   const theme = currentLang() && document.body.dataset.theme === 'light' ? 'light' : 'dark';
+  // 导出物的**页面底**:应用里 body 是"让开玻璃窗"的透明底,导到浏览器里就变成白纸 +
+  // 浅色字(深色主题整页近乎看不见,截图实测只剩浅灰轮廓)。这里显式铺一层实色底。
+  const pageCss = [
+    'html,body{background:var(--page-board,#1d2021);color:var(--fg)}',
+    'html[data-theme="light"]{--page-board:#f4f3f0}',
+    'html[data-theme="light"][data-palette="paper"]{--page-board:#f6f1e6}',
+    // 导出物是**静态**的(没有 JS):入场动画必须关掉。app.css 的 `@keyframes sr-doc-in{from{opacity:0}}`
+    // 在打印渲染里会被重置到 from 帧 —— 于是 `.markdown-body` 整篇 opacity:0,而页面底色照画:
+    // PDF 只剩几个矩形、0 字体、0 文本算子,命令却照样返回成功(2026-10-26 实测:1441 字节空页)。
+    // 加这一行之后同一个 HTML 打出 108 KB / 21 字体 / 283 个文本算子。
+    '.markdown-body{animation:none}',
+    'main.reader-inner{max-width:var(--measure,34em)}',
+    ':root{--halo-k:0}',
+  ].join('\n');
+  // 打印 / 直出 PDF 一律"白纸深字"。深色主题的 --fg 是**浅色**(给深底配的),直接打到白纸上
+  // 等于没字 —— 2026-10-26 实测:深色下导出的 PDF 是 1441 字节空页(0 字体、0 文本算子、0 可见内容),
+  // 换个真内核(Playwright 的 Chromium,经 TMMD_PDF_BROWSER 缝)才看得见。
+  // 必须重设**变量**而不是只写 body{color:#111}:正文用的是 var(--fg),显式声明压得过继承。
+  // token 色同理 —— 浅色那组被 `:root[data-theme="light"]` 的选择器关在门外,这里按同值复刻一份。
+  const TOKENS = [
+    ['.hljs-comment,.hljs-quote', '#545458'],
+    ['.hljs-doctag,.hljs-formula,.hljs-keyword', '#90218e'],
+    ['.hljs-deletion,.hljs-name,.hljs-section,.hljs-selector-tag,.hljs-subst', '#92372f'],
+    ['.hljs-literal', '#015b80'],
+    ['.hljs-addition,.hljs-attribute,.hljs-meta .hljs-string,.hljs-regexp,.hljs-string', '#2f5f2f'],
+    ['.hljs-attr,.hljs-number,.hljs-selector-attr,.hljs-selector-class,.hljs-selector-pseudo,.hljs-template-variable,.hljs-type,.hljs-variable', '#724e01'],
+    ['.hljs-bullet,.hljs-link,.hljs-meta,.hljs-selector-id,.hljs-symbol,.hljs-title', '#2b51a3'],
+    ['.hljs-built_in,.hljs-class .hljs-title,.hljs-title.class_', '#724e01'],
+  ].map(([sel, color]) => sel.split(',').map((s) => ':root[data-theme] ' + s.trim()).join(',') + '{color:' + color + '}').join('\n');
+  const printCss = `@media print{@page{margin:18mm}
+:root[data-theme]{--fg:#111;--fg-dim:#222;--fg-faint:#333;--border:#ccc;--accent:#7a2b00;--accent2:#4a3c00;--green:#2f4a0f;--blue:#0e5263;--red:#8e0b0b;--text-halo:none;--title-halo:none;--plate-sink:transparent;background:#fff;color:#111}
+:root[data-theme] body,:root[data-theme] main,:root[data-theme] .markdown-body{background:#fff;color:#111}
+:root[data-theme] pre,:root[data-theme] .hljs,:root[data-theme] code{background:#f4f4f2}
+${TOKENS}}`;
   const html = `<!DOCTYPE html>
 <html lang="${document.documentElement.lang}" data-theme="${theme}" data-palette="${document.documentElement.dataset.palette || 'gruvbox'}">
 <head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>${escHtml((cur.abs || '').split(/[\\/]/).pop() || 'TMMD')}</title>
 <style>${css || fallback}
-body{background:transparent}main.reader-inner{max-width:var(--measure,34em)}
-:root{--halo-k:0}
-@media print{@page{margin:18mm}:root,[data-theme="light"]{--text-halo:none;--title-halo:none}body{background:#fff;color:#111}}
+${pageCss}
+${printCss}
 </style></head>
 <body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
   return { html, inlined };

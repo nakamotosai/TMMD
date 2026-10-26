@@ -7,6 +7,19 @@
 ; leftovers naming this program survived. Details: docs/2026-10-25-验证清单.md section 9.3.
 ;
 ; ASCII ONLY: makensis reads .nsh using the machine's ANSI codepage, so CJK comments break parsing.
+;
+; Why POSTINSTALL exists: the in-app updater promises a restart ("installs silently, then restarts
+; into the new version" - app.js upd.sub / upd.installing) but the helper script it writes only
+; waits for the app to exit and runs this installer with /S: nothing brings the app back. Measured
+; 2026-10-26 on a real 1.8.12 -> 1.8.16 in-app update: installer exit 0, file version 1.8.16, and
+; zero TMMD processes afterwards. Silent installs now relaunch; the wizard path is untouched (its
+; finish page already offers "run TMMD", and launching twice would be worse than not launching).
+
+!macro NSIS_HOOK_POSTINSTALL
+  IfSilent 0 tmmd_relaunch_done
+    Exec '"$INSTDIR\tmmd.exe"'
+  tmmd_relaunch_done:
+!macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
   ; 1) Extension defaults: remove only when the current value is still the one WE wrote,

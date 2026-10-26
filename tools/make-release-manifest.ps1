@@ -25,8 +25,8 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $Dir)) { throw ('dir not found: ' + $Dir + ' (run tauri build first)') }
 if (-not $Tag) { $Tag = 'v' + $Version }
-$exe = Get-ChildItem -Path $Dir -Filter '*-setup.exe' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if (-not $exe) { throw ('no *-setup.exe under ' + $Dir + ' (run npm run build first)') }
+$exe = Get-ChildItem -Path $Dir -Filter ('TMMD_' + $Version + '_*-setup.exe') | Select-Object -First 1
+if (-not $exe) { throw ('no TMMD_' + $Version + '_*-setup.exe under ' + $Dir + ' (run tauri build for ' + $Version + ' first; the dir may hold other versions)') }
 $hash = (Get-FileHash -Path $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
 $url = 'https://github.com/' + $Repo + '/releases/download/' + $Tag + '/' + $exe.Name
 $m = [ordered]@{
