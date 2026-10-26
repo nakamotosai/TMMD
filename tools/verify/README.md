@@ -151,3 +151,25 @@ node tools/verify/halo-strength.mjs --port=9243 --doc=<md> --out=%TEMP%\tmmd-hal
 
 实测(亮底合成样本,紧邻环平均压暗):0%/0.35/0.55/0.7/1.0 → 0 / 1.62 / **2.34(默认)** / 2.76 / 3.55 ΔL，
 即 55% 拿到 66% 的收益。合成脚本同上一节;`--halo-k` 要**连 token 定义一起注入**（装机版里的 --text-halo 是写死 alpha 的字面量,只塞变量不生效）。
+
+## 量"浅色主题在真壁纸上够不够清楚"(2026-10-26 加)
+
+浅色主题的对比度不能只在实色纸上算:窗口是透明玻璃,后面是照片壁纸。这两件工具把两层合起来量。
+
+```powershell
+# ① 驱动:切浅色(--mode=before 注入 v1.8.12 旧值做 A/B),抓带 alpha 的页面截图 + 每个文字块的 computed 色/rect
+node tools/verify/light-contrast.mjs --port=9225 --mode=after --root=<库根> --doc=<md> --side=tree --out=%TEMP%\light-after
+#    --empty 关掉所有标签只留空态(量空态卡片);--side=tree 让侧栏停在文件树
+# ② 合成 + 指标:合到**用户真壁纸**(默认读注册表 HKCU\Control Panel\Desktop\WallPaper)+ 高斯模糊近似 acrylic
+python tools/verify/light-contrast.py --shot %TEMP%\light-after.png --json %TEMP%\light-after.json --crop 0.02,0.00,0.60,0.42
+```
+
+判据与口径(踩过的坑都在这):
+
+- 主指标 = **声明的字色 vs 该块局部底的中位数**;框内"最暗/最亮对"只作 AA 旁证 ——
+  稀疏文字(两个字的组标题)框里大部分是底,极值对会失真(2026-10-26 实测踩到)。
+- rect 是 CSS px、截图是设备像素 → 必须按 `viewport.w` 换算,否则采到空白(同日踩到)。
+- `--crop` 选壁纸的**暗部**才是最坏情况(浅板压暗壁纸 → 深字对比下降);用户实拍里侧栏正好压在暗部。
+- `applySettings` 把 `data-theme` 同时写在 html 与 body 上,浅色变量因此有两份声明 ——
+  做 before 注入时两处都要写,只改 html 不生效(同日踩到)。
+- 调试实例的 UI 资源是**编进 exe 的**:改完 `ui-reader/app.css` 必须 `cargo build` 再看效果(2026-10-26 踩到)。

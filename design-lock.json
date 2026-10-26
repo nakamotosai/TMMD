@@ -17,6 +17,18 @@
       "ssot": "ui-reader/app.css --halo-k(0.55)+ 玻璃面板「文字阴影」滑条",
       "why": "玻璃模式下文字直接压在模糊壁纸上,亮壁纸会把米白字洗没;55% 是「少一半丑、几乎不丢可读」的点"
     },
+    "light_theme": {
+      "locked_at": "2026-10-26",
+      "locked_by": "用户实拍「浅色模式丑到极点,文字也看不清楚」→ 重做后按真壁纸合成像素验收",
+      "plate_baseline": "浅色主题的板基线 = 60% − 浓度×0.5(见 app.css [data-theme=light] 的 --glass-lift);40% 档实际 80%、20% 档 70%、70% 档 95%",
+      "why": "同一 40% 浓度,深色板(L≈0.02)压在任意壁纸上都保住对比;浅色板(L≈0.88)一淡就与壁纸同色。实测旧版(40% 板):--fg 中段壁纸 5.4:1 / 最暗 3.0:1,--fg-dim 2.3:1 / 1.3:1,--fg-faint 1.7:1 / 1.1:1,--accent2 1.7:1 —— 用户说「看不清」的量化答案。浅色玻璃必须比深色厚,这不是可调项。",
+      "ink_band": "浅色主题的墨阶整体下压:--fg #2b2724 / --fg-dim #3f382f / --fg-faint #4e4638 / --accent #8d2f02 / --accent2 #584a08;层级用墨量表达,禁靠变灰(gruvbox-light 的 #928374 在实色纸上只有 3.24:1)",
+      "halo": "浅色晕由纯白改纸色 #fbf1c7(纯白晕压在暖纸上把深字烘出灰边);r12f I4 判据同步从「必须 255,255,255」改成「亮色(相对亮度≥0.7)」",
+      "lift_direction": "浅色下「浮起来」= 更亮(--bg2/--bg3 白纸化),不沿用 gruvbox-light 比底更暗的 bg2/bg3",
+      "evidence": "tools/verify/light-contrast.mjs + light-contrast.py:CDP 透明截图合到用户真壁纸(注册表 WallPaper)+ 高斯模糊,量每个文字块的「字色 vs 局部底」",
+      "measured_after": { "板": "0.8", "侧栏分组标题": "5.19", "品牌字": "5.08", "文件名": "8.33", "正文H1": "8.51", "正文段落": "8.57", "行内码": "8.48", "代码块": "5.98", "引用": "6.72" },
+      "measured_before": { "板": "0.4", "侧栏分组标题": "1.62", "目录树项": "1.21", "品牌字": "1.62", "正文H1": "2.18", "正文段落": "2.28", "代码块": "1.78", "引用": "1.00" }
+    },
     "content_plates": {
       "code_block": { "token": "--plate-sink", "value": "#000 @ glass×.42", "form": "中性玻璃凹槽 + 1px 顶部内高光" },
       "inline_chip": { "token": "--plate-lift", "value": "ink @ glass×.22", "form": "中性玻璃薄片" },
@@ -38,7 +50,7 @@
     }
   },
   "assertions": [
-    { "id": "contrast", "kind": "probe", "check": "正文/次要文字对底对比度", "threshold": "≥4.5:1(大字 ≥3:1)", "how": "e2e/r12g-visual24.mjs #10/#11 + tools/verify/contrast-bands.py" },
+    { "id": "contrast", "kind": "probe", "check": "正文/次要文字对底对比度(深/浅两主题都查,浅色按真壁纸合成量)", "threshold": "≥4.5:1(大字 ≥3:1)", "how": "e2e/r12g-visual24.mjs #10/#11 + tools/verify/contrast-bands.py;浅色另跑 tools/verify/light-contrast.mjs + light-contrast.py(2026-10-26 起)" },
     { "id": "font-floor", "kind": "probe", "check": "可读文字字号", "threshold": "≥14px;字号档 ≤6", "how": "r12g #19" },
     { "id": "no-simsun-fallback", "kind": "probe", "check": "渲染字族不落 SimSun/宋体", "threshold": "命中 = 0", "how": "r12g #20" },
     { "id": "line-metrics", "kind": "probe", "check": "正文行高比 / 字号 / 行宽", "threshold": "1.6–1.75 / 16px / ≈30 汉字", "how": "r12g #18/#19/#17" },

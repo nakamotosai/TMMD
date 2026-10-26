@@ -452,8 +452,16 @@ async function reset() {
       return layers >= 2 && k >= 0.3 && k <= 0.6 && /\\d+(\\.\\d+)?px/.test(ts);
     };
     const isWhite = (ts) => /255, 255, 255/.test(ts);
+    // v1.8.13:浅色主题的晕由纯白改为**纸色**(#fbf1c7) —— 纯白晕压在暖纸上会把深字烘出灰边。
+    // 判据因此从"必须 255,255,255"改成"这一层是亮色"(相对亮度 ≥0.7),语义仍是"反相亮晕"。
+    const isBright = (ts) => {
+      const rgb = [...ts.matchAll(/rgba?\\(([^)]+)\\)/g)].map((m) => m[1].split(',').slice(0, 3).map((x) => parseFloat(x)));
+      if (!rgb.length) return false;
+      const lum = (c) => { const f = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }; return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]); };
+      return Math.max(...rgb.map(lum)) >= 0.7;
+    };
     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-    let n = 0; const bad = []; let whiteNodes = 0; let okNodes = 0;
+    let n = 0; const bad = []; let whiteNodes = 0; let brightNodes = 0; let okNodes = 0;
     while (w.nextNode()) {
       const t = w.currentNode;
       if (!t.textContent || !t.textContent.trim()) continue;
@@ -463,6 +471,7 @@ async function reset() {
       if (!usable(ts)) { bad.push(el.tagName + '.' + String(el.className).slice(0, 18) + ' :: ' + t.textContent.trim().slice(0, 14)); continue; }
       okNodes++;
       if (isWhite(ts)) whiteNodes++;
+      if (isBright(ts)) brightNodes++;
     }
     const ctlBad = [];
     const ctls = [...document.querySelectorAll('button,input,select,textarea')];
@@ -476,7 +485,7 @@ async function reset() {
       const ts = getComputedStyle(el, '::placeholder').textShadow;
       if (!usable(ts)) phBad.push((el.id || el.tagName) + ':' + String(ts).slice(0, 26));
     }
-    return JSON.stringify({ n, badCount: bad.length, bad: bad.slice(0, 6), okNodes, whiteNodes,
+    return JSON.stringify({ n, badCount: bad.length, bad: bad.slice(0, 6), okNodes, whiteNodes, brightNodes,
       ctls: ctls.length, ctlBad: ctlBad.slice(0, 5), phCount: phs.length, phBad: phBad.slice(0, 5),
       bodyTs: getComputedStyle(document.body).textShadow.slice(0, 60) });
   })()`;
@@ -491,7 +500,7 @@ async function reset() {
   ok('I2 深色:全部控件 + placeholder 都有可用晕(不再只抽第一个)', dark && dark.ctls > 0 && dark.ctlBad.length === 0 && dark.phCount > 0 && dark.phBad.length === 0, dark);
   ok('I3 深色:没有节点误用白色晕(极性正确)', dark && dark.whiteNodes === 0, dark && { whiteNodes: dark.whiteNodes, okNodes: dark.okNodes });
   const light = await audit('light');
-  ok('I4 浅色:全部文本 + 控件 + placeholder 都是反相亮晕,坏数 0', light && light.badCount === 0 && light.ctlBad.length === 0 && light.phBad.length === 0 && light.okNodes > 0 && light.whiteNodes === light.okNodes, light);
+  ok('I4 浅色:全部文本 + 控件 + placeholder 都是反相亮晕(亮色,含纸色晕),坏数 0', light && light.badCount === 0 && light.ctlBad.length === 0 && light.phBad.length === 0 && light.okNodes > 0 && light.brightNodes === light.okNodes, light);
   await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
   // I5–I8:拖动条(--halo-k 的驱动链)。用户 2026-10-25 要求"做成拖动条" → 断言要盯**真实链路**:
   // 直接给 input 派发 input 事件(和用户拖动同一条路径),而不是绕过监听器手改 S.glass。
