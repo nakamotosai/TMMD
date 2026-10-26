@@ -61,6 +61,8 @@ en/zh 的 `text halo`/`阅读地图` 也跟上 UI 用词。
 **4. 静默安装后不必再手动重开** —— 更新器对话框写着"静默安装并重启到新版",但助手脚本只做到"等应用退出 → `/S` 安装",
 没人把应用拉回来(实测:装完 `Get-Process tmmd` = 0,得用户自己再点一次)。补 `NSIS_HOOK_POSTINSTALL` + `IfSilent`:
 静默安装后重启;向导安装路径不动(它的完成页本来就有"运行 TMMD",两份都启动比不启动更糟)。
+(边界:这条在**应用内更新**路径上实测通过 —— 装完进程自己回来了;由外部脚本直接 `/S` 安装的场景没观察到重启,
+怀疑与执行会话/桌面有关,未深究。)
 
 **5. 更新通道一次补齐 1.8.13–1.8.17** —— 此前只发到 v1.8.12,应用内「检查更新」看不到后面五个版本。
 五个 annotated tag(逐个钉在产出该版本的提交上)+ 五个 GitHub release(assets = installer / `latest.json` / `SHA256SUMS`)+
@@ -81,7 +83,7 @@ en/zh 的 `text halo`/`阅读地图` 也跟上 UI 用词。
 - 更新通道:五个版本按 tag 固定 URL 下载三件套(清单三字段 + 安装包逐字节 sha256)全部 PASS;
   `/releases/latest/download/latest.json` = **1.8.17**。
 - 装机自更新(真装机 / 真下载 / 真静默装):1.8.12 → 1.8.16 一轮(先验通道),1.8.16 → 1.8.17 一轮(再验新版):
-  helper 日志 `app exited, launching installer`;`filever` 与注册表 `DisplayVersion` 都到 1.8.17;**静默装完自己重启**(新钩子,实测进程回来了);
+  helper 日志 `app exited, launching installer`;`filever` 与注册表 `DisplayVersion` 都到 1.8.17;**应用内更新装完自己重启**(新钩子,实测进程回来了);
   下载落在 `%APPDATA%\com.saaaai.tmmd\updates\`,sha256 与线上清单一致;`roots.json` / `window.json` 前后 sha 相同(用户配置没被动)。
 - 卸载器(真卸 `/S`,退出码 0):`.md` / `.markdown` 的默认指向、`Markdown` ProgID 整棵、卸载表项全部清掉;
   用户配置目录逐文件 sha 不变;`FileExts\.md`(用户自己的默认程序选择区,含 `UserChoice`)前后逐字节未变。
