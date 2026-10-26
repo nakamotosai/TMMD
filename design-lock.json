@@ -11,6 +11,17 @@
       "ssot": "app.js 的 GLASS_CONC_DEFAULT + ui-reader/app.css :root[--glass]",
       "why": "整窗一整块 acrylic:DWM 只出模糊(alpha=1),浓度全由页面层画,两处不相乘"
     },
+    "i18n": {
+      "locked_at": "2026-10-26(v1.8.17 全量整改:用户「切换日语和英文的时候,还残留着大量的中文…全量修改」)",
+      "langs": "zh / en / ja —— LANGS 数组顺序即字典值顺序;localStorage 键 sr_lang;非法码一律回落 zh",
+      "wiring": "**声明式**:HTML 上 data-i18n(文本)/ data-i18n-html(富文本,'|' 换行)/ data-i18n-title / data-i18n-aria / data-i18n-ph,由 applyI18n() 统一落地。**禁止**回到按位置贴的 I18N_TARGETS(≤v1.8.16 的写法;玻璃面板整块漏翻、切语言只有正文变就是它造成的)",
+      "apply_order": "声明式钩子 → buildSetSearchIndex()(设置搜索词随语言重建) → refreshDynI18n()(JS 现算文案:标签栏/抽屉/侧栏/收藏按钮/编辑态按钮/字号读数/导读地图进度/更新器读数/文件关联)",
+      "dynamic_rule": "JS 现算且要跟随语言的文案,必须 ① 挂进 refreshDynI18n() 重刷,或 ② 在动态生成的 DOM 上带 data-i18n* 钩子。另外:**函数内局部变量不许叫 t**(会遮蔽 i18n 的 t();已踩过 renderTabs / ctxMenu / renderToc)",
+      "native_shell": "托盘菜单 3 项、选文件夹对话框标题、新建默认文件名 —— 这 5 条原生文案由前端 pushLangToShell() → invoke('set_lang'),Rust 侧 only-these-5 有表;其余 70+ 条 Rust 错误串**保持中文**,由前端 ERR_MAP 正则翻译(有覆盖闸兜底)",
+      "search_index": "每行 data-search = 本地化标题+描述 + data-search-ascii(语言无关词)+ data-search-zh(原始中文词)→ 任何语言下都能用中文/英文搜到同一行",
+      "whitelist": "语言名 endonym(中文 / English / 日本語,三语下都按本族写法)、文件路径(user data)",
+      "gates": "tools/i18n-lint.mjs(G1 字典三语完备 / G2 app.js 字典外残留汉字 / G3 html 文本缺钩子 / G4 钩子键存在 / G5 Rust 错误串全覆盖)+ e2e/r12h-i18n.mjs(三语 DOM:含汉字且既非本语言字典值又无钩子 = 残留)"
+    },
     "glass_panel": {
       "controls": "总开关 + 材质 + 系统状态 + 整窗底色(草稿/预览/应用)+ 氛围三档 + **浓度拖动条** + 文字阴影",
       "ssot": "浓度只有一个本源 S.glass.conc:三档预设写它,拖动条也写它;--glass 由 applyGlass 落 CSS,回显(滑条值/读数/按钮高亮)只此一处",

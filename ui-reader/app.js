@@ -220,7 +220,7 @@ function wireImgFallback(root) {
     img.addEventListener('error', () => {
       const f = (img.getAttribute('alt') || img.getAttribute('src') || 'image').replace(/^.*[\\/]/, '');
       img.classList.add('srh-img-err');
-      img.alt = '图片加载失败：' + f;
+      img.alt = t('img.fail') + f;
       img.removeAttribute('src');
     }, { once: true });
   });
@@ -277,7 +277,7 @@ function renderMarkdown(md, absParam) {
   inner.innerHTML = '';
   inner.appendChild(body);
   const name = absParam ? absParam.split(/[\\/]/).pop() : '';
-  document.title = name ? name + ' · TMMD' : 'TMMD';
+  document.title = name ? name + ' · TMMD' : t('app.title');
   const top = Number(LS.raw('sr_scr_' + absParam) || 0);
   const rd = $id('reader');
   rd.scrollTop = 0; // 容器复用：先清旧文件滚动残留，防切换 md 后新文件停在底部
@@ -308,6 +308,21 @@ async function confirmLeaveEdit() {
   if (a === 'save') return await saveEdit();
   return a === 'discard';
 }
+/* 编辑态按钮的文案:既要跟状态走,也要跟语言走 —— leaveEdit/enterEdit/语言切换共用一个出口 */
+function syncEditBtn() {
+  const b = $id('btnEdit');
+  if (!b) return;
+  const lab = b.querySelector('span'); const u = b.querySelector('use');
+  if (S.editing) {
+    if (lab) lab.textContent = t('edit.save');
+    if (u) u.setAttribute('href', '#i-save');
+    b.title = t('edit.saveTip');
+  } else {
+    if (lab) lab.textContent = t('edit.edit');
+    if (u) u.setAttribute('href', '#i-edit');
+    b.title = t('edit.enterTip');
+  }
+}
 function leaveEdit() {
   if (!S.editing) return;
   S.editing = false;
@@ -317,11 +332,7 @@ function leaveEdit() {
   const inner = $id('readerInner');
   if (inner) inner.hidden = false;
   const b = $id('btnEdit');
-  if (b) {
-    const lab = b.querySelector('span'); if (lab) lab.textContent = '编辑文档';
-    const u = b.querySelector('use'); if (u) u.setAttribute('href', '#i-edit');
-    b.title = '编辑当前文档';
-  }
+  if (b) syncEditBtn();
   syncHistBtns();
 }
 function enterEdit() {
@@ -342,11 +353,7 @@ function enterEdit() {
   S.editing = true;
   S.editDirty = false;
   const b = $id('btnEdit');
-  if (b) {
-    const lab = b.querySelector('span'); if (lab) lab.textContent = '保存修改';
-    const u = b.querySelector('use'); if (u) u.setAttribute('href', '#i-save');
-    b.title = '保存修改到原文件';
-  }
+  if (b) syncEditBtn();
   syncHistBtns();
   ed.focus();
 }
@@ -581,7 +588,7 @@ async function refreshTreeOrder() {
  * 全部走囚笼校验(Rust 侧 cage_join),前端只负责问清楚、刷新树、维护标签状态。 */
 async function newDoc() {
   if (!S.root || !S.root.rootPath) { toast(t('toast.needRoot')); return; }
-  const rel = await askText(t('dlg.newTitle'), '未命名.md', t('dlg.newSub'));
+  const rel = await askText(t('dlg.newTitle'), t('new.defaultName'), t('dlg.newSub'));
   if (!rel) return;
   try {
     await invoke('create_file', { root: S.root.rootPath, rel, content: `# ${rel.split('/').pop().replace(/\.(md|markdown|txt)$/i, '')}\n\n` });
@@ -594,7 +601,7 @@ async function newDoc() {
 async function saveAsDoc() {
   if (!S.cur) { toast(t('toast.noDoc')); return; }
   const content = S.editing ? $id('editor').value : (S.cur.raw || '');
-  const base = String(S.cur.abs).split(/[\\/]/).pop() || '未命名.md';
+  const base = String(S.cur.abs).split(/[\\/]/).pop() || t('new.defaultName');
   try {
     const path = await invoke('pick_save', { defaultName: base });
     if (!path) return;
@@ -663,14 +670,14 @@ function buildEditFindBar() {
   bar.id = 'editFindBar';
   bar.className = 'findbar edit-find';
   bar.hidden = true;
-  bar.innerHTML = '<input id="editFindQ" class="set-text" placeholder="查找" spellcheck="false">'
+  bar.innerHTML = '<input id="editFindQ" class="set-text" data-i18n-ph="edit.findPh" spellcheck="false">'
     + '<span id="editFindCnt" class="edit-find-cnt">0/0</span>'
-    + '<button id="editFindPrev" class="icon-btn" title="上一个">\u2191</button>'
-    + '<button id="editFindNext" class="icon-btn" title="下一个">\u2193</button>'
-    + '<input id="editFindR" class="set-text" placeholder="替换为" spellcheck="false">'
-    + '<button id="editFindOne"><span>替换</span></button>'
-    + '<button id="editFindAll"><span>全部替换</span></button>'
-    + '<button id="editFindClose" class="icon-btn" title="关闭">\u2715</button>';
+    + '<button id="editFindPrev" class="icon-btn" data-i18n-title="edit.prev">\u2191</button>'
+    + '<button id="editFindNext" class="icon-btn" data-i18n-title="edit.next">\u2193</button>'
+    + '<input id="editFindR" class="set-text" data-i18n-ph="edit.replacePh" spellcheck="false">'
+    + '<button id="editFindOne"><span data-i18n="edit.replaceOne"></span></button>'
+    + '<button id="editFindAll"><span data-i18n="edit.replaceAll"></span></button>'
+    + '<button id="editFindClose" class="icon-btn" data-i18n-title="win.close">\u2715</button>';
   document.body.appendChild(bar);
   const on = (id, ev, fn) => { const el = bar.querySelector('#' + id); if (el) el.addEventListener(ev, fn); };
   on('editFindQ', 'input', () => { editFind.idx = 0; editFindRun(0); });
@@ -896,11 +903,11 @@ function renderEmpty() {
   const inner = $id('readerInner');
   if (inner) {
     inner.hidden = false;
-    inner.innerHTML = '<div class="empty" id="readerEmpty"><h2>还没有打开任何文档</h2><p>轻量本地 Markdown 阅读器</p><p class="empty-actions"><button type="button" id="emptyOpenFolder">打开文件夹</button> <button type="button" id="emptyOpenFile">打开文件</button></p><p class="empty-hint">也可以把 .md 文件拖进窗口。</p></div>';
+    inner.innerHTML = '<div class="empty" id="readerEmpty"><h2 data-i18n="empty.title"></h2><p data-i18n="empty.sub"></p><p class="empty-actions"><button type="button" id="emptyOpenFolder" data-i18n="empty.openFolder"></button> <button type="button" id="emptyOpenFile" data-i18n="empty.openFile"></button></p><p class="empty-hint" data-i18n="empty.hint"></p></div>';
     $id('emptyOpenFolder')?.addEventListener('click', onOpenFolder);
     $id('emptyOpenFile')?.addEventListener('click', pickOpenFile);
   }
-  document.title = 'TMMD';
+  document.title = t('app.title');
   markActive(null);
   try { applyI18n(); } catch { /* v1.7:空态重建后重贴语言 */ }
   if (S.view === 'toc' || S.view === 'map') renderSide();
@@ -910,16 +917,16 @@ function renderTabs() {
   if (!bar) return;
   bar.hidden = S.tabs.length === 0;
   bar.innerHTML = '';
-  S.tabs.forEach((t) => {
+  S.tabs.forEach((tb) => {   // 局部名不能叫 t:i18n 的 t() 会被遮蔽
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'tab' + (t.abs === S.activeKey ? ' active' : '');
-    b.title = t.abs;
+    b.className = 'tab' + (tb.abs === S.activeKey ? ' active' : '');
+    b.title = tb.abs;
     const nm = document.createElement('span');
     nm.className = 'tab-name';
-    nm.textContent = fileName(t.abs);
+    nm.textContent = fileName(tb.abs);
     b.appendChild(nm);
-    const dirty = (t.abs === S.activeKey) ? (S.editing && S.editDirty) : !!t.editDirty;
+    const dirty = (tb.abs === S.activeKey) ? (S.editing && S.editDirty) : !!tb.editDirty;
     if (dirty) {
       const d = document.createElement('span');
       d.className = 'tab-dirty';
@@ -929,12 +936,12 @@ function renderTabs() {
     const x = document.createElement('button');
     x.type = 'button';
     x.className = 'tab-x';
-    x.title = '关闭标签页';
-    x.setAttribute('aria-label', '关闭' + fileName(t.abs));
+    x.title = t('tab.close');
+    x.setAttribute('aria-label', t('tab.closeAria', { name: fileName(tb.abs) }));
     x.innerHTML = '<svg class="ic"><use href="#i-close"/></svg>';
-    x.addEventListener('click', (e) => { e.stopPropagation(); closeTab(t.abs); });
+    x.addEventListener('click', (e) => { e.stopPropagation(); closeTab(tb.abs); });
     b.appendChild(x);
-    b.addEventListener('click', () => { if (t.abs !== S.activeKey) activateTab(t, {}); });
+    b.addEventListener('click', () => { if (tb.abs !== S.activeKey) activateTab(tb, {}); });
     bar.appendChild(b);
   });
   const act = bar.querySelector('.tab.active');
@@ -997,11 +1004,11 @@ function renderFavDocBtn(btn) {
   if (!btn) return;
   const fav = S.cur ? isFavorited(S.cur.abs) : false;
   const lab = btn.querySelector('span');
-  if (lab) lab.textContent = fav ? '已收藏' : '收藏本文';
+  if (lab) lab.textContent = fav ? t('doc.favOn') : t('doc.fav');
   const u = btn.querySelector('use');
   if (u) u.setAttribute('href', fav ? '#i-star-fill' : '#i-star');
   btn.classList.toggle('active', fav);
-  btn.title = fav ? '取消收藏本文' : '收藏本文';
+  btn.title = fav ? t('doc.favTipOn') : t('doc.fav');
 }
 function refreshFavDocBtn() {
   const btn = $id('btnFavDoc');
@@ -1071,10 +1078,10 @@ function markActive(rel) {
   if (el) el.classList.add('active');
 }
 function renderToc(side) {
-  if (!S.toc.length) { side.innerHTML = '<div class="side-empty">本文没有标题大纲</div>'; return; }
-  const t = document.createElement('div');
-  t.className = 'side-title'; t.textContent = '目录';
-  side.appendChild(t);
+  if (!S.toc.length) { side.innerHTML = '<div class="side-empty">' + t('side.tocEmpty') + '</div>'; return; }
+  const head = document.createElement('div');
+  head.className = 'side-title'; head.textContent = t('side.tocTitle');
+  side.appendChild(head);
   const list = document.createElement('div');
   list.className = 'tree';
   S.toc.forEach((h) => {
@@ -1143,7 +1150,7 @@ function chapterText(idx) {
 /* ---- 导读地图视图 ---- */
 function renderMap(side) {
   const chs = chapterList();
-  if (!chs.length) { side.innerHTML = '<div class="map-empty">本文没有可用章节标题，无法生成地图。</div>'; return; }
+  if (!chs.length) { side.innerHTML = '<div class="map-empty">' + t('side.mapEmpty') + '</div>'; return; }
   const total = chs.length;
   // 每章字数（粗略）
   const lens = chs.map((c, i) => chapterText(i).length);
@@ -1151,7 +1158,7 @@ function renderMap(side) {
   const head = document.createElement('div');
   head.className = 'map-head';
   head.innerHTML =
-    '<div class="map-title">导读地图</div>' +
+    '<div class="map-title">' + t('view.map') + '</div>' +
     '<div class="map-prog"><div class="map-prog-fill" id="mapProgFill"></div></div>' +
     '<div class="map-prog-text" id="mapProgText"></div>';
   side.appendChild(head);
@@ -1164,7 +1171,7 @@ function renderMap(side) {
     n.innerHTML =
       '<div class="map-dot">' + (i + 1) + '</div>' +
       '<div class="map-meta"><div class="map-name"></div>' +
-      '<div class="map-sub"><span>约 ' + Math.max(1, Math.round(lens[i] / 400)) + ' 分钟</span></div></div>';
+      '<div class="map-sub"><span>' + t('side.mapMin', { n: Math.max(1, Math.round(lens[i] / 400)) }) + '</span></div></div>';
     n.querySelector('.map-name').textContent = h.text;
     n.addEventListener('click', () => {
       const el = document.getElementById(h.id);
@@ -1204,7 +1211,7 @@ function updateMapHighlight() {
     ? Math.min(100, Math.round((reader.scrollTop + reader.clientHeight) / reader.scrollHeight * 100))
     : 100;
   if (fill) fill.style.width = pct + '%';
-  if (txt) txt.textContent = '第 ' + (cur + 1) + ' / ' + chs.length + ' 章 · 已读约 ' + pct + '%';
+  if (txt) txt.textContent = t('side.mapProgress', { i: cur + 1, n: chs.length, p: pct });
 }
 /* ==================== 下拉抽屉（文件/编辑/视图/文档/更多） ==================== */
 let drawerOpen = null; // 当前打开的抽屉 id
@@ -1236,7 +1243,7 @@ function drawerFileRow(abs, isFav) {
   const meta = document.createElement('span'); meta.className = 'meta';
   meta.textContent = abs.split(/[\\/]/).slice(-2, -1)[0] || '';
   const del = document.createElement('span'); del.className = 'del'; del.textContent = '✕';
-  del.title = '移除';
+  del.title = t('ctx.forget');
   del.onclick = (ev) => {
     ev.stopPropagation();
     if (isFav) { S.favorites = S.favorites.filter((f) => f !== abs); LS.set('sr_favorites', S.favorites); refreshFavDocBtn(); }
@@ -1251,10 +1258,10 @@ function renderDocDrawer() {
   const rec = $id('docRecent'); const fav = $id('docFavs');
   if (!rec || !fav) return;
   rec.innerHTML = ''; fav.innerHTML = '';
-  if (!S.recent.length) rec.innerHTML = '<div class="drawer-empty">暂无</div>';
+  if (!S.recent.length) rec.innerHTML = '<div class="drawer-empty">' + t('drawer.empty') + '</div>';
   else S.recent.slice(0, 8).forEach((a) => rec.appendChild(drawerFileRow(a, false)));
   const favs = S.favorites.slice(0, 8);
-  if (!favs.length) fav.innerHTML = '<div class="drawer-empty">暂无</div>';
+  if (!favs.length) fav.innerHTML = '<div class="drawer-empty">' + t('drawer.empty') + '</div>';
   else favs.forEach((a) => fav.appendChild(drawerFileRow(a, true)));
 }
 /* R12c(e)：右键菜单（单例 #ctxMenu；项复用 .menu-item 样式，onclick 自关+阻冒泡，不碰抽屉路由） */
@@ -1404,44 +1411,46 @@ function applyTypewriter(on) {
 /* ==================== 自研更新器(2026-10-25,用户定调:程序内部自己更新) ====================
  * 后端命令:update_check / update_download / update_install / update_note。
  * 这里只负责"问一句 + 显示进度 + 放行关窗";信任链(SHA-256、URL 前缀)全在后端。 */
+let updLast = null;   // 最近一次的更新器状态(键+变量):切语言后要用新语言重画
+function updStatus(key, vars) { updLast = { key, vars }; return t(key, vars); }
 function setUpdateStatus(s) {
   const el = $id('updState');
   if (el) el.textContent = s;
 }
 async function checkUpdate(force) {
   if (!invoke) return null;
-  setUpdateStatus(t('upd.checking'));
+  setUpdateStatus(updStatus('upd.checking'));
   try {
     const m = await invoke('update_check', { force: !!force });
-    if (!m) { setUpdateStatus(t('upd.latest')); return null; }
-    setUpdateStatus(t('upd.available', { v: m.version }));
+    if (!m) { setUpdateStatus(updStatus('upd.latest')); return null; }
+    setUpdateStatus(updStatus('upd.available', { v: m.version }));
     return m;
   } catch (e) {
-    setUpdateStatus(t('upd.fail') + trErr(e));
+    setUpdateStatus(updStatus('upd.failHdr', { e: trErr(e) }));
     return null;
   }
 }
 async function runUpdate(m) {
   let off = null;
-  setUpdateStatus(t('upd.downloading', { p: 0 }));
+  setUpdateStatus(updStatus('upd.downloading', { p: 0 }));
   try {
     if (listen) {
       off = await listen('update-progress', (e) => {
         const p = (e && e.payload) || {};
         const pct = p.total ? Math.min(100, Math.round((p.received / p.total) * 100)) : 0;
-        setUpdateStatus(t('upd.downloading', { p: pct }));
+        setUpdateStatus(updStatus('upd.downloading', { p: pct }));
       });
     }
   } catch { off = null; }
   try {
     const path = await invoke('update_download', { manifest: m });
-    setUpdateStatus(t('upd.installing'));
+    setUpdateStatus(updStatus('upd.installing'));
     await invoke('update_install', { path });
     toast(t('upd.byebye'));
     setTimeout(() => { invoke('allow_close').catch(() => {}); }, 700);
   } catch (e) {
     const msg = trErr(e);
-    setUpdateStatus(t('upd.fail') + msg);
+    setUpdateStatus(updStatus('upd.failHdr', { e: msg }));
     toast(t('upd.fail') + msg);
   } finally {
     if (off) { try { off(); } catch { /* 解绑失败忽略 */ } }
@@ -1461,7 +1470,7 @@ async function promptUpdate(m) {
   });
   if (r.action === 'later' || r.action === 'skip') {
     invoke('update_note', { version: m.version, action: r.action }).catch(() => {});
-    setUpdateStatus(r.action === 'skip' ? t('upd.latest') : t('upd.available', { v: m.version }));
+    setUpdateStatus(r.action === 'skip' ? updStatus('upd.latest') : updStatus('upd.available', { v: m.version }));
     return;
   }
   if (r.action === 'install') await runUpdate(m);
@@ -1491,6 +1500,10 @@ const ERR_MAP = [
   // —— 路径 / 文档 ——
   [/^路径非法.*$/, 'err.badPath'],
   [/^路径越界.*$/, 'err.outOfCage'],
+  [/^应用句柄尚未初始化$/, 'err.noAppHandle'],
+  [/^无法解析根目录: /, 'err.badRoot'],
+  [/^无法解析路径: /, 'err.badPathResolve'],
+  [/^无父目录$/, 'err.noParent'],
   [/^不是目录: /, 'err.notDir'],
   [/^目录不存在: /, 'err.noDir'],
   [/^不是文件/, 'err.notFile'],
@@ -1635,12 +1648,12 @@ function applySideCollapsed(c) {
   side.classList.toggle('collapsed', c);
   const btn = $id('btnSideToggle');
   if (btn) {
-    const lab = btn.querySelector('span'); if (lab) lab.textContent = c ? '显示侧栏' : '隐藏侧栏';
+    const lab = btn.querySelector('span'); if (lab) lab.textContent = c ? t('side.show') : t('view.hideSide');
     const u = btn.querySelector('use'); if (u) u.setAttribute('href', c ? '#i-side-off' : '#i-side');
-    btn.title = c ? '显示侧栏' : '隐藏侧栏';
+    btn.title = c ? t('side.show') : t('view.hideSide');
   }
   const sb = $id('btnSide');
-  if (sb) sb.title = c ? '展开侧栏' : '收起侧栏';
+  if (sb) sb.title = c ? t('side.expand') : t('side.fold');
 }
 /* ==================== 侧栏下半（R8a：最近十条＋中间可拖） ==================== */
 function applySideBottomH(h) {
@@ -1655,8 +1668,8 @@ function renderRecent() {
   box.innerHTML = '';
   const cnt = $id('recentCount');
   const list = S.recent.slice(0, 10);
-  if (cnt) cnt.textContent = list.length ? list.length + ' 项' : '';
-  if (!list.length) { box.innerHTML = '<div class="side-empty">暂无打开记录</div>'; return; }
+  if (cnt) cnt.textContent = list.length ? t('side.countItems', { n: list.length }) : '';
+  if (!list.length) { box.innerHTML = '<div class="side-empty">' + t('side.recentEmpty') + '</div>'; return; }
   list.forEach((abs) => {
     const b = document.createElement('button');
     b.type = 'button';
@@ -1781,8 +1794,8 @@ function applySettings() {
   $id('setFontDemo')?.classList.toggle('active', S.fontPreset === 'demo');
   const fp = $id('valFontPreset');
   if (fp) {
-    const nm = S.fontPreset === 'code' ? '代码' : S.fontPreset === 'demo' ? '演示' : '阅读';
-    fp.textContent = `${nm} · 标题${S.h1Size.toFixed(2)}em·正文${S.bodySize}px·代码${S.codeSize}px`;
+    const pk = { read: 's.read.presetRead', code: 's.read.presetCode', demo: 's.read.presetDemo' }[S.fontPreset] || 's.read.presetRead';
+    fp.textContent = t('s.read.presetDesc', { p: t(pk), h: S.h1Size.toFixed(2), b: S.bodySize, c: S.codeSize });
   }
   $id('setThemeDark')?.classList.toggle('active', S.theme === 'dark');
   $id('setThemeLight')?.classList.toggle('active', S.theme === 'light');
@@ -2192,39 +2205,39 @@ function wire() {
   $qa('[data-drawer]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); openDrawer(b.dataset.drawer, b); }));
   // R12c(e)：右键菜单——文件树文件（打开/收藏）、收藏（取消收藏）、最近（移除），委托绑定防重建丢失
   $id('sideBody')?.addEventListener('contextmenu', (e) => {
-    const t = e.target.closest('.tree-item.file');
-    if (!t) return;
+    const hitEl = e.target.closest('.tree-item.file');
+    if (!hitEl) return;
     e.preventDefault();
-    const rel = t.dataset.rel;
+    const rel = hitEl.dataset.rel;
     const abs = absOfRel(rel);
     if (!abs) return;
     const fav = isFavorited(abs);
     showCtxMenu(e.clientX, e.clientY, [
-      { label: '打开', fn: () => openInRoot(rel) },
-      { label: '重命名…', fn: () => { openInRoot(rel).then(() => renameDoc()); } },
-      { label: '删除(进回收站)', fn: () => { openInRoot(rel).then(() => deleteDoc()); } },
-      { label: '新建文档…', fn: () => newDoc() },
-      fav ? { label: '取消收藏', fn: () => toggleFavorite(abs) } : { label: '收藏', fn: () => toggleFavorite(abs) },
+{ label: t('ctx.open'), fn: () => openInRoot(rel) },
+      { label: t('file.rename'), fn: () => { openInRoot(rel).then(() => renameDoc()); } },
+      { label: t('ctx.delete'), fn: () => { openInRoot(rel).then(() => deleteDoc()); } },
+      { label: t('ctx.newDoc'), fn: () => newDoc() },
+      fav ? { label: t('ctx.unfav'), fn: () => toggleFavorite(abs) } : { label: t('ctx.fav'), fn: () => toggleFavorite(abs) },
     ]);
   });
   $id('docFavs')?.addEventListener('contextmenu', (e) => {
-    const t = e.target.closest('.drawer-item');
-    if (!t || !t.dataset.abs) return;
+    const hitEl = e.target.closest('.drawer-item');
+    if (!hitEl || !hitEl.dataset.abs) return;
     e.preventDefault();
-    const abs = t.dataset.abs;
+    const abs = hitEl.dataset.abs;
     showCtxMenu(e.clientX, e.clientY, [
-      { label: '打开', fn: () => openExternal(abs) },
-      { label: '取消收藏', fn: () => { S.favorites = S.favorites.filter((f) => f !== abs); LS.set('sr_favorites', S.favorites); refreshFavDocBtn(); renderDocDrawer(); } },
+      { label: t('ctx.open'), fn: () => openExternal(abs) },
+      { label: t('ctx.unfav'), fn: () => { S.favorites = S.favorites.filter((f) => f !== abs); LS.set('sr_favorites', S.favorites); refreshFavDocBtn(); renderDocDrawer(); } },
     ]);
   });
   const ctxRecent = (boxId) => $id(boxId)?.addEventListener('contextmenu', (e) => {
-    const t = e.target.closest('.drawer-item, .side-recent');
-    if (!t || !t.dataset.abs) return;
+    const hitEl = e.target.closest('.drawer-item, .side-recent');
+    if (!hitEl || !hitEl.dataset.abs) return;
     e.preventDefault();
-    const abs = t.dataset.abs;
+    const abs = hitEl.dataset.abs;
     showCtxMenu(e.clientX, e.clientY, [
-      { label: '打开', fn: () => openExternal(abs) },
-      { label: '移除这条记录', fn: () => { S.recent = S.recent.filter((r) => r !== abs); LS.set('sr_recent', S.recent); renderRecent(); renderDocDrawer(); } },
+      { label: t('ctx.open'), fn: () => openExternal(abs) },
+      { label: t('ctx.forget'), fn: () => { S.recent = S.recent.filter((r) => r !== abs); LS.set('sr_recent', S.recent); renderRecent(); renderDocDrawer(); } },
     ]);
   });
   ctxRecent('docRecent');
@@ -2285,10 +2298,11 @@ async function refreshFileAssoc() {
   const el = $id('fileAssocStatus'); if (!el || !invoke) return;
   try {
     const r = await invoke('get_md_default');
-    el.textContent = r && r.isTmmd ? 'TMMD（就是本应用）' : (r && r.progId ? r.progId : '未知');
-  } catch { el.textContent = '读不到'; }
+el.textContent = r && r.isTmmd ? t('assoc.self') : (r && r.progId ? r.progId : t('assoc.unknown'));
+  } catch { el.textContent = t('assoc.unreadable'); }
 }
 async function boot() {
+  pushLangToShell(currentLang());   // 冷启动第一件事:让原生壳用对语言(托盘/对话框)
   // 版本号（R7b：顶栏品牌字已撤，版本只在设置菜单显示；浏览器预览降级为空）
   try {
     const v = await window.__TAURI__.app.getVersion();
@@ -2375,8 +2389,7 @@ const I18N = {
   'menu.doc': ['文档', 'Docs', 'ドキュメント'],
   'menu.theme': ['切换深浅主题', 'Toggle theme', 'テーマ切替'],
   'menu.settings': ['显示设置', 'Settings', '設定'],
-  'menu.glass': ['玻璃质感(材质/底色)', 'Glass material & tint', 'ガラス素材と色'],
-  'menu.side': ['收起/展开侧栏', 'Toggle sidebar', 'サイドバー切替'],
+  'menu.glass': ['玻璃质感(材质/底色/浓度)', 'Glass material & tint', 'ガラス素材と色'],
   'file.openFolder': ['打开文件夹', 'Open folder', 'フォルダを開く'],
   'file.openFile': ['打开文件', 'Open file', 'ファイルを開く'],
   'file.exportHtml': ['导出 HTML', 'Export HTML', 'HTML 書き出し'],
@@ -2439,7 +2452,6 @@ const I18N = {
   's.theme.theme': ['主题', 'Theme', 'テーマ'],
   's.theme.palette': ['配色方案', 'Palette', '配色'],
   's.theme.lang': ['界面语言', 'Language', '表示言語'],
-  's.glass.glass': ['玻璃质感', 'Glass material', 'ガラス素材'],
   's.glass.floor': ['可读性保底', 'Legibility floor', '可読性の下限'],
   's.glass.sys': ['系统回落', 'System fallback', 'システム連動'],
   's.file.assoc': ['MD 默认打开', 'Default .md app', '.md 既定アプリ'],
@@ -2525,6 +2537,10 @@ const I18N = {
   'err.glassApply': ['玻璃应用失败: ', 'Applying the glass material failed: ', 'ガラス効果の適用に失敗: '],
   'err.tailExpected': ['期望 ', 'expected ', '期待 '],
   'err.tailActual': ['实际 ', 'actual ', '実際 '],
+  'err.noAppHandle': ['应用句柄尚未初始化', 'The app handle is not ready', 'アプリハンドルが未初期化です'],
+  'err.badRoot': ['无法解析根目录: ', 'Cannot resolve the root folder: ', 'ルートフォルダを解決できません: '],
+  'err.badPathResolve': ['无法解析路径: ', 'Cannot resolve the path: ', 'パスを解決できません: '],
+  'err.noParent': ['无父目录', 'No parent folder', '親フォルダがありません'],
   'err.read': ['读文件失败', 'Reading the file failed', 'ファイルの読み込みに失敗'],
   'err.write': ['写入失败', 'Writing failed', '書き込みに失敗'],
   'err.writeTmp': ['写临时文件失败(可能是磁盘满或目录只读)', 'Writing the temp file failed (disk full or read-only folder)', '一時ファイルの書き込みに失敗(容量不足/読み取り専用の可能性)'],
@@ -2585,47 +2601,151 @@ const I18N = {
   'upd.downloading': ['下载中 {p}%', 'Downloading {p}%', 'ダウンロード中 {p}%'],
   'upd.installing': ['正在安装,应用即将重启…', 'Installing — the app will restart…', 'インストール中。まもなく再起動します…'],
   'upd.byebye': ['正在退出以完成安装…', 'Closing to finish the update…', '更新のため終了します…'],
-  'upd.fail': ['更新失败:', 'Update failed: ', '更新に失敗: '],
+  'upd.failHdr': ['更新失败: {e}', 'Update failed: {e}', '更新に失敗: {e}'],
+  'upd.fail': ['更新失败: ', 'Update failed: ', '更新に失敗: '],
   'search.hitsFiles': ['{f} 个文件 · {n} 处命中', '{n} hits in {f} files', '{f} ファイル / {n} 件'],
   'search.rows': ['{n} 处', '{n} hits', '{n} 件'],
   'toast.copyFail': ['复制失败,请手动选择', 'Copy failed', 'コピーに失敗しました'],
   'toast.watchOn': ['已开始监听外部修改', 'Watching for external changes', '外部変更を監視中'],
   'code.copy': ['复制整块代码', 'Copy code', 'コードをコピー'],
+  /* ═══════════ v1.8.17 全量补齐 ═══════════
+   * 上面那批是"够用就行"时留下的;下面这批是原先**散落在 HTML/JS 里写死**的文案 —— 切到 en/ja 就露中文的病根。
+   * 约定:zh 列**等于页面上的原始字面量**,`ui-reader/index.html` 里的 `data-i18n*` 钩子就是按这个值自动贴的;
+   * 因此改 zh 列 = 改页面初值,两边必须一字不差(含全角标点与 '–' 这类字符)。 */
+  'app.title': ['TMMD · 透明 Markdown 阅读器', 'TMMD · Transparent Markdown reader', 'TMMD · 透過 Markdown リーダー'],
+  'app.desc': ['透明 Markdown 阅读器,轻量本地优先', 'A transparent, local-first Markdown reader', '透過でローカル優先の Markdown リーダー'],
+  // ── 窗口按钮 / 通用词
+  'win.min': ['最小化', 'Minimize', '最小化'],
+  'win.max': ['最大化/还原', 'Maximize / Restore', '最大化 / 元に戻す'],
+  'win.close': ['关闭', 'Close', '閉じる'],
+  'win.more': ['更多', 'More', 'その他'],
+  'win.moreTip': ['更多功能', 'More actions', 'その他の操作'],
+  'ui.on': ['开', 'On', 'オン'],
+  'ui.off': ['关', 'Off', 'オフ'],
+  'ui.clear': ['清除', 'Clear', 'クリア'],
+  // ── 语言名(endonym:三语下都按本族写法显示)
+  'lang.zh': ['中文', '中文', '中文'],
+  'lang.en': ['English', 'English', 'English'],
+  'lang.ja': ['日本語', '日本語', '日本語'],
+  // ── 设置页:搜索栏与分类
+  's.set.searchPh': ['搜索设置(中文/拼音/英文,如:字号/font/主题/theme/玻璃/glass)', 'Search settings (e.g. font, theme, glass)', '設定を検索(例: フォント / テーマ / ガラス)'],
+  's.set.close': ['关闭设置', 'Close settings', '設定を閉じる'],
+  's.set.navAria': ['设置分类', 'Settings sections', '設定の分類'],
+  // ── 设置页:阅读
+  's.read.fontDesc': ['中文长文建议无衬线;等宽更"工程感"', 'Sans-serif reads better for long CJK text; mono feels more "engineered"', '長文の中国語はサンセリフ推奨。等幅はより「エンジニア的」'],
+  's.read.measureDesc': ['中文规范 32–38 字/行;当前按 em 折算', 'The CJK norm is 32–38 characters per line; shown here in em', '中国語の目安は 1 行 32–38 字(ここでは em 換算)'],
+  's.read.lineHDesc': ['正文行距倍数(1.4–2.0)', 'Body line-height multiplier (1.4–2.0)', '本文の行間倍率(1.4–2.0)'],
+  's.read.toolbarDesc': ['顶栏按钮显示模式', 'How the toolbar buttons are rendered', 'ツールバーの表示モード'],
+  's.read.sideDesc': ['拖拽侧栏分隔条调整(160–480px,自动记忆)', 'Drag the sidebar splitter (160–480px, remembered)', 'サイドバーの仕切りをドラッグ(160–480px、記憶されます)'],
+  's.read.dragTip': ['拖拽调整', 'Drag to adjust', 'ドラッグで調整'],
+  's.read.tbIcon': ['仅图标', 'Icons only', 'アイコンのみ'],
+  's.read.tbText': ['仅文字', 'Text only', 'テキストのみ'],
+  's.read.bodySans': ['无衬线', 'Sans-serif', 'サンセリフ'],
+  's.read.bodyMono': ['等宽', 'Monospace', '等幅'],
+  's.read.presetRead': ['阅读', 'Reading', '閲覧'],
+  's.read.presetCode': ['代码', 'Code', 'コード'],
+  's.read.presetDemo': ['演示', 'Demo', 'デモ'],
+  's.read.presetDesc': ['{p} · 标题{h}em·正文{b}px·代码{c}px', '{p} · H1 {h}em · body {b}px · code {c}px', '{p} · 見出し {h}em・本文 {b}px・コード {c}px'],
+  // ── 设置页:阅读增强
+  's.enh.typewriterDesc': ['编辑时让光标行稳定停在视口偏上位置(不隐藏任何内容)', 'Keeps the caret line steady above the middle while editing (hides nothing)', '編集中にカーソル行を画面やや上に固定(内容は隠しません)'],
+  's.enh.focusDesc': ['鼠标所在段落以外的内容淡出(不隐藏),Ctrl+Shift+F', 'Dims everything but the paragraph under the cursor (hides nothing) — Ctrl+Shift+F', 'マウスがある段落以外を淡く表示(非表示にはしません) — Ctrl+Shift+F'],
+  's.enh.zenDesc': ['隐藏顶栏与侧栏,只留正文;Esc 或 F11 退出', 'Hides the toolbar and sidebar, keeping only the text; Esc or F11 to exit', 'ツールバーとサイドバーを隠して本文だけに。Esc または F11 で終了'],
+  's.enh.codeLnDesc': ['在代码块左侧显示行号(悬停可复制整块)', 'Shows line numbers left of code blocks (hover to copy the block)', 'コードブロックの左に行番号を表示(ホバーでブロックをコピー)'],
+  // ── 设置页:主题外观
+  's.theme.dark': ['深色', 'Dark', 'ダーク'],
+  's.theme.light': ['浅色', 'Light', 'ライト'],
+  's.theme.themeDesc': ['深色 / 浅色切换', 'Switch between dark and light', 'ダーク / ライトの切替'],
+  's.theme.codeStyleDesc': ['正文里 `这类` 代码怎么画:荧光笔只染下半截、无痕只靠等宽字形 —— 都不再压灰块;引用块跟着同一档。代码块(pre)的浓底不受这里影响。改完看左边正文即可(设置面板是右侧抽屉,不挡正文)', 'How `inline code` is drawn: the highlighter tints only the lower half, plain relies on the monospace face alone — neither paints a grey slab. Blockquotes follow the same style; fenced code blocks keep their own background. The panel is a right-hand drawer, so the text on the left shows the change live.', '本文中の `インラインコード` の描画方法:マーカーは下半分だけを塗り、装飾なしは等幅フォントのみ — どちらもグレーの下地を敷きません。引用ブロックも同じ設定に従い、コードブロック(pre)の背景は影響を受けません。設定は右側のドロワーなので、左の本文で結果を確認できます。'],
+  's.theme.paletteDesc': ['跟随当前主题的可选配色', 'Palette options for the current theme', '現在のテーマで選べる配色'],
+  's.theme.langDesc': ['中文 / English / 日本語', 'Switch the interface language', '表示言語を切り替えます'],
+  // ── 设置页:玻璃
+  's.glass.desc': ['点工具栏「玻璃」按钮微调材质与整窗底色', 'Fine-tune material and tint from the Glass button in the toolbar', 'ツールバーの「ガラス」ボタンで素材と地色を微調整'],
+  's.glass.openPanel': ['见玻璃面板', 'Open the glass panel', 'ガラスパネルを開く'],
+  's.glass.floorDesc': ['文字整体透明度下限 70%;代码块/图片/卡片始终不透明(白字直压模糊底实测仅 3.95:1)', 'Text opacity never drops below 70%; code, images and cards stay opaque (white text straight on the blurred backdrop measured only 3.95:1)', 'テキストの不透明度は 70% まで。コード・画像・カードは常に不透明(ぼかし背景に白文字を直置きすると実測 3.95:1)'],
+  's.halo.title': ['文字阴影', 'Text shadow', 'テキストの影'],
+  's.halo.desc': ['给文字一圈局部对比,亮背景也读得清;拖动条在玻璃面板', 'Adds local contrast around glyphs so text stays readable on bright backdrops; the slider lives in the glass panel', '文字の周囲に局所的なコントラストを付けます。明るい背景でも読めます(スライダーはガラスパネル)'],
+  's.glass.sysDesc': ['关闭"透明效果"或高对比模式时自动退为实色', 'Falls back to a solid colour when transparency or high contrast is on', '透明効果オフ / ハイコントラスト時は自動で単色にフォールバック'],
+  // ── 设置页:文件与导出
+  's.file.assocDesc': ['跳转系统默认应用页设为 TMMD', 'Opens Default apps so you can pick TMMD', '「既定のアプリ」を開いて TMMD を選択'],
+  's.file.assocSet': ['设为默认打开...', 'Set as default...', '既定に設定...'],
+  's.file.currentDesc': ['系统当前 .md 默认程序', 'The current .md handler in the system', 'システム上の .md 既定アプリ'],
+  's.file.exportDesc': ['导出为独立 HTML,再交给浏览器打印成 PDF', 'Exports a standalone HTML, then hands it to the browser to print as PDF', '単体 HTML を書き出し、ブラウザで PDF 印刷します'],
+  's.file.printBtn': ['打印', 'Print', '印刷'],
+  // ── 设置页:快捷键 / 关于
+  's.keys.find': ['文内查找(Enter 下一个 / Shift+Enter 上一个)', 'Find in document (Enter for next, Shift+Enter for previous)', '文書内検索(Enter で次 / Shift+Enter で前)'],
+  's.keys.focus': ['专注模式开关', 'Toggle focus mode', '集中モードの切替'],
+  's.keys.zen': ['无干扰模式开关', 'Toggle immersive mode', '没入モードの切替'],
+  's.keys.esc': ['关闭查找 / 设置 / 玻璃 / 下拉抽屉 / 退出无干扰', 'Closes find / settings / glass / drawers, and leaves immersive mode', '検索 / 設定 / ガラス / ドロワーを閉じ、没入モードを終了'],
+  's.keys.closeTab': ['关闭当前标签页', 'Close the current tab', '現在のタブを閉じる'],
+  's.keys.switchTab': ['轮切标签页(Shift 反向)', 'Cycle through tabs (Shift reverses)', 'タブを順に切替(Shift で逆順)'],
+  's.about.verDesc': ['当前应用版本', 'The version you are running', '現在のバージョン'],
+  's.about.designDesc': ['竞品调研 · 24 条视觉检查表', 'Competitor study · a 24-point visual checklist', '競合調査 · 24 項目のビジュアルチェック'],
+  // ── 玻璃面板
+  'glass.material': ['材质', 'Material', '素材'],
+  'glass.effect': ['玻璃效果', 'Glass effect', 'ガラス効果'],
+  'glass.mat.plain': ['直透(不模糊)', 'Clear (no blur)', 'クリア(ぼかしなし)'],
+  'glass.mat.acrylic': ['磨砂(Acrylic)', 'Frosted (Acrylic)', 'つや消し(Acrylic)'],
+  'glass.mat.mica': ['壁纸色(Mica)', 'Wallpaper tint (Mica)', '壁紙色(Mica)'],
+  'glass.sysState': ['系统状态', 'System status', 'システム状態'],
+  'glass.tint': ['整窗底色', 'Window tint', 'ウィンドウ地色'],
+  'glass.apply': ['应用', 'Apply', '適用'],
+  'glass.atmos': ['氛围', 'Ambience', '雰囲気'],
+  'glass.atmosWeak': ['弱', 'Weak', '弱'],
+  'glass.atmosMedium': ['中', 'Medium', '中'],
+  'glass.atmosStrong': ['强', 'Strong', '強'],
+  'glass.concRow': ['浓度', 'Density', '濃度'],
+  'glass.closeAria': ['关闭玻璃面板', 'Close the glass panel', 'ガラスパネルを閉じる'],
+  // ── 侧栏 / 目录 / 导读地图 / 标签 / 抽屉
+  'side.tocTitle': ['目录', 'Outline', '目次'],
+  'side.tocEmpty': ['本文没有标题大纲', 'No headings in this document', 'この文書に見出しはありません'],
+  'side.mapEmpty': ['本文没有可用章节标题,无法生成地图。', 'No usable headings — cannot build a map.', '使える見出しがないためマップを作成できません。'],
+  'side.mapMin': ['约 {n} 分钟', '~{n} min', '約 {n} 分'],
+  'side.mapProgress': ['第 {i} / {n} 章 · 已读约 {p}%', 'Chapter {i} / {n} · ~{p}% read', '第 {i} / {n} 章 · 約 {p}% 読了'],
+  'side.countItems': ['{n} 项', '{n} items', '{n} 件'],
+  'side.recentEmpty': ['暂无打开记录', 'No recently opened files', '最近開いた記録はありません'],
+  'drawer.empty': ['暂无', 'Nothing yet', 'まだありません'],
+  'side.resizeH': ['拖拽调整上下高度', 'Drag to resize the height', 'ドラッグで高さを調整'],
+  'side.resizeW': ['拖拽调整侧栏宽度', 'Drag to resize the sidebar', 'ドラッグで幅を調整'],
+  'zen.hint': ['按 F11 或 Esc 退出无干扰模式', 'Press F11 or Esc to leave immersive mode', 'F11 または Esc で没入モードを終了'],
+  'zen.hintShort': ['F11 / Esc 退出无干扰', 'F11 / Esc to leave immersive mode', 'F11 / Esc で没入モードを終了'],
+  'tab.close': ['关闭标签页', 'Close tab', 'タブを閉じる'],
+  'tab.closeAria': ['关闭 {name}', 'Close {name}', '{name} を閉じる'],
+  // ── 编辑态
+  'edit.enterTip': ['编辑当前文档', 'Edit this document', 'この文書を編集'],
+  'edit.save': ['保存修改', 'Save changes', '変更を保存'],
+  'edit.saveTip': ['保存修改到原文件', 'Save changes to the original file', '元のファイルに保存'],
+  'edit.findPh': ['查找', 'Find', '検索'],
+  'edit.replacePh': ['替换为', 'Replace with', '置換後の文字列'],
+  'edit.prev': ['上一个', 'Previous', '前へ'],
+  'edit.next': ['下一个', 'Next', '次へ'],
+  'edit.replaceOne': ['替换', 'Replace', '置換'],
+  'edit.replaceAll': ['全部替换', 'Replace all', 'すべて置換'],
+  'edit.diskChanged': ['磁盘已更新', 'Changed on disk', 'ディスク上で変更'],
+  // ── 右键菜单 / 收藏 / 侧栏开关
+  'ctx.open': ['打开', 'Open', '開く'],
+  'ctx.delete': ['删除(进回收站)', 'Delete (Recycle Bin)', '削除(ごみ箱へ)'],
+  'ctx.newDoc': ['新建文档...', 'New document...', '新規ドキュメント...'],
+  'ctx.unfav': ['取消收藏', 'Remove from favorites', 'お気に入りを解除'],
+  'ctx.fav': ['收藏', 'Add to favorites', 'お気に入りに追加'],
+  'ctx.forget': ['移除这条记录', 'Remove from history', 'この記録を削除'],
+  'doc.favOn': ['已收藏', 'Starred', 'スター済み'],
+  'doc.favTipOn': ['取消收藏本文', 'Remove from favorites', 'お気に入りを解除'],
+  'side.show': ['显示侧栏', 'Show sidebar', 'サイドバーを表示'],
+  'side.expand': ['展开侧栏', 'Expand sidebar', 'サイドバーを展開'],
+  'side.fold': ['收起侧栏', 'Collapse sidebar', 'サイドバーを格納'],
+  'img.fail': ['图片加载失败: ', 'Image failed to load: ', '画像の読み込みに失敗: '],
+  'assoc.self': ['TMMD(就是本应用)', 'TMMD (this app)', 'TMMD(このアプリ)'],
+  'assoc.unknown': ['未知', 'Unknown', '不明'],
+  'assoc.unreadable': ['读不到', 'Unreadable', '読み取れません'],
+  'new.defaultName': ['未命名.md', 'untitled.md', '無題.md'],
 };
-const I18N_TARGETS = [
-  ['#tbFile', 'menu.file', 'title'], ['#tbEdit', 'menu.edit', 'title'], ['#tbView', 'menu.view', 'title'],
-  ['#tbDoc', 'menu.doc', 'title'], ['#btnTheme', 'menu.theme', 'title'], ['#btnSettings', 'menu.settings', 'title'],
-  ['#btnGlass', 'menu.glass', 'title'], ['#btnSide', 'menu.side', 'title'],
-  ['#btnOpenFolder span', 'file.openFolder'], ['#btnOpenFile span', 'file.openFile'],
-  ['#btnNewDoc span', 'file.new'], ['#btnSaveAs span', 'file.saveAs'], ['#btnRenameDoc span', 'file.rename'], ['#btnDeleteDoc span', 'file.delete'],
-  ['#btnExportHtml span', 'file.exportHtml'], ['#btnExportPdf span', 'file.exportPdf'], ['#btnPrint span', 'file.print'],
-  ['#btnUndo span', 'edit.undo'], ['#btnRedo span', 'edit.redo'], ['#btnEdit span', 'edit.edit'], ['#btnRefresh span', 'edit.refresh'],
-  ['#btnTree span', 'view.tree'], ['#btnToc span', 'view.toc'], ['#btnMap span', 'view.map'], ['#btnFindLib span', 'view.search'],
-  ['#btnFindDoc span', 'view.find'], ['#btnFocus span', 'view.focus'], ['#btnZen span', 'view.zen'],
-  ['#btnSideToggle span', 'view.hideSide'], ['#btnCompact span', 'view.compact'],
-  ['#btnFavDoc span', 'doc.fav'], ['#menuDoc .drawer-title:first-of-type', 'doc.recent'], ['#menuDoc .drawer-title:last-of-type', 'doc.favs'],
-  ['#readerEmpty h2', 'empty.title'], ['#readerEmpty > p:nth-of-type(1)', 'empty.sub'],
-  ['#emptyOpenFolder', 'empty.openFolder'], ['#emptyOpenFile', 'empty.openFile'], ['#readerEmpty .empty-hint', 'empty.hint'],
-  ['#sideEmpty', 'side.emptyHtml', 'html'], ['#sideBottom .side-bottom-head > span:first-child', 'side.recent'],
-  ['#findInput', 'find.placeholder', 'placeholder'], ['#findPrev', 'find.prev', 'title'], ['#findNext', 'find.next', 'title'], ['#findClose', 'find.close', 'title'],
-  ['#settingsPanel .settings-header span', 'settings.title'], ['#glassPanel .settings-header span', 'glass.title'],
-  ['.setpage-nav-item[data-target="sec-read"]', 'nav.read'], ['.setpage-nav-item[data-target="sec-enhance"]', 'nav.enhance'],
-  ['.setpage-nav-item[data-target="sec-theme"]', 'nav.theme'], ['.setpage-nav-item[data-target="sec-glass"]', 'nav.glass'],
-  ['.setpage-nav-item[data-target="sec-file"]', 'nav.file'], ['.setpage-nav-item[data-target="sec-keys"]', 'nav.keys'],
-  ['.setpage-nav-item[data-target="sec-about"]', 'nav.about'],
-  ['#sec-read .set-section-title', 'nav.read', 'text'], ['#sec-enhance .set-section-title', 'nav.enhance', 'text'],
-  ['#sec-theme .set-section-title', 'nav.theme', 'text'], ['#sec-glass .set-section-title', 'nav.glass', 'text'],
-  ['#sec-file .set-section-title', 'nav.file', 'text'], ['#sec-keys .set-section-title', 'nav.keys', 'text'],
-  ['#sec-about .set-section-title', 'nav.about', 'text'],
-  ['#setCodeStyleWash', 's.theme.csWash', 'text'], ['#setCodeStyleUnderline', 's.theme.csUnderline', 'text'],
-  ['#setCodeStyleBare', 's.theme.csBare', 'text'], ['#setCodeStylePlate', 's.theme.csPlate', 'text'],
-  ['#sec-read .set-row-title', ['s.read.preset', 's.read.font', 's.read.measure', 's.read.lineH', 's.read.toolbar', 's.read.side']],
-  ['#sec-enhance .set-row-title', ['s.enh.typewriter', 's.enh.focus', 's.enh.zen', 's.enh.codeLn']],
-  ['#sec-theme .set-row-title', ['s.theme.theme', 's.theme.codeStyle', 's.theme.palette', 's.theme.lang']],
-  ['#sec-glass .set-row-title', ['s.glass.glass', 's.glass.floor', 's.glass.sys']],
-  ['#sec-file .set-row-title', ['s.file.assoc', 's.file.current', 's.file.export']],
-  ['#sec-about .set-row-title', ['s.about.ver', 's.about.design']],
-];
+/* v1.8.17 声明式接线:HTML 上挂钩子,取代"按位置贴"的 I18N_TARGETS
+ *   data-i18n          文本(元素里带 <svg> 图标则保留图标,文本接在后面)
+ *   data-i18n-html     富文本('|' 当换行,给 #sideEmpty 这种两行空态用)
+ *   data-i18n-title / data-i18n-aria / data-i18n-ph   属性(值 = 字典键)
+ * 新增 UI 只要在 HTML 上写钩子就自动跟着语言走 —— 旧写法漏掉整整一个玻璃面板就是这么来的。
+ * 由 JS 现算的文案(文件名、计数、读数)不挂钩子,统一在 refreshDynI18n() 里重刷。 */
+const I18N_ATTR = [['data-i18n-title', 'title'], ['data-i18n-aria', 'aria-label'], ['data-i18n-ph', 'placeholder']];
 function currentLang() {
   const l = String(S.lang || (navigator.language || 'zh')).slice(0, 2).toLowerCase();
   return LANGS.includes(l) ? l : 'zh';
@@ -2636,29 +2756,63 @@ function t(key, vars) {
   if (vars) Object.keys(vars).forEach((k) => { s = s.split('{' + k + '}').join(String(vars[k])); });
   return s;
 }
+/* 设置页搜索:关键词随语言重建。每行 = 本行本地化后的标题+描述 + 语言无关的 ascii 词(data-search-ascii)
+ * + 原始中文词(data-search-zh)—— 这样任何语言下都能用中文/英文搜到同一行。 */
+function buildSetSearchIndex() {
+  $qa('.set-section').forEach((sec) => {
+    const ti = sec.querySelector('.set-section-title');
+    if (ti) sec.dataset.title = ti.textContent.trim();
+  });
+  $qa('#settingsPanel .set-row').forEach((row) => {
+    const ti = row.querySelector('.set-row-title');
+    const de = row.querySelector('.set-row-desc');
+    row.dataset.search = [ti ? ti.textContent : '', de ? de.textContent : '',
+      row.dataset.searchAscii || '', row.dataset.searchZh || ''].join(' ').replace(/\s+/g, ' ').trim();
+  });
+}
 function applyI18n() {
   const lang = currentLang();
   document.documentElement.lang = lang === 'zh' ? 'zh-CN' : lang;
-  I18N_TARGETS.forEach(([sel, key, mode]) => {
-    if (Array.isArray(key)) {
-      $qa(sel).forEach((el, i) => { if (key[i]) el.textContent = t(key[i]); });
-      return;
-    }
-    const list = $qa(sel);
-    list.forEach((el) => {
-      if (mode === 'title' || mode === 'placeholder') el.setAttribute(mode, t(key));
-      else if (mode === 'html') el.innerHTML = t(key).split('|').join('<br/>');
-      else if (mode === 'text') {
-        const svg = el.querySelector('svg');
-        el.textContent = '';
-        if (svg) { el.appendChild(svg); el.appendChild(document.createTextNode(' ')); }
-        el.appendChild(document.createTextNode(t(key)));
-      } else el.textContent = t(key);
+  if (!S.cur) document.title = t('app.title');   // 有文档时标题是"文件名 · TMMD",别抢
+  const meta = $q('meta[name="description"]');
+  if (meta) meta.setAttribute('content', t('app.desc'));
+  $qa('[data-i18n]').forEach((el) => {
+    const s = t(el.dataset.i18n);
+    const svg = el.querySelector(':scope > svg');
+    if (svg) {
+      [...el.childNodes].forEach((n) => { if (n !== svg) n.remove(); });
+      el.appendChild(document.createTextNode(' ' + s));
+    } else el.textContent = s;
+  });
+  $qa('[data-i18n-html]').forEach((el) => { el.innerHTML = t(el.dataset.i18nHtml).split('|').join('<br/>'); });
+  I18N_ATTR.forEach(([attr, prop]) => {
+    $qa('[' + attr + ']').forEach((el) => {
+      const v = t(el.getAttribute(attr));
+      if (prop === 'aria-label') el.setAttribute('aria-label', v); else el.setAttribute(prop, v);
     });
   });
+  buildSetSearchIndex();
   const LANG_BTN = { zh: 'langZh', en: 'langEn', ja: 'langJa' };
   LANGS.forEach((l) => $id(LANG_BTN[l])?.classList.toggle('active', lang === l));
-  const zh = $id('langZh'); if (zh) zh.textContent = '中文';
+  refreshDynI18n();   // 声明式覆盖不到的(JS 现算文案)在最后统一重刷,顺序不能反
+}
+/* 语言切换时重刷"由 JS 写文案"的地方:灯标、标签、抽屉、侧栏、编辑态按钮、设置读数 */
+function refreshDynI18n() {
+  syncEditBtn();
+  renderTabs();
+  renderRecent();
+  renderDocDrawer();
+  renderSide();
+  applySideCollapsed(!!S.sideCollapsed);
+  refreshFavDocBtn();
+  const fp = $id('valFontPreset');
+  if (fp) {
+    const pk = { read: 's.read.presetRead', code: 's.read.presetCode', demo: 's.read.presetDemo' }[S.fontPreset] || 's.read.presetRead';
+    fp.textContent = t('s.read.presetDesc', { p: t(pk), h: S.h1Size.toFixed(2), b: S.bodySize, c: S.codeSize });
+  }
+  updateMapHighlight();   // 内部自带 S.view!=='map' 早退;"第 N/M 章"是现算文案,得跟着语言重刷
+  if (updLast) setUpdateStatus(t(updLast.key, updLast.vars));   // 更新器那行读数也是现算的
+  refreshFileAssoc();
 }
 function setLang(l) {
   if (!LANGS.includes(l)) return;
@@ -2666,6 +2820,12 @@ function setLang(l) {
   applyI18n();
   renderSide();
   applySystemEffects();
+  pushLangToShell(l);
+}
+/* v1.8.17:原生壳(托盘菜单 / 选文件夹对话框标题 / 默认文件名)读不到 localStorage,由前端把当前语言推给它 */
+function pushLangToShell(l) {
+  if (!invoke) return;
+  try { invoke('set_lang', { lang: l }); } catch { /* 浏览器预览没有后端 */ }
 }
 
 /* ---------------- 脚注(独立于 marked,零依赖) ---------------- */
@@ -2941,7 +3101,7 @@ function setFocusMode(on) {
 function setZenMode(on) {
   S.zen = !!on;
   applyEnhance();
-  if (S.zen) toast(t('toast.watchOn') && 'F11 / Esc 退出无干扰');
+  if (S.zen) toast(t('zen.hintShort'));
 }
 function bindFocusTracking() {
   const reader = $id('reader');

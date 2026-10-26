@@ -571,7 +571,7 @@ fn desktop_info() -> DesktopInfo {
 #[tauri::command]
 fn pick_folder() -> Result<Option<PickedFolder>, String> {
     let folder = rfd::FileDialog::new()
-        .set_title("选择 Markdown 文件夹")
+        .set_title(t(Msg::PickFolderTitle))
         .pick_folder();
     Ok(folder.map(|p| {
         let name = p
@@ -894,7 +894,7 @@ fn delete_file(root: String, rel: String) -> Result<(), String> {
 fn pick_save(default_name: Option<String>) -> Result<Option<String>, String> {
     let mut dlg = rfd::FileDialog::new()
         .add_filter("Markdown / Text", &["md", "markdown", "mdx", "txt", "html", "htm"])
-        .set_file_name(default_name.unwrap_or_else(|| "未命名.md".into()));
+        .set_file_name(default_name.unwrap_or_else(|| format!("{}.md", t(Msg::UntitledBase))));
     if let Some(dir) = default_dir() {
         dlg = dlg.set_directory(dir);
     }
@@ -1720,6 +1720,116 @@ fn update_note(app: tauri::AppHandle, version: String, action: String) -> Result
     Ok(())
 }
 
+// ───────────────────────── 原生壳语言(托盘 + 原生对话框) ─────────────────────────
+/// 当前语言码:0=zh(默认)| 1=ja | 2=en。
+/// 无锁原子:`set_lang` 只写一次、托盘/对话框读取零成本;不存在"读到半个字符串"的风险。
+/// 启动默认 zh,前端 boot 后会立刻调 `set_lang` 覆盖,所以这里不去读配置。
+static LANG: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Lang {
+    Zh = 0,
+    Ja = 1,
+    En = 2,
+}
+
+impl Lang {
+    /// 语言码 → 语言;**非法输入(未知码/空串)一律回落 zh**。
+    fn from_code(code: &str) -> Self {
+        match code {
+            "ja" => Lang::Ja,
+            "en" => Lang::En,
+            _ => Lang::Zh,
+        }
+    }
+
+    fn current() -> Self {
+        match LANG.load(std::sync::atomic::Ordering::Relaxed) {
+            1 => Lang::Ja,
+            2 => Lang::En,
+            _ => Lang::Zh,
+        }
+    }
+
+    fn store(self) {
+        LANG.store(self as u8, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// 原生壳需要跟随界面语言的文案 —— **恰好这 5 条**。
+/// 本文件其余含中文字面量全是错误信息:前端用正则表把它们映射成字典键,一律不动。
+#[derive(Clone, Copy)]
+enum Msg {
+    TrayShow,
+    TrayHide,
+    TrayQuit,
+    PickFolderTitle,
+    UntitledBase,
+}
+
+/// 查表:文案 × 语言 → 静态串(顺带 0 分配)。
+const fn tr(msg: Msg, lang: Lang) -> &'static str {
+    use Lang::{En, Ja, Zh};
+    match (msg, lang) {
+        (Msg::TrayShow, Zh) => "显示主窗口",
+        (Msg::TrayShow, En) => "Show window",
+        (Msg::TrayShow, Ja) => "ウィンドウを表示",
+        (Msg::TrayHide, Zh) => "隐藏到托盘",
+        (Msg::TrayHide, En) => "Hide to tray",
+        (Msg::TrayHide, Ja) => "トレイに格納",
+        (Msg::TrayQuit, Zh) => "退出 TMMD",
+        (Msg::TrayQuit, En) => "Quit TMMD",
+        (Msg::TrayQuit, Ja) => "TMMD を終了",
+        (Msg::PickFolderTitle, Zh) => "选择 Markdown 文件夹",
+        (Msg::PickFolderTitle, En) => "Choose a Markdown folder",
+        (Msg::PickFolderTitle, Ja) => "Markdown フォルダを選択",
+        (Msg::UntitledBase, Zh) => "未命名",
+        (Msg::UntitledBase, En) => "untitled",
+        (Msg::UntitledBase, Ja) => "無題",
+    }
+}
+
+/// 当前语言下的文案
+fn t(msg: Msg) -> &'static str {
+    tr(msg, Lang::current())
+}
+
+/// 托盘菜单句柄:setup 时存一次,`set_lang` 只改这几项的**文字**。
+/// 刻意不重建托盘图标 —— 左键单击切换、图标、tooltip、事件回调全部保持原样。
+#[derive(Default)]
+struct TrayMenu(std::sync::Mutex<Option<tauri::menu::Menu<tauri::Wry>>>);
+
+/// 前端 boot / 切语言时调用:存下语言码,并就地刷新托盘菜单文字。
+/// 菜单还没建好(理论上不会:托盘先于窗口显示建好)则只存码,`setup_tray` 建表时本来就按当前语言取字。
+#[tauri::command]
+fn set_lang(app: tauri::AppHandle, lang: String) -> Result<(), String> {
+    let l = Lang::from_code(&lang);
+    l.store();
+    // 托盘可能压根没建起来(setup_tray 失败只记 eprintln):那也不用崩,存码就够了
+    let Some(state) = app.try_state::<TrayMenu>() else {
+        return Ok(());
+    };
+    let guard = match state.0.lock() {
+        Ok(g) => g,
+        Err(_) => return Ok(()), // 锁中毒只影响刷文字,不该让前端收到异常
+    };
+    if let Some(menu) = guard.as_ref() {
+        for (id, msg) in [
+            ("show", Msg::TrayShow),
+            ("hide", Msg::TrayHide),
+            ("quit", Msg::TrayQuit),
+        ] {
+            if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = menu.get(id) {
+                if let Err(e) = item.set_text(tr(msg, l)) {
+                    // 只是菜单文字没刷新,不值得给用户弹错;留痕即可
+                    eprintln!("tray menu text update failed: {e}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 // ───────────────────────── 托盘(E 类:多窗口暂不做,前端是单窗口设计) ─────────────────────────
 /// 托盘:显示 / 隐藏 / 退出。
 /// **退出走关窗守卫**:这里调 `win.close()` 而不是 `process::exit`,于是未保存内容照样会被拦下来问一句
@@ -1727,10 +1837,12 @@ fn update_note(app: tauri::AppHandle, version: String, action: String) -> Result
 fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-    let show = MenuItem::with_id(app, "show", "显示主窗口", true, None::<&str>)?;
-    let hide = MenuItem::with_id(app, "hide", "隐藏到托盘", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出 TMMD", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", t(Msg::TrayShow), true, None::<&str>)?;
+    let hide = MenuItem::with_id(app, "hide", t(Msg::TrayHide), true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", t(Msg::TrayQuit), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+    // 留一份菜单句柄给 set_lang 改文字(不重建托盘,左键单击等设置原样保留)
+    let _ = app.manage(TrayMenu(std::sync::Mutex::new(Some(menu.clone()))));
     let mut builder = TrayIconBuilder::with_id("tmmd-tray")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -1902,7 +2014,8 @@ pub fn run() {
             watch_file,
             search_library,
             export_file,
-            open_any
+            open_any,
+            set_lang
         ])
         .run(tauri::generate_context!())
         .expect("error while running TMMD");
