@@ -303,7 +303,9 @@
     </div>
   </div>
 
-  <!-- R12b Round-2 玻璃面板收敛：只留总开关 + 材质 + 整窗底色（草稿+预览+应用） + 氛围三预设；分表面滑条已删，数值走预设 -->
+  <!-- R12b Round-2 玻璃面板收敛:总开关 + 材质 + 整窗底色(草稿+预览+应用) + 氛围三预设 + 文字阴影 + 浓度。
+       v1.8.16:分表面滑条仍是删的(单一浓度才"像一整块"),但**浓度**这条拖动条回来了(用户:
+       「应该可以用滚拖动条来拖动透明度」)—— 氛围三档只是它的快捷值,两边写同一个 SSOT(S.glass.conc)。 -->
   <div id="glassPanel" class="settings-panel" hidden>
     <div class="settings-header">
       <span>玻璃质感</span>
@@ -342,6 +344,11 @@
         <button id="setAtmosWeak" class="theme-btn">弱</button>
         <button id="setAtmosMedium" class="theme-btn active">中</button>
         <button id="setAtmosStrong" class="theme-btn">强</button>
+      </div>
+      <div class="settings-row">
+        <label>浓度</label>
+        <input type="range" id="setConc" min="1" max="100" step="1" value="40" />
+        <span class="settings-val" id="valConc">40%</span>
       </div>
       <div class="settings-row">
         <label>文字阴影</label>

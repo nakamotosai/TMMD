@@ -11,6 +11,14 @@
       "ssot": "app.js 的 GLASS_CONC_DEFAULT + ui-reader/app.css :root[--glass]",
       "why": "整窗一整块 acrylic:DWM 只出模糊(alpha=1),浓度全由页面层画,两处不相乘"
     },
+    "glass_panel": {
+      "controls": "总开关 + 材质 + 系统状态 + 整窗底色(草稿/预览/应用)+ 氛围三档 + **浓度拖动条** + 文字阴影",
+      "ssot": "浓度只有一个本源 S.glass.conc:三档预设写它,拖动条也写它;--glass 由 applyGlass 落 CSS,回显(滑条值/读数/按钮高亮)只此一处",
+      "slider": "浓度 1–100%、步长 1;拖动只落 CSS 变量,不调 applyGlassMaterial(glassSplit 的 dwm 恒 1,浓度已不影响 DWM 份额),免得每帧打后端",
+      "atmos_map": "atmosOf(conc):≥60 strong / ≤25 weak / 其余 medium —— 存档迁移与拖动条共用同一映射(v1.8.16 收,原先两处各写一份)",
+      "why": "R12b 删的是**分表面**滑条(base/chrome/reader/pop;单一浓度才'像一整块',该删),但**总浓度**被一起收掉只剩三档跳;2026-10-26 用户要求拖回来(「应该可以用滚拖动条来拖动透明度」)",
+      "gate": "e2e/r12f K1–K3"
+    },
     "text_halo": {
       "default_percent": 55,
       "range": [0, 100],

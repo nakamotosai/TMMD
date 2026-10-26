@@ -628,6 +628,40 @@ async function reset() {
   await val(`(() => { S.theme = 'dark'; applySettings(); return 1; })()`, 12000);
 }
 
+/* ═══════════ K) 玻璃浓度:拖动条与三档预设是同一本源 ═══════════
+ * 2026-10-26 用户:「透明面板里应该可以用滚拖动条来拖动透明度啊,现在怎么只有高中低三档?」
+ * R12b 当初是把数值收敛给预设(分表面滑条删掉是对的:单一浓度才"像一整块"),但**总浓度**这条该留。 */
+{
+  console.log('-- K 玻璃浓度滑条 --');
+  const r1 = await val(`(() => {
+    showPanel('glass');
+    const el = $id('setConc'); if (!el) return { no: true };
+    el.value = '55'; el.dispatchEvent(new Event('input', { bubbles: true }));
+    const g = S.glass;
+    return { conc: g.conc, atmos: g.atmos, css: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim(),
+      valText: $id('valConc').textContent, saved: JSON.parse(localStorage.getItem('sr_glass')).conc,
+      active: { w: $id('setAtmosWeak').classList.contains('active'), m: $id('setAtmosMedium').classList.contains('active'), s: $id('setAtmosStrong').classList.contains('active') } };
+  })()`, 8000);
+  ok('K1 拖动条写 SSOT:55 → conc / --glass / 存档 / 读数四处一致,氛围自动落 medium',
+    r1 && r1.conc === 55 && r1.atmos === 'medium' && r1.css === '55%' && r1.valText === '55%' && r1.saved === 55 &&
+    r1.active.m === true && r1.active.w === false && r1.active.s === false, r1);
+  const r2 = await val(`(() => {
+    const el = $id('setConc'); el.value = '70'; el.dispatchEvent(new Event('input', { bubbles: true }));
+    return { conc: S.glass.conc, atmos: S.glass.atmos, s: $id('setAtmosStrong').classList.contains('active'),
+      css: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim() };
+  })()`, 8000);
+  ok('K2 拖到 70 → 氛围档回算成 strong(按钮不撒谎),--glass 跟着走',
+    r2 && r2.conc === 70 && r2.atmos === 'strong' && r2.s === true && r2.css === '70%', r2);
+  const r3 = await val(`(() => {
+    $id('setAtmosWeak').click();
+    return { conc: S.glass.conc, slider: $id('setConc').value, valText: $id('valConc').textContent,
+      css: getComputedStyle(document.documentElement).getPropertyValue('--glass').trim() };
+  })()`, 8000);
+  ok('K3 点预设=快捷值:拖动条与读数跟着回到 20%(回显同源)',
+    r3 && r3.conc === 20 && r3.slider === '20' && r3.valText === '20%' && r3.css === '20%', r3);
+  await val(`(() => { $id('setAtmosMedium').click(); showPanel(null); return 1; })()`, 8000);   // 收尾回默认档
+}
+
 await val(`(async () => {
   try { leaveEdit(); } catch (e) {}
   const root = ${JSON.stringify(winPath(ROOT))}.toLowerCase();

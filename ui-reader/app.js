@@ -53,6 +53,9 @@ const ATMOS_PRESETS = {
   medium: { conc: GLASS_CONC_DEFAULT, text: 100 },
   strong: { conc: 70, text: 100 },
 };
+/* 浓度 → 氛围档的**唯一**映射(v1.8.16 收):存档迁移与浓度拖动条都调它。
+ * 阈值 60/25 是 v1.8 定的(conc≥60 强 / ≤25 弱 / 其余中),别再各处复写一份。 */
+const atmosOf = (conc) => (Number(conc) >= 60 ? 'strong' : Number(conc) <= 25 ? 'weak' : 'medium');
 const FONT_PRESETS = {
   read: { h1: 1.75, body: 16, code: 14 },
   code: { h1: 1.6, body: 15, code: 15 },
@@ -84,7 +87,7 @@ function migrateGlass(g) {
   if (Number.isFinite(savedConc)) out.conc = Math.round(Math.min(100, Math.max(1, savedConc)));
   const avg = (num(g.chrome) + num(g.reader) + num(g.pop)) / 3;
   out.atmos = Number.isFinite(out.conc)
-    ? (out.conc >= 60 ? 'strong' : out.conc <= 25 ? 'weak' : 'medium')
+    ? atmosOf(out.conc)
     : (Number.isFinite(avg) ? (avg >= 45 ? 'strong' : avg <= 18 ? 'weak' : 'medium') : 'medium');
   Object.assign(out, ATMOS_PRESETS[out.atmos]);
   // 用户存过自定义浓度时保留它(氛围档只负责回显高亮)
@@ -1830,7 +1833,8 @@ function glassSplit(conc) {
   const total = Math.min(100, Math.max(1, Number(conc) || GLASS_CONC_DEFAULT));
   return { dwm: GLASS_DWM_ALPHA, css: Math.round(total) };
 }
-/* R12b 玻璃质感:S.glass 数值恒由氛围预设写入,本函数只负责落 CSS 变量 + 面板回显。
+/* R12b 玻璃质感:S.glass 的数值由**氛围三档预设或浓度拖动条**写入(v1.8.16 起两者并存,写同一个 conc),
+ * 本函数只负责落 CSS 变量 + 面板回显。
  * opaque=true 强制全不透明(开机首帧用,避开透明窗冷启动合成坑);平时走存储值。
  * S.glass.tintDraft 为内存草稿(取色器未点应用前),回显优先显示草稿,后端预览见 bindSettings。 */
 function applyGlass(opaque) {
@@ -1861,6 +1865,9 @@ function applyGlass(opaque) {
   $id('setAtmosWeak')?.classList.toggle('active', am === 'weak');
   $id('setAtmosMedium')?.classList.toggle('active', am === 'medium');
   $id('setAtmosStrong')?.classList.toggle('active', am === 'strong');
+  // 浓度拖动条回显(v1.8.16):拖条与三档预设写的是同一个 SSOT(S.glass.conc),回显也只此一处
+  const cr = $id('setConc'); if (cr) cr.value = String(conc);
+  const cv = $id('valConc'); if (cv) cv.textContent = (on ? conc : 0) + '%';
 }
 /* R2 材质 + 底色直驱后端：material（none/acrylic）+ tint。mica/aero 已删，旧值一律按 acrylic。
  * 非 Tauri 环境（invoke 为空）静默跳过。失焦重放在 boot 里（R3）；圆角是 R4 的事，本轮不碰。 */
@@ -2018,6 +2025,16 @@ function bindSettings() {
   $id('setAtmosWeak')?.addEventListener('click', () => applyAtmos('weak'));
   $id('setAtmosMedium')?.addEventListener('click', () => applyAtmos('medium'));
   $id('setAtmosStrong')?.addEventListener('click', () => applyAtmos('strong'));
+  // 浓度拖动条(v1.8.16,用户:「应该可以用滚拖动条来拖动透明度」):三档预设 = 快捷值,拖条 = 连续调节,
+  // 两边都写同一个 SSOT(S.glass.conc);atmos 用 atmosOf 回算,按钮高亮才不撒谎。
+  // 拖动只落 CSS 变量(glassSplit 的 dwm 恒 1,浓度已不影响 DWM 份额)→ 不调 applyGlassMaterial,免得每帧打后端。
+  $id('setConc')?.addEventListener('input', (e) => {
+    const g = glassOn();
+    g.conc = Math.min(100, Math.max(1, Math.round(Number(e.target.value) || GLASS_CONC_DEFAULT)));
+    g.atmos = atmosOf(g.conc);
+    LS.set('sr_glass', persistGlass());
+    applyGlass(false);
+  });
   // 底色取色：input 只写内存草稿 + 防抖后端预览；应用才落盘；取消丢草稿并按存档值重放后端
   let tintPreviewTimer = 0;
   $id('setGlassTint')?.addEventListener('input', (e) => {

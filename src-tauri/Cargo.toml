@@ -1,6 +1,6 @@
 [package]
 name = "tmmd"
-version = "1.8.15"
+version = "1.8.16"
 description = "TMMD transparent Markdown reader desktop"
 authors = ["Sai"]
 edition = "2021"
