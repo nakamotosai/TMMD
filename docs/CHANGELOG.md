@@ -69,6 +69,24 @@ en/zh 的 `text halo`/`阅读地图` 也跟上 UI 用词。
 判据:`dist/<ver>/verify-live-channel.ps1`(latest 清单 + 安装包 sha256)与新增的 `verify-release.ps1`
 (按 tag 固定 URL 下载三件套并逐字节核对)。
 
+判据(本版全部真跑,命令与产物见 `HANDOFF.md`):
+
+- 回归 **219/219** = r12d-full 81 + r12e-editor 25 + r12f-v18 65 + r12g-visual24 27 + r12h-i18n 21(每条跑道一条全新实例)。
+  · r12g #25 这轮先红后绿,**不是产品回归**:测试里"塞满"用的填充块写死 1200px,而窗口宽 1690px 时它压不动工具栏
+  (实测:按视口取 `innerWidth+400` 折 7 项,1200px 一项都不折)。改成按视口宽取,判据原样,复跑 27/27。
+- i18n 静态闸五闸全绿(337 键);`r12h` pass=21 fail=0(en/ja 残留 0)。
+- PDF 正例(真内核 = Playwright 自带 Chromium,经 `TMMD_PDF_BROWSER` 测试缝):深/浅两主题各一次,
+  产物 **108,645 / 108,672 字节、2 页、21 字体、5 个内嵌字体文件、283 个文本算子**
+  (修前同口径:1441 字节、0 字体、0 文本算子)。同一文档**二次导出**另验:"先清目标 + mtime 新鲜度"不再拿上一轮的文件冒充成功。
+- 更新通道:五个版本按 tag 固定 URL 下载三件套(清单三字段 + 安装包逐字节 sha256)全部 PASS;
+  `/releases/latest/download/latest.json` = **1.8.17**。
+- 装机自更新(真装机 / 真下载 / 真静默装):1.8.12 → 1.8.16 一轮(先验通道),1.8.16 → 1.8.17 一轮(再验新版):
+  helper 日志 `app exited, launching installer`;`filever` 与注册表 `DisplayVersion` 都到 1.8.17;**静默装完自己重启**(新钩子,实测进程回来了);
+  下载落在 `%APPDATA%\com.saaaai.tmmd\updates\`,sha256 与线上清单一致;`roots.json` / `window.json` 前后 sha 相同(用户配置没被动)。
+- 卸载器(真卸 `/S`,退出码 0):`.md` / `.markdown` 的默认指向、`Markdown` ProgID 整棵、卸载表项全部清掉;
+  用户配置目录逐文件 sha 不变;`FileExts\.md`(用户自己的默认程序选择区,含 `UserChoice`)前后逐字节未变。
+  已知残留:`Markdown_backup`(Tauri 安装器给 `.md` 旧默认值留的备份,install 写、uninstall 保留)。
+
 ## v1.8.16 · 2026-10-26(玻璃面板:浓度拖动条回来了)
 
 用户:「透明面板里应该可以用滚拖动条来拖动透明度啊,现在怎么只有高中低三档?」——对,该有。
