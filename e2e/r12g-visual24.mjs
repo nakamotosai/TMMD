@@ -347,6 +347,60 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} try { const t = getT
 }
 
 
+/* 27 浅色主题的语法高亮必须可读(2026-10-26 用户实拍:「你这代码块里的彩色字根本看不见」)。
+ * 病根:hljs 主题是**给深色底配的**(vendor/hljs-atom-one-dark 底色 #282c34),
+ * 它的 token 绿 #98c379 / 橙 #d19a66 / 灰 #5c6370 对浅色代码板只有 1.7–4.0:1。
+ * 判据:浅色下**每个 hljs token class** 对「最坏合成的代码板」≥4.5:1。
+ * 合成口径与 #21 一致:代码板(color-mix)叠在窗口板上,窗口板压在暗壁纸 (34,38,43) 上。
+ * 深色只记录数值、不断言:深色 token 是厂商原值,压不到 4.5 属既有状态,不在本次范围。 */
+{
+  const CLS = ['hljs-comment', 'hljs-quote', 'hljs-doctag', 'hljs-formula', 'hljs-keyword', 'hljs-deletion', 'hljs-name',
+    'hljs-section', 'hljs-selector-tag', 'hljs-subst', 'hljs-literal', 'hljs-addition', 'hljs-attribute', 'hljs-regexp',
+    'hljs-string', 'hljs-attr', 'hljs-number', 'hljs-selector-attr', 'hljs-selector-class', 'hljs-selector-pseudo',
+    'hljs-template-variable', 'hljs-type', 'hljs-variable', 'hljs-bullet', 'hljs-link', 'hljs-meta', 'hljs-selector-id',
+    'hljs-symbol', 'hljs-title', 'hljs-built_in', 'hljs-title class_'];
+  const AUDIT = `(() => {
+    const parse = (s) => {
+      s = String(s);
+      let m = s.match(/rgba?\\(([^)]+)\\)/);
+      if (m) { const p = m[1].split(/[,/]/).map(parseFloat); return { rgb: p.slice(0, 3), a: p.length > 3 ? p[3] : 1 }; }
+      m = s.match(/color\\(srgb ([^)]+)\\)/);
+      if (m) { const p = m[1].split(/[\\/ ]+/).filter(Boolean).map(Number); return { rgb: p.slice(0, 3).map((v) => v * 255), a: p.length > 3 ? p[3] : 1 }; }
+      return null;
+    };
+    const over = (c, a, bg) => c.map((v, i) => v * a + bg[i] * (1 - a));
+    const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+    const lum = (p) => 0.2126 * lin(p[0]) + 0.7152 * lin(p[1]) + 0.0722 * lin(p[2]);
+    const cr = (a, b) => { const la = lum(a), lb = lum(b); return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05); };
+    const ownHost = !document.querySelector('.markdown-body');
+    let host = document.querySelector('.markdown-body');
+    if (!host) { host = document.createElement('div'); host.className = 'markdown-body'; document.body.appendChild(host); }
+    const pre = document.createElement('pre'); pre.className = 'hljs';
+    const code = document.createElement('code'); code.className = 'hljs';
+    const CLS = ${JSON.stringify(CLS)};
+    const spans = CLS.map((c) => { const s = document.createElement('span'); s.className = c; s.textContent = 'M'; code.appendChild(s); return s; });
+    pre.appendChild(code); host.appendChild(pre);
+    const bodyBg = parse(getComputedStyle(document.body).backgroundColor);
+    const preBg = parse(getComputedStyle(pre).backgroundColor) || { rgb: [0, 0, 0], a: 0 };
+    const plate = over(preBg.rgb, preBg.a, over(bodyBg.rgb, bodyBg.a, [34, 38, 43]));
+    const out = {};
+    spans.forEach((s, i) => { const c = parse(getComputedStyle(s).color); out[CLS[i]] = { px: c.rgb.map((v) => Math.round(v)), cr: Math.round(cr(c.rgb, plate) * 100) / 100 }; });
+    pre.remove();
+    if (ownHost && host.parentElement) { host.remove(); }
+    return JSON.stringify({ plate: plate.map((v) => Math.round(v)), out });
+  })()`;
+  await val(`(async () => { S.theme = 'light'; applySettings(); await new Promise((r) => setTimeout(r, 250)); return 1; })()`, 8000);
+  const raw = await val(AUDIT, 20000);
+  await val(`(async () => { S.theme = 'dark'; applySettings(); return 1; })()`, 8000);   // 先还原:断言失败也别把状态留给下一条跑道
+  const L = JSON.parse(raw || '{}');
+  const entries = Object.entries(L.out || {});
+  const bad = entries.filter(([, v]) => v.cr < 4.5);
+  const minCr = entries.length ? Math.min(...entries.map(([, v]) => v.cr)) : 0;
+  ok('27', '浅色:每个 hljs token 对最坏合成代码板 ≥4.5:1(旧版绿 2.6 / 橙 3.4 / 灰 2.0 = 看不见)',
+    entries.length >= 30 && bad.length === 0, { plate: L.plate, min: minCr, bad });
+}
+
+
 console.log(`\n== r12g: pass=${results.pass} fail=${results.fail} ==`);
 if (results.fail) { console.log('failures:'); results.fails.forEach((f) => console.log('  - ' + f)); }
 ws.close();

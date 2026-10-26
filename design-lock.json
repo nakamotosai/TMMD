@@ -34,8 +34,17 @@
       "measured_before": { "板": "0.4", "侧栏分组标题": "1.62", "目录树项": "1.21", "品牌字": "1.62", "正文H1": "2.18", "正文段落": "2.28", "代码块": "1.78", "引用": "1.00" },
       "delivery_gate": "改浅色 = 观感类交付:**必须由 agent 装到用户机器 + 真机截图 + 像素实测**才算验完,禁「丢安装包路径让用户自己装」后宣称可看(2026-10-26 踩:用户看到的还是上一版,旧账记到新改动头上)。合成底座必须取**用户实拍截图的窗外像素**,不用注册表 WallPaper(会滞后于实际壁纸)"
     },
+    "light_syntax": {
+      "locked_at": "2026-10-26(v1.8.15,用户实拍:「你这代码块里的彩色字根本看不见」)",
+      "why": "hljs 主题(vendor/hljs-atom-one-dark)是给深色底配的:它自带 background:#282c34,其 token 绿 #98c379 / 橙 #d19a66 / 灰 #5c6370 对浅色代码板只有 1.7–4.0:1。v1.8.14 只改了 chrome(板/墨/晕),漏了 token —— 而 token 是字。",
+      "rule": "每个 hljs token 对「最坏合成下的代码板」(暗壁纸 34,38,43 + 90% 窗口板 + 凹槽)≥4.5:1;判据 = e2e/r12g #27(只断言浅色;深色 token 是厂商原值,压不到 4.5 属既有状态,不在范围)",
+      "recess": "浅色代码块凹槽 = 纯黑 glass×.20(深色仍是 glass×.42)。旧值 .42 在浅色板上是「一块大灰」rgb(186,185,183),会逼得 token 只能压到近黑",
+      "tokens": { "comment/quote": "#545458", "keyword/doctag/formula": "#90218e", "section/name/deletion/subst": "#92372f", "literal": "#015b80", "string/regexp/addition/attribute": "#2f5f2f", "number/attr/type/variable": "#724e01", "title/symbol/link/bullet/meta": "#2b51a3", "built_in/class-title": "#724e01" },
+      "measured": "最坏合成 4.70 / 亮壁纸 5.62;代码块板 rgb(218,215,212)、块内正文 10.33:1(tools/verify/light-contrast.mjs 合成 J 文档)",
+      "source": "色相沿用 atom-one-light(浅色主题的正统),亮度压到可读区;只在 app.css 的 :root[data-theme=light] 作用域里覆盖 color,不动 vendor 文件"
+    },
     "content_plates": {
-      "code_block": { "token": "--plate-sink", "value": "#000 @ glass×.42", "form": "中性玻璃凹槽 + 1px 顶部内高光" },
+      "code_block": { "token": "--plate-sink", "value": "#000 @ glass×.42(深色)/ glass×.20(浅色,见 light_syntax.recess)", "form": "中性玻璃凹槽 + 1px 顶部内高光" },
       "inline_chip": { "token": "--plate-lift", "value": "ink @ glass×.22", "form": "中性玻璃薄片" },
       "hairline": { "token": "--hair-strong", "value": "ink 18%", "form": "1px 中性发丝线" },
       "why": "板色不许带自己的色相:强调色掺板色在暗底=脏棕、亮底=死灰。禁回退到 --well / --well-deep / --rule-strong 那套暖板",

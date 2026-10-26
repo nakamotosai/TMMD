@@ -112,9 +112,56 @@
   --accent: #8d2f02; --accent2: #584a08; --border: #d3d2ce;
   --green: #46580f; --blue: #0e5263; --red: #8e0b0b; --ink: #2b2724;
   --glass-lift: calc(82% - var(--glass) * .8);
+  /* v1.8.15:代码块凹槽在浅色下不能按 glass×.42 压黑 —— 那在浅色板上是"一块大灰"实测 rgb(186,185,183),
+   * token 只能压到近黑才看得见。浅色取 glass×.20 → 最坏合成 rgb(205,205,203),仍是"轻轻凹下去",
+   * 语法高亮才有可读区间(实测与判据见下一段的 token 表 + r12g #27)。 */
+  --plate-sink: color-mix(in srgb, #000 calc(var(--glass) * .2), transparent);
   --text-halo: 0 0 1px rgb(255 255 255 / calc(.85 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.78 * var(--halo-k))), 0 2px calc(2px + 6px * var(--halo-k)) rgb(255 255 255 / calc(.7 * var(--halo-k)));
   --title-halo: 0 0 1px rgb(255 255 255 / calc(.9 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.85 * var(--halo-k))), 0 2px calc(2px + 8px * var(--halo-k)) rgb(255 255 255 / calc(.8 * var(--halo-k))), 0 0 calc(1px + 3px * var(--halo-k)) rgb(255 255 255 / calc(.8 * var(--halo-k)));
 }
+/* ── 浅色主题的语法高亮:hljs 的 token 是**给深色底配的** ────────────────────────────────
+ * vendor/hljs-atom-one-dark 的底色是 #282c34;它的 token(绿 #98c379 / 橙 #d19a66 / 灰 #5c6370 …)
+ * 压在浅色代码板上只有 1.7–4.0:1 —— 用户实拍 2026-10-26:「你这代码块里的彩色字根本看不见」。
+ * 口径:**token 是字,字就得过可读性下限** —— 每个 token 对**最坏合成下的代码板**(暗壁纸 + 90% 板 + 凹槽)
+ * ≥4.5:1,r12g #27 守这条(浅色断言、深色只记录:深色 token 是厂商原值,不在本次范围)。
+ * 色相沿用 atom-one-light(浅色主题的正统),亮度压到可读区(留余量:最坏合成 4.70、亮壁纸 5.62):
+ *   comment #545458 · keyword #90218e · section/name #92372f · literal #015b80
+ *   string  #2f5f2f · number  #724e01 · title #2b51a3 · built_in #724e01
+ * 只写 color —— 底/圆角/行号仍归 pre 的那块凹槽管;italic/bold/underline 三个非着色类沿用厂商值。 */
+:root[data-theme="light"] .hljs-comment,
+:root[data-theme="light"] .hljs-quote { color: #545458; font-style: italic; }
+:root[data-theme="light"] .hljs-doctag,
+:root[data-theme="light"] .hljs-formula,
+:root[data-theme="light"] .hljs-keyword { color: #90218e; }
+:root[data-theme="light"] .hljs-deletion,
+:root[data-theme="light"] .hljs-name,
+:root[data-theme="light"] .hljs-section,
+:root[data-theme="light"] .hljs-selector-tag,
+:root[data-theme="light"] .hljs-subst { color: #92372f; }
+:root[data-theme="light"] .hljs-literal { color: #015b80; }
+:root[data-theme="light"] .hljs-addition,
+:root[data-theme="light"] .hljs-attribute,
+:root[data-theme="light"] .hljs-meta .hljs-string,
+:root[data-theme="light"] .hljs-regexp,
+:root[data-theme="light"] .hljs-string { color: #2f5f2f; }
+:root[data-theme="light"] .hljs-attr,
+:root[data-theme="light"] .hljs-number,
+:root[data-theme="light"] .hljs-selector-attr,
+:root[data-theme="light"] .hljs-selector-class,
+:root[data-theme="light"] .hljs-selector-pseudo,
+:root[data-theme="light"] .hljs-template-variable,
+:root[data-theme="light"] .hljs-type,
+:root[data-theme="light"] .hljs-variable { color: #724e01; }
+:root[data-theme="light"] .hljs-bullet,
+:root[data-theme="light"] .hljs-link,
+:root[data-theme="light"] .hljs-meta,
+:root[data-theme="light"] .hljs-selector-id,
+:root[data-theme="light"] .hljs-symbol,
+:root[data-theme="light"] .hljs-title { color: #2b51a3; }
+:root[data-theme="light"] .hljs-built_in,
+:root[data-theme="light"] .hljs-class .hljs-title,
+:root[data-theme="light"] .hljs-title.class_ { color: #724e01; }
+
 :root[data-theme="light"][data-palette="paper"] {
   --bg: #f6f1e6; --bg2: #fdfaf2; --bg3: #fffefb;
   --fg: #262320; --fg-dim: #3f3a33; --fg-faint: #4a453c;
