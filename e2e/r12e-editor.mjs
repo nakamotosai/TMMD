@@ -44,6 +44,19 @@ async function val(expr, ms) {
   return r.result?.result?.value;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+/* 等页面就绪(2026-10-26):r12d 跑完会触发重载,重载后 app.js 还没执行完时 eval `S` 会
+ * ReferenceError: S is not defined —— 表现是"只串跑才崩、单跑永远绿"。这里显式等一次。 */
+async function waitBoot(ms = 30000) {
+  const t0 = Date.now();
+  for (;;) {
+    try {
+      const r = await ev(`(() => typeof S !== 'undefined' && typeof setLang === 'function' && typeof applyI18n === 'function')()`, 3000);
+      if (r.result?.result?.value === true) return Date.now() - t0;
+    } catch { /* 重载瞬间连接可能短暂不可用 */ }
+    if (Date.now() - t0 > ms) throw new Error('页面 30s 内未就绪(app.js 没跑起来)');
+    await sleep(250);
+  }
+}
 const results = { pass: 0, fail: 0, fails: [] };
 /* 沙箱护栏(2026-10-25 血泪):脚本只允许在 os.tmpdir 下的测试文件上进入编辑/保存。
  * 事故:早前的临时脚本没做这个检查,当时活动标签是仓库 README.md,于是"输入 + 保存"把
@@ -95,6 +108,7 @@ writeFileSync(CRLF_MD, 'line one\r\nline two\r\n');
 writeFileSync(TXT, 'plain text\n');
 writeFileSync(MD, 'ctrl-s target\n');
 
+console.log('# 等页面就绪', await waitBoot(), 'ms');
 const winBefore = await val(`JSON.stringify({ tabs: (S.tabs || []).map((t) => t.abs), active: S.activeKey })`);
 console.log('# 起手状态', winBefore);
 // 起手复位:关掉上次跑剩下的标签(它们的文件已被上轮清掉),否则后续断言会作用在错的标签上
