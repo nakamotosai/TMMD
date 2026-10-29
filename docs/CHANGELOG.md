@@ -44,7 +44,7 @@
 - 视觉材料:`docs/preview/v1.9/` 三张 = **CDP 透明截屏 + 高斯模糊壁纸合成**(本机只有一块屏,DWM 真实合成未实拍;合成方法见该目录 README),外加 `local-release-live.png` = **本地 release 版真窗口**。
 - 本地 release 真实窗口实测(真实配置 / 2489×1496 物理 = 1245×748 CSS @2x / 打开 README.md):版式、纸面、渐隐正常。
   - 截图坑:`PrintWindow` 前必须先声明 per-monitor DPI 感知;否则 2x 屏上 `GetWindowRect` 拿到虚拟化坐标,截出来"内容整体右移被窗口切掉"的假象(曾是误判,**不是应用缺陷**),已记进 `docs/preview/v1.9/README.md`。
-- 打包:`npx tauri build` → NSIS `TMMD_1.9.0_x64-setup.exe`(3,381,284 B,sha256 `15f7a975…c6d6`)+ MSI `TMMD_1.9.0_x64_en-US.msi`;`dist/v1.9.0/` 的 `latest.json` / `SHA256SUMS` 由 `make-manifest.ps1` 生成(强制无 BOM)。
+- 打包:`npx tauri build` → NSIS `TMMD_1.9.0_x64-setup.exe`(3,381,284 B,sha256 `15f7a975…c6d6`)+ MSI `TMMD_1.9.0_x64_en-US.msi`;`dist/v1.9.0/` 的 `latest.json` / `SHA256SUMS` 由 `tools/make-release-manifest.ps1` 生成(强制无 BOM;本轮复跑与已上传资产逐字节一致)。
 
 ### 边界
 
