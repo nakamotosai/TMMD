@@ -384,16 +384,17 @@
         </div>
       </div>
       <textarea id="editor" class="editor" spellcheck="false" hidden></textarea>
-      <!-- v1.7 文内查找(Ctrl+F):浮在阅读区右上,不参与正文流 -->
-      <div class="findbar" id="findBar" hidden>
-        <input type="text" id="findInput" class="set-text" placeholder="在本文中查找" data-i18n-ph="find.placeholder" autocomplete="off" />
-        <span class="find-count" id="findCount">0/0</span>
-        <button type="button" id="findPrev" class="tb-btn" title="上一个 (Shift+Enter)" data-i18n-title="find.prev"><svg class="ic sm"><use href="#i-caret"/></svg></button>
-        <button type="button" id="findNext" class="tb-btn" title="下一个 (Enter)" data-i18n-title="find.next"><svg class="ic sm" style="transform:rotate(180deg)"><use href="#i-caret"/></svg></button>
-        <button type="button" id="findClose" class="tb-btn" title="关闭 (Esc)" data-i18n-title="find.close"><svg class="ic sm"><use href="#i-close"/></svg></button>
-      </div>
     </section>
   </main>
+
+  <!-- v1.7 文内查找(Ctrl+F):浮在阅读区右上,不参与正文流 -->
+  <div class="findbar" id="findBar" hidden>
+    <input type="text" id="findInput" class="set-text" placeholder="在本文中查找" data-i18n-ph="find.placeholder" autocomplete="off" />
+    <span class="find-count" id="findCount">0/0</span>
+    <button type="button" id="findPrev" class="tb-btn" title="上一个 (Shift+Enter)" data-i18n-title="find.prev"><svg class="ic sm"><use href="#i-caret"/></svg></button>
+    <button type="button" id="findNext" class="tb-btn" title="下一个 (Enter)" data-i18n-title="find.next"><svg class="ic sm" style="transform:rotate(180deg)"><use href="#i-caret"/></svg></button>
+    <button type="button" id="findClose" class="tb-btn" title="关闭 (Esc)" data-i18n-title="find.close"><svg class="ic sm"><use href="#i-close"/></svg></button>
+  </div>
 
   <div class="toast" id="toast" hidden></div>
   <div class="immersive-hint" id="immersiveHint" data-i18n="zen.hint">按 F11 或 Esc 退出无干扰模式</div>

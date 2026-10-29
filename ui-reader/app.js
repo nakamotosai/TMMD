@@ -47,7 +47,7 @@ const SWATCH_COLORS = {
  * 所以滑条留着:嫌淡就往上推(strong=70)。 */
 // 单一浓度的唯一 SSOT:预设 / 兜底 / 回显全用它,别再散写字面量(此前 3 处兜底写 45,与预设 40 打架)。
 const GLASS_CONC_DEFAULT = 40;
-const HALO_DEFAULT = 55;   // 文字晕默认强度(%);--halo-k 与它的关系见 app.css
+const HALO_DEFAULT = 55;   // 文字晕默认强度(%);v1.9 起正文另走 --halo-k-reader(.68 倍),铬层仍用满档
 const ATMOS_PRESETS = {
   weak: { conc: 20, text: 100 },
   medium: { conc: GLASS_CONC_DEFAULT, text: 100 },
@@ -260,6 +260,18 @@ function buildToc(root) {
   });
 }
 
+/* v1.9:宽表进自己的横向槽(见 app.css .md-table-wrap)。marked 直接吐 <table>,
+ * 这里只包一层 div,不改 DOM 语义;已有槽则跳过(重复渲染安全)。 */
+function wrapTables(root) {
+  for (const t of [...root.querySelectorAll('table')]) {
+    if (!t.parentElement || t.parentElement.classList.contains('md-table-wrap')) continue;
+    const w = document.createElement('div');
+    w.className = 'md-table-wrap';
+    t.parentNode.insertBefore(w, t);
+    w.appendChild(t);
+  }
+}
+
 function renderMarkdown(md, absParam) {
   const inner = $id('readerInner');
   const body = document.createElement('div');
@@ -268,6 +280,7 @@ function renderMarkdown(md, absParam) {
   body.innerHTML = marked.parse(preprocessFootnotes(md.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n/, '')));
   CURRENT_ABS = null;
   sanitize(body);
+  wrapTables(body);
   highlightCode(body);
   renderMath(body);
   fixMediaSrc(body);
@@ -297,6 +310,65 @@ function renderMarkdown(md, absParam) {
 
 function rememberScroll() {
   if (S.cur && S.cur.abs) LS.str('sr_scr_' + S.cur.abs, $id('reader').scrollTop);
+}
+
+/* ==================== v1.9 阅读区边缘渐隐 ====================
+ * 7 档非线性遮罩由这里生成(单层 gradient):只有"顶部/底部是否还有内容"翻转时才重写
+ * mask-image,滚动过程不写样式。为什么不在 CSS 里用一条固定 16 档 gradient:
+ * fade=0 时底部那组 stop 会全塌到 100%,整条 mask 从顶部的不透明一路渐变到 5%,
+ * 正文会整页发虚(2026-10-29 在真实 WebView2 里实测踩到)。
+ * 观察 inner 的尺寸而不是只监听 scroll:换字号、开关行号、切文档都可能让可滚高度变化。 */
+const READER_FADE_PX = 28;
+/* 7 档非线性 alpha:采样位置 15/30/45/60/75/87%,对应 5.1/14.9/30.2/50.2/70.2/85.1%。
+ * 只在"顶/底是否还有内容"翻转时重建整条 mask,滚动过程不写样式。 */
+const READER_FADE_STOPS = [
+  ['#0000000d', .15], ['#00000026', .3], ['#0000004d', .45],
+  ['#00000080', .6], ['#000000b3', .75], ['#000000d9', .87],
+];
+const readerFade = { mask: null };
+function buildReaderMask(topOn, bottomOn) {
+  if (!topOn && !bottomOn) return 'none';
+  const px = READER_FADE_PX;
+  const stops = [];
+  if (topOn) {
+    stops.push('transparent 0');
+    for (const [c, f] of READER_FADE_STOPS) stops.push(c + ' ' + (px * f).toFixed(2) + 'px');
+    stops.push('#000 ' + px + 'px');
+  } else {
+    stops.push('#000 0');
+  }
+  if (bottomOn) {
+    stops.push('#000 calc(100% - ' + px + 'px)');
+    for (const [c, f] of [...READER_FADE_STOPS].reverse()) stops.push(c + ' calc(100% - ' + (px * f).toFixed(2) + 'px)');
+    stops.push('transparent 100%');
+  } else {
+    stops.push('#000 100%');
+  }
+  return 'linear-gradient(to bottom, ' + stops.join(', ') + ')';
+}
+function syncReaderFade() {
+  const rd = $id('reader');
+  if (!rd) return;
+  const max = Math.max(0, rd.scrollHeight - rd.clientHeight);
+  const topOn = max > 0 && rd.scrollTop > 1;
+  const bottomOn = max > 0 && rd.scrollTop < max - 1;
+  const mask = buildReaderMask(topOn, bottomOn);
+  if (mask === readerFade.mask) return;
+  rd.style.maskImage = mask;
+  rd.style.webkitMaskImage = mask;
+  readerFade.mask = mask;
+}
+function initReaderFade() {
+  const rd = $id('reader');
+  if (!rd) return;
+  rd.addEventListener('scroll', syncReaderFade, { passive: true });
+  if (typeof ResizeObserver === 'function') {
+    const ro = new ResizeObserver(() => syncReaderFade());
+    ro.observe(rd);
+    const inner = $id('readerInner');
+    if (inner) ro.observe(inner);
+  }
+  syncReaderFade();
 }
 
 /* ==================== 刷新 / 编辑 ==================== */
@@ -1854,8 +1926,9 @@ function applyGlass(opaque) {
   if (!S.glass || typeof S.glass !== 'object') S.glass = migrateGlass(null);
   const on = opaque ? false : (S.glass.on !== false && !S.sysNoEffects);
   const num = (v, d, lo, hi) => { v = Number(v); if (!Number.isFinite(v)) v = d; return Math.min(hi, Math.max(lo, v)); };
-  // v1.8:浓度只有一路(conc)。页面层承担的那份 = 总浓度减去 DWM 份额(拆分见 glassSplit);
-  // 铬层/正文区/浮层不再各有各的浓度 —— 那正是"不像一整块"的来源。
+  // v1.8:浓度只有一路(conc),写 --glass;v1.9 起它控制**窗口底/铬层**,
+  // 正文板由 CSS 的 --reader-add 常量叠加(见 app.css 的 surface-reader)。
+  // 浮层/小板仍按 --glass-eff 走,不引入第二个滑条。
   const conc = num(S.glass.conc, GLASS_CONC_DEFAULT, 1, 100);
   const text = num(S.glass.text, 100, 70, 100);   // 文字整体透明度下限 70%(再低正文掉对比度)
   const root = document.documentElement.style;
@@ -3310,6 +3383,7 @@ function initV17() {
   applyI18n();
   applyEnhance();
   bindFocusTracking();
+  initReaderFade();
   const on = (sel, ev, fn) => { const el = $id(sel); if (el) el.addEventListener(ev, fn); };
   // 视图 / 模式
   on('btnFindLib', 'click', () => setView('search'));

@@ -435,7 +435,7 @@ async function reset() {
  * 2026-10-25 用户实拍:玻璃模式下侧栏灰字对背景只有 1.31:1 / 1.34:1(米白也才 2.71),字等于没了。
  * 配方(skill over-media-text-readability):文字必须带 shadow 做局部对比;button/input 的 text-shadow
  * 会被 UA 样式表重置成 none,必须显式接回继承;placeholder 在 UA shadow tree 里,TreeWalker 扫不到。
- * 判据(2026-10-25 复核后加强):不是"非 none"就算过 —— 必须**可用**:≥2 层、至少一层 α≥0.5、带几何(blur/offset);
+ * 判据(2026-10-25 复核后加强):不是"非 none"就算过 —— 必须**可用**:≥2 层、至少一层 α≥0.25、带几何(blur/offset);
  * 控件与 placeholder 全量;深浅主题各验极性(深色不许出现白色晕、浅色必须全是亮晕)。 */
 {
   console.log('-- I 文字阴影覆盖 --');
@@ -497,7 +497,7 @@ async function reset() {
     return r;
   };
   const dark = await audit('dark');
-  ok('I1 深色:每个非空白文本节点都有**可用**的晕(≥2 层、α≥0.5、带几何)', dark && dark.n > 50 && dark.badCount === 0, dark);
+  ok('I1 深色:每个非空白文本节点都有**可用**的晕(≥2 层、α≥0.3、带几何)', dark && dark.n > 50 && dark.badCount === 0, dark);
   ok('I2 深色:全部控件 + placeholder 都有可用晕(不再只抽第一个)', dark && dark.ctls > 0 && dark.ctlBad.length === 0 && dark.phCount > 0 && dark.phBad.length === 0, dark);
   ok('I3 深色:没有节点误用白色晕(极性正确)', dark && dark.whiteNodes === 0, dark && { whiteNodes: dark.whiteNodes, okNodes: dark.okNodes });
   const light = await audit('light');
@@ -533,6 +533,14 @@ async function reset() {
     hx.saved0 === 0 && hx.saved55 === 55, hx && { saved0: hx.saved0, saved55: hx.saved55 });
   ok('I7b 面板读数回显跟着走(valHalo = 55%)', hx.valText === '55%', hx && { valText: hx.valText });
   ok('I8 玻璃关掉(实色)不画晕:--halo-k=0 且 α≤0.05(实色底上不该留灰边)', hx.kOff === '0' && hx.off <= 0.05, hx && { kOff: hx.kOff, off: hx.off });
+  const rh = JSON.parse((await val(`(() => {
+    const peak = (el) => { if (!el) return 0; const ts = getComputedStyle(el).textShadow;
+      const a = (ts.match(/rgba?\\([^)]*\\)/g) || []).map((s) => parseFloat(s.split(',')[3] || '1'));
+      return a.length ? Math.max(...a) : 0; };
+    return JSON.stringify({ reader: peak(document.querySelector('.markdown-body')), chrome: peak(document.querySelector('.topbar .brand')) });
+  })()`, 10000)) || '{}');
+  ok('I9 正文晕比铬层低一档(纸上 ~0.32 < 铬层 ~0.50,两边都 ≥0.2)',
+    rh.reader >= 0.2 && rh.chrome >= 0.2 && rh.reader < rh.chrome * 0.8, rh);
 }
 
 // 收尾:退出编辑 + **关掉本套件开过的沙箱标签**。
@@ -660,6 +668,34 @@ async function reset() {
   ok('K3 点预设=快捷值:拖动条与读数跟着回到 20%(回显同源)',
     r3 && r3.conc === 20 && r3.slider === '20' && r3.valText === '20%' && r3.css === '20%', r3);
   await val(`(() => { $id('setAtmosMedium').click(); showPanel(null); return 1; })()`, 8000);   // 收尾回默认档
+}
+
+/* ═══════════ L) 阅读区边缘渐隐:7 档 mask 只在可滚状态翻转时重建 ═══════════ */
+{
+  console.log('-- L 阅读区边缘渐隐 --');
+  const f = join(ROOT, 'l-long.md');
+  writeFileSync(f, '# L 渐隐\n\n' + '这是用于滚动渐隐的长段落。\n\n'.repeat(200), 'utf8');
+  await val(`(async () => { try { leaveEdit(); } catch (e) {}
+    await openTab({ abs: ${q(winPath(f))}, kind: 'ext' });
+    await new Promise((r) => setTimeout(r, 400)); return 1; })()`, 20000);
+  const r = JSON.parse((await val(`(() => {
+    const rd = $id('reader');
+    const sync = () => { rd.dispatchEvent(new Event('scroll')); return getComputedStyle(rd).maskImage; };
+    rd.scrollTop = 0; const top = sync();
+    const max = Math.max(0, rd.scrollHeight - rd.clientHeight);
+    rd.scrollTop = Math.floor(max / 2); const mid = sync();
+    rd.scrollTop = max; const bot = sync();
+    rd.scrollTop = 0; sync();
+    return JSON.stringify({ top, mid, bot, max });
+  })()`, 20000)) || '{}');
+  ok('L1 顶部可滚时只有底边渐隐(mask 从 0px 不透明开始,不再整页发虚)',
+    r.max > 0 && /^(none|linear-gradient\(rgb\(0, 0, 0\) 0px)/.test(r.top), { max: r.max, top: String(r.top).slice(0, 90) });
+  ok('L2 滚到中段时顶边出现透明起点(7 档 gradient)',
+    /^linear-gradient\(rgba\(0, 0, 0, 0\) 0px/.test(r.mid), { mid: String(r.mid).slice(0, 90) });
+  ok('L3 滚到底时底边归零(蒙版以不透明 100% 结束)',
+    /rgb\(0, 0, 0\) 100%\)$/.test(String(r.bot)), { bot: String(r.bot).slice(-90) });
+  const short = await val(`(() => { renderMarkdown('# 短\\n\\n一行。', null); const rd = $id('reader'); rd.dispatchEvent(new Event('scroll')); return getComputedStyle(rd).maskImage; })()`, 8000);
+  ok('L4 短文档没有可滚区 → mask=none(不裁内容)', short === 'none', { short });
 }
 
 await val(`(async () => {

@@ -27,11 +27,13 @@
   --body-size: 16px;
   --code-size: 14px;
   /* v1.8 整窗一整块玻璃(对标 pebrel:opacity 0.45 + blur=acrylic;我们默认取 40)。
-   * 单一浓度 --glass 贯穿整窗:铬层/正文区/底不再各叠一层浓度 —— 叠起来就是"四块深浅不一的板子",
-   * 那正是"不像一整块"的根因(旧模型 base 12 + chrome 25 / reader 35 / pop 30)。
+   * v1.9 起口径改为**两层同相**:--glass 仍是滑条控制的窗口底(铬层/侧栏/浮层),
+   * 正文再叠一层固定浓度 --reader-add(见下)。v1.8 当初删四路滑条,是因为
+   * base/chrome/reader/pop 各写各的 alpha → "四块深浅不一的板子";现在只有
+   * "窗口底 + 纸面"两层,且第二层是常量,不存在第二个旋钮。
    * 浓度**全由页面层画**(默认 40,SSOT = app.js 的 GLASS_CONC_DEFAULT);DWM 只出模糊
    * (alpha=1,保 accent 通道),两边不再相乘(拆分见 app.js 的 glassSplit)。
-   * 浮层与内容小板各加一点点浓度,是"浮起来/压在正文上的东西"必须的支撑,不是分家。 */
+   * 浮层与控件小板各加一点点浓度,是"浮起来/压在正文上的东西"必须的支撑,不是分家。 */
   --glass: 100%;
   --glass-pop-boost: 12%;
   --glass-plate-boost: 22%;
@@ -40,9 +42,18 @@
    * 三个表面都只走 --glass-eff,禁在别处再写 var(--glass)(否则深浅又会分家)。 */
   --glass-lift: 0%;
   --glass-eff: calc(var(--glass) + var(--glass-lift));
+  /* v1.9 内容板分层(CDS 口径):玻璃浓度滑块只控制**窗口底色**(正文后的第一层),
+   * 正文再叠一层中性纸面 --reader-add。两层同色相,合成后 = 1-(1-conc)(1-add):
+   *   深色 conc 40% + 52% → 71.2%,conc 20% → 61.6%,conc 70% → 85.6%。
+   * 这样滑条仍然"透",但正文在常用档位站在 ~70% 的纸上 —— 文字晕才敢往下调。
+   * 为什么不是把 body 直接抬到 71%:滑块要保留 20–70% 的整窗透明区间,
+   * 正文板是该区间之上的**固定支点**,不是第二个浓度旋钮。 */
+  --reader-add: 52%;
   --surface-base: color-mix(in srgb, var(--bg) var(--glass-eff), transparent);
   --surface-chrome: transparent;
-  --surface-reader: transparent;
+  /* 纸面用 bg2(深色下比 bg 亮一档、浅色下比 bg 白一档)而不是 bg:
+   * 两层同色叠加只会把正文区压成一块更黑的洞;抬一档才是"纸浮在窗口底上"。 */
+  --surface-reader: color-mix(in srgb, var(--bg2) var(--reader-add), transparent);
   --surface-pop: color-mix(in srgb, var(--bg2) calc(var(--glass-eff) + var(--glass-pop-boost)), transparent);
   --surface-plate: color-mix(in srgb, var(--bg3) calc(var(--glass-eff) + var(--glass-plate-boost)), transparent);
   /* v1.8.11 正文**内容板**再换一次(用户实拍 2026-10-26:代码块是一块脏橙棕,原话"和我们玻璃质感完全不配")。
@@ -78,9 +89,15 @@
    *   浓度**与半径一起**缩 —— 只缩透明度会留下"宽而淡的灰云",那才是"重"的来源。
    *   实测(亮底合成样本,字外 1–3px 环的平均压暗):0.55 档拿到全强度的 64%、0.35 档 45%,
    *   而分块局部对比几乎不降(1.05→1.04 一档量级)→ 取 55 是"少一半丑、几乎不丢可读"的点。 */
+  /* v1.9:只有**正文**降档,铬层/侧栏仍是 55 —— 正文站在 ~71% 的纸上,不需要那么重的晕;
+   * 侧栏/工具栏仍直接叠在模糊壁纸上,砍了就会在亮壁纸上发虚。系数 .68 ≈ 37/55(浅色那组 .85 系数下峰值仍 ≥0.3,守 I4 的可用下限)。
+   * 用户滑条(--halo-k)仍只此一处:拖到 0 两边一起停,拖到 100 正文也只到 68%。 */
   --halo-k: .55;
+  --halo-k-reader: calc(var(--halo-k) * .68);
   --text-halo: 0 0 1px rgb(0 0 0 / calc(.9 * var(--halo-k))), 0 1px 2px rgb(0 0 0 / calc(.8 * var(--halo-k))), 0 2px calc(2px + 6px * var(--halo-k)) rgb(0 0 0 / calc(.75 * var(--halo-k)));
   --title-halo: 0 0 1px rgb(0 0 0 / calc(.95 * var(--halo-k))), 0 1px 2px rgb(0 0 0 / calc(.92 * var(--halo-k))), 0 2px calc(2px + 8px * var(--halo-k)) rgb(0 0 0 / calc(.88 * var(--halo-k))), 0 0 calc(1px + 3px * var(--halo-k)) rgb(0 0 0 / calc(.9 * var(--halo-k)));
+  --text-halo-reader: 0 0 1px rgb(0 0 0 / calc(.9 * var(--halo-k-reader))), 0 1px 2px rgb(0 0 0 / calc(.8 * var(--halo-k-reader))), 0 2px calc(2px + 6px * var(--halo-k-reader)) rgb(0 0 0 / calc(.75 * var(--halo-k-reader)));
+  --title-halo-reader: 0 0 1px rgb(0 0 0 / calc(.95 * var(--halo-k-reader))), 0 1px 2px rgb(0 0 0 / calc(.92 * var(--halo-k-reader))), 0 2px calc(2px + 8px * var(--halo-k-reader)) rgb(0 0 0 / calc(.88 * var(--halo-k-reader))), 0 0 calc(1px + 3px * var(--halo-k-reader)) rgb(0 0 0 / calc(.9 * var(--halo-k-reader)));
 }
 
 /* 配色预设（R9：三个主题——深炭灰/暖纸浅/gruvbox 原生；旧款已删，存档旧值自动回落 gruvbox） */
@@ -117,12 +134,17 @@
   --accent: #8d2f02; --accent2: #584a08; --border: #d3d2ce;
   --green: #46580f; --blue: #0e5263; --red: #8e0b0b; --ink: #2b2724;
   --glass-lift: calc(82% - var(--glass) * .8);
+  /* v1.9:浅色底本来就是纸(86–96%),正文板只再叠一点点,保证与铬层有可辨的层次,
+   * 不把 40% 档一下推到全白。 */
+  --reader-add: 10%;
   /* v1.8.15:代码块凹槽在浅色下不能按 glass×.42 压黑 —— 那在浅色板上是"一块大灰"实测 rgb(186,185,183),
    * token 只能压到近黑才看得见。浅色取 glass×.20 → 最坏合成 rgb(205,205,203),仍是"轻轻凹下去",
    * 语法高亮才有可读区间(实测与判据见下一段的 token 表 + r12g #27)。 */
   --plate-sink: color-mix(in srgb, #000 calc(var(--glass) * .2), transparent);
   --text-halo: 0 0 1px rgb(255 255 255 / calc(.85 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.78 * var(--halo-k))), 0 2px calc(2px + 6px * var(--halo-k)) rgb(255 255 255 / calc(.7 * var(--halo-k)));
   --title-halo: 0 0 1px rgb(255 255 255 / calc(.9 * var(--halo-k))), 0 1px 2px rgb(255 255 255 / calc(.85 * var(--halo-k))), 0 2px calc(2px + 8px * var(--halo-k)) rgb(255 255 255 / calc(.8 * var(--halo-k))), 0 0 calc(1px + 3px * var(--halo-k)) rgb(255 255 255 / calc(.8 * var(--halo-k)));
+  --text-halo-reader: 0 0 1px rgb(255 255 255 / calc(.85 * var(--halo-k-reader))), 0 1px 2px rgb(255 255 255 / calc(.78 * var(--halo-k-reader))), 0 2px calc(2px + 6px * var(--halo-k-reader)) rgb(255 255 255 / calc(.7 * var(--halo-k-reader)));
+  --title-halo-reader: 0 0 1px rgb(255 255 255 / calc(.9 * var(--halo-k-reader))), 0 1px 2px rgb(255 255 255 / calc(.85 * var(--halo-k-reader))), 0 2px calc(2px + 8px * var(--halo-k-reader)) rgb(255 255 255 / calc(.8 * var(--halo-k-reader))), 0 0 calc(1px + 3px * var(--halo-k-reader)) rgb(255 255 255 / calc(.8 * var(--halo-k-reader)));
 }
 /* ── 浅色主题的语法高亮:hljs 的 token 是**给深色底配的** ────────────────────────────────
  * vendor/hljs-atom-one-dark 的底色是 #282c34;它的 token(绿 #98c379 / 橙 #d19a66 / 灰 #5c6370 …)
@@ -342,19 +364,33 @@ body.side-compact #side .toc[data-level="6"] { display: none; }
 .side.collapsed + .side-resizer { display: none; }
 
 /* ===== reader ===== */
-/* W2：滚动容器走 --surface-reader（默认 100% 不透明 = 原实色 --bg，滚动色变修复结论不变）。 */
+/* v1.9:正文板 = 窗口底色之上的一层中性纸面(--reader-add)。
+ * 边缘渐隐走 7 档非线性 alpha(CDS 口径):线性双色切线在视网膜屏上会有色阶断层,
+ * 7 档贴合 y≈x^1.5 的感知曲线。mask 由 app.js 在"有没有超出"翻转时整条重建,
+ * 滚动过程本身不产生样式重算。 */
 .reader {
   flex: 1; min-width: 0; height: 100%; overflow: auto;
   background: var(--surface-reader);
   position: relative;
+  mask-image: none;
 }
-.reader-inner { max-width: 880px; margin: 0 auto; padding: 34px 42px 60px; }
+.reader-inner { --reader-pad: 42px; max-width: 880px; margin: 0 auto; padding: 34px var(--reader-pad) 60px; }
+/* 窗口窄时收内边距(CDS 4 阶压缩的本地化:只留 3 阶,超过 760 不缩)。
+ * 行宽仍由 --measure 管,这里只让"纸边"变窄,不改每行字数上限。
+ * 用窗口断点而不是 @container:阅读区宽度会随侧栏/设置抽屉变化,但内边距只需要跟窗口走;
+ * 少一层 containment 也少一个合成层(查找条已移出 .reader,不再受 mask 影响)。 */
+@media (max-width: 760px) {
+  .reader-inner { --reader-pad: 30px; padding: 28px var(--reader-pad) 52px; }
+}
+@media (max-width: 560px) {
+  .reader-inner { --reader-pad: 20px; padding: 22px var(--reader-pad) 44px; }
+}
 .empty { text-align: center; padding-top: 18vh; color: var(--fg-faint); }
 .empty h2 { color: var(--accent); }
 
 /* ===== 编辑模式 ===== */
 .editor {
-  position: absolute; inset: 0; width: 100%; height: 100%;
+  position: absolute; inset: 0; width: 100%; height: 100%; text-shadow: var(--text-halo-reader);
   display: block; margin: 0; padding: 24px 42px 60px;
   background: var(--surface-reader); color: var(--fg);
   border: none; outline: none; resize: none;
@@ -509,15 +545,24 @@ body.settings-open #layout { margin-right: var(--settings-w); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* ===== Markdown 排版 ===== */
-.markdown-body { user-select: text; -webkit-user-select: text; font-size: var(--body-size); line-height: 1.75; }
+/* v1.9 版式口径(CDS:层级靠级差与留白,不靠装饰线):
+ *   H1 不再压一条下边框 —— 标题与正文的分界交给空间;H2 的段前距拉到 2.2em,
+ *   让每一节在滚动时自然形成"页";H4 降一档墨色,四级标题不再和正文抢注意力。
+ *   text-wrap: balance/pretty 是渐进增强,不支持的内核按原样换行。 */
+.markdown-body { user-select: text; -webkit-user-select: text; font-size: var(--body-size); line-height: var(--line-h); text-wrap: pretty; word-break: auto-phrase; text-shadow: var(--text-halo-reader); }
+.markdown-body > :first-child { margin-top: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 {
-  font-family: var(--sans); font-weight: 600; margin: 1.4em 0 .6em; line-height: 1.3; scroll-margin-top: 16px;
+  font-family: var(--sans); font-weight: 600; line-height: 1.25; scroll-margin-top: 16px; text-wrap: balance;
+  text-shadow: var(--title-halo-reader);
 }
-.markdown-body h1 { font-size: var(--h1-size); border-bottom: 1px solid var(--border); padding-bottom: .3em; }
-.markdown-body h2 { font-size: 1.4em; padding-bottom: .2em; }
-.markdown-body h3 { font-size: 1.15em; }
-.markdown-body p, .markdown-body ul, .markdown-body ol { margin: .8em 0; }
-.markdown-body li + li { margin-top: .2em; }
+.markdown-body h1 { font-size: var(--h1-size); letter-spacing: -.02em; margin: 1.6em 0 1em; }
+.markdown-body h2 { font-size: 1.45em; letter-spacing: -.012em; margin: 2.2em 0 .65em; }
+.markdown-body h3 { font-size: 1.18em; letter-spacing: -.008em; margin: 1.7em 0 .5em; }
+.markdown-body h4 { font-size: 1.02em; letter-spacing: 0; margin: 1.35em 0 .4em; color: var(--fg-dim); }
+.markdown-body p, .markdown-body ul, .markdown-body ol { margin: .95em 0; }
+.markdown-body li + li { margin-top: .28em; }
+.markdown-body li::marker { color: var(--fg-faint); }
+.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2.4em 0; }
 /* 行内 code:默认**不压灰板**,具体画法由 body.code-* 决定(设置 → 阅读增强 → 行内代码样式)。
  * box-decoration-break: clone 让换行时的行内码每一段都拿到同样的下划线/色带(长路径常用得到)。 */
 .markdown-body code { font-family: var(--mono); font-size: var(--code-size); background: none; padding: 0; border-radius: 0;
@@ -526,11 +571,11 @@ body.settings-open #layout { margin-right: var(--settings-w); }
 /* 代码块 = 玻璃凹槽:纯黑按 glass 压暗(色相跟随环境)+ 中性发丝边 + 1px 顶部内高光。
  * 为什么不用强调色掺板:v1.8.8 掺 28% 橙得到的 rgb(54,46,43) 压在照片壁纸上就是一块脏棕(用户实拍吐槽)。 */
 .markdown-body pre { background: var(--plate-sink);
-  border: 1px solid var(--hair-strong); border-radius: var(--radius); padding: 12px 14px; overflow: auto;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%); }
-.markdown-body pre code { background: none; padding: 0; color: var(--fg); font-size: var(--code-size); }
-.markdown-body blockquote { margin: 1em 0; padding: .2em 1em; border-left: 4px solid var(--accent); color: var(--fg-dim); background: none; }
-.markdown-body a { color: var(--blue); text-decoration: none; }
+  border: 1px solid var(--hair-strong); border-radius: var(--r-md); padding: 14px 16px; overflow: auto;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%); tab-size: 2; }
+.markdown-body pre code { background: none; padding: 0; color: var(--fg); font-size: var(--code-size); line-height: 1.65; word-break: normal; }
+.markdown-body blockquote { margin: 1.2em 0; padding: .1em 0 .1em 1.05em; border-left: 2px solid var(--accent); color: var(--fg-dim); background: none; }
+.markdown-body a { color: var(--blue); text-decoration: none; text-underline-offset: .18em; }
 .markdown-body a:hover { text-decoration: underline; }
 
 /* —— 行内代码样式(四选一;设置 → 阅读增强 → 行内代码样式)——
@@ -539,11 +584,9 @@ body.settings-open #layout { margin-right: var(--settings-w); }
  *   underline 下划线 : 一根 1px 强调色底线,最省视觉噪声
  *   bare      无痕   : 只有等宽字形 + 一点点色偏,零装饰
  *   plate     薄底   : 保留"托底"观感,但浓度比旧版(62%)薄得多,且随滑条走
- * 引用块跟着同一档:默认只留左侧 4px 强调条,不再压灰板。 */
+ * 引用块跟着同一档:默认只留左侧 2px 强调条(4px 在纸面上像色块),不再压灰板。 */
 body.code-plate .markdown-body code { background-color: var(--code-plate); padding: 1px 5px; border-radius: var(--r-xs); }
-body.code-plate .markdown-body blockquote { background-color: var(--code-plate); }
 body.code-wash .markdown-body code { background-image: linear-gradient(to top, var(--code-wash) 0 44%, transparent 44%); padding: 0 2px; }
-body.code-wash .markdown-body blockquote { background-image: linear-gradient(to top, var(--code-wash) 0 26%, transparent 26%); }
 body.code-underline .markdown-body code { border-bottom: 1px solid var(--code-rule); padding-bottom: 1px; }
 body.code-bare .markdown-body code { color: color-mix(in oklab, var(--fg) 88%, var(--accent)); }
 /* 代码块内部的 code 不吃行内码的画法:它归 pre 的那块板管(暖阱 + 文字晕一起压住长代码的对比度)。
@@ -556,18 +599,23 @@ body.code-underline .markdown-body pre code,
 body.code-bare .markdown-body pre code {
   color: var(--fg); background: none; background-image: none; border: none; padding: 0; border-radius: 0;
 }
-.markdown-body img { max-width: 100%; border-radius: var(--radius); display: block; margin: 1.2em auto; }
+.markdown-body img { max-width: 100%; border-radius: var(--r-md); display: block; margin: 1.4em auto; }
 .markdown-body img.srh-img-err {
   min-height: 2.4em; border: 1px dashed var(--border); color: var(--muted);
   font-size: .9em; display: flex; align-items: center; justify-content: center; padding: .6em 1em;
 }
-.markdown-body video, .markdown-body audio { max-width: 100%; display: block; margin: 1.2em auto; border-radius: var(--radius); }
-.markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 2em 0; }
+.markdown-body video, .markdown-body audio { max-width: 100%; display: block; margin: 1.4em auto; border-radius: var(--r-md); }
 /* 表格:v1.8.8 去板 —— 旧版是"表头灰带 + 单元格 1px 全网格",在玻璃上就是一块灰色表格皮;
- * 现在只留横向发丝线(表头一条暖线),竖线全删。 */
-.markdown-body table { border-collapse: collapse; margin: 1em 0; width: auto; }
-.markdown-body th, .markdown-body td { border: 0; padding: 7px 12px; }
-.markdown-body th { background: none; border-bottom: 1px solid var(--hair-strong); font-weight: 600; }
+ * 现在只留横向发丝线(表头一条暖线),竖线全删。v1.9 只把行高与数字对齐调到编辑感一档。 */
+/* v1.9:宽表用满纸面宽度并在自己的槽里横向滚动 —— 不再让整页跟着横向滚。
+ * 槽用负 margin 吃掉 reader-inner 的左右内边距,表格与纸边对齐;窄窗的 padding 变化由 --reader-pad 跟随。 */
+.md-table-wrap { width: calc(100% + var(--reader-pad) * 2); margin: 1.2em 0 1.2em calc(var(--reader-pad) * -1);
+  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
+.md-table-wrap > table { margin: 0; width: max-content; max-width: none; }
+.md-table-wrap th, .md-table-wrap td { white-space: nowrap; }
+.markdown-body table { border-collapse: collapse; margin: 1.2em 0; width: auto; font-variant-numeric: tabular-nums; }
+.markdown-body th, .markdown-body td { border: 0; padding: 9px 14px; }
+.markdown-body th { background: none; border-bottom: 1px solid var(--hair-strong); font-weight: 600; letter-spacing: .01em; }
 .markdown-body td { border-top: 1px solid var(--rule); }
 .markdown-body tbody tr:first-child td { border-top: 0; }
 .markdown-body .katex { font-size: 1.05em; }
@@ -642,8 +690,19 @@ body.code-bare .markdown-body pre code {
   --r-xs: 4px; --r-sm: 6px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px;
   --elev-card: 0 1px 2px rgba(0, 0, 0, .28);
   --elev-flyout: 0 10px 40px rgba(0, 0, 0, .42);
-  --dur-fast: 120ms; --dur: 160ms; --dur-slow: 220ms;
-  --ease: cubic-bezier(.2, 0, 0, 1);
+  --dur-snap: 120ms; --dur-fast: 120ms; --dur: 160ms; --dur-base: 200ms; --dur-slow: 300ms; --dur-sheet: 320ms;
+  /* v1.9 动效语汇:曲线取自 open-claude-ui 的 CDS 逆向手册(纯数值,不引依赖)。
+   * 旧名 --ease 保留为"默认减速",存量规则不改;新规则按语义选:
+   *   enter 进场 / out 退场 / overshoot 浮层落位 / pop 按压回弹 / snap 吸附 / rise 升起 */
+  --ease: cubic-bezier(.165, .84, .44, 1);
+  --ease-swift: cubic-bezier(.16, 1, .3, 1);
+  --ease-enter: cubic-bezier(.22, 1, .36, 1);
+  --ease-out: cubic-bezier(.165, .84, .44, 1);
+  --ease-snap: cubic-bezier(.32, .72, 0, 1);
+  --ease-overshoot: cubic-bezier(.34, 1.3, .64, 1);
+  --ease-pop: cubic-bezier(.34, 1.56, .64, 1);
+  --ease-rise: cubic-bezier(.3, .7, .4, 1);
+  --ease-fall: cubic-bezier(0, 0, .2, 1);
   --measure: 34em;          /* 正文行宽:34em ≈ 34 个全角字(中文规范 32–38) */
   --line-h: 1.7;             /* 正文行高(中文建议 1.6–1.75) */
   --body-font: var(--sans);  /* 正文家族:无衬线;可切等宽 */
@@ -652,17 +711,13 @@ body.code-bare .markdown-body pre code {
   --sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
 }
 @media (prefers-reduced-motion: reduce) {
-  :root { --dur-fast: 1ms; --dur: 1ms; --dur-slow: 1ms; }
+  :root { --dur-snap: 1ms; --dur-fast: 1ms; --dur: 1ms; --dur-base: 1ms; --dur-slow: 1ms; --dur-sheet: 1ms; }
   .markdown-body { animation: none !important; }
 }
 
 /* —— 排版:行宽 / 行高 / 正文家族 —— */
-.reader { position: relative; }
 .reader-inner { max-width: var(--measure); }
 .markdown-body { font-family: var(--body-font); line-height: var(--line-h); }
-.markdown-body h1 { letter-spacing: -.011em; }
-.markdown-body h2, .markdown-body h3, .markdown-body h4 { letter-spacing: -.006em; }
-.markdown-body p { margin: .85em 0; }
 body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
 
 .markdown-body pre code { background: transparent; }
@@ -685,12 +740,20 @@ body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--
 
 /* —— 动效统一(短、稳、只做反馈) —— */
 .tab, .tb-btn, .menu-item, .tree-item, .theme-btn, .side-recent, .drawer-item, .setpage-nav-item, .win-btn {
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease-pop);
 }
-html { transition: background-color var(--dur-slow) var(--ease); }
-.markdown-body { animation: sr-doc-in var(--dur-slow) var(--ease); }
+/* 按压回弹:CDS 的 0.98 触感。只给按钮,不给列表行 —— 行缩放会带动整块重绘。 */
+:is(.tab, .tb-btn, .menu-item, .theme-btn, .win-btn, .side-recent, .drawer-item):active:not(:disabled) { transform: scale(.985); }
+html { transition: background-color var(--dur-slow) var(--ease-enter); }
+.markdown-body { animation: sr-doc-in var(--dur-slow) var(--ease-enter); }
 @keyframes sr-doc-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-.toast { transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease); }
+/* 浮层进场:只做 4px 位移 + 透明度,不做 scale(半透明玻璃上缩放会把背后壁纸拉出摩尔纹)。 */
+@keyframes cds-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.drawer:not([hidden]), .settings-panel:not([hidden]):not(.settings-page) {
+  animation: cds-menu-in var(--dur-base) var(--ease-out) both;
+}
+.toast { transition: opacity var(--dur-base) var(--ease-out), transform var(--dur-sheet) var(--ease-overshoot); }
 /* 编辑态查找替换条:复用 .findbar 的层级与圆角,多一个"替换为"输入与三个按钮。 */
 .edit-find { gap: 6px; }
 .edit-find .set-text { width: 150px; }

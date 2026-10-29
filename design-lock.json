@@ -33,8 +33,9 @@
     "text_halo": {
       "default_percent": 55,
       "range": [0, 100],
-      "ssot": "ui-reader/app.css --halo-k(0.55)+ 玻璃面板「文字阴影」滑条",
-      "why": "玻璃模式下文字直接压在模糊壁纸上,亮壁纸会把米白字洗没;55% 是「少一半丑、几乎不丢可读」的点"
+      "ssot": "ui-reader/app.css --halo-k(0.55)+ 玻璃面板「文字阴影」滑条 + app.js HALO_DEFAULT",
+      "why": "铬层/侧栏仍直接叠在模糊壁纸上,保留 55;正文站在 --reader-add 的纸上,另走 --halo-k-reader = --halo-k × .68(默认峰值 α≈0.34),两侧都不发虚。",
+      "reader_factor": ".68(≈37/55);滑条拖到 0 两边一起停,拖到 100 正文也只到 68%"
     },
     "light_theme": {
       "locked_at": "2026-10-26(v1.8.14 定案「B:浅色 = 中性白纸」)",
@@ -79,7 +80,38 @@
       "body_size": 16,
       "line_height_ratio": 1.7,
       "measure": "── 见 app.css --body-size / --line-h / --measure",
-      "font_stack": "Maple Mono NF CN → PingFang SC → Microsoft YaHei UI → system-ui"
+      "font_stack": "Segoe UI Variable Text → Segoe UI → Microsoft YaHei UI → PingFang SC → Noto Sans SC"
+    },
+    "reader_plate": {
+      "locked_at": "2026-10-29(v1.9,用户「全都要做。保持透明风格」)",
+      "model": "两层同相:--glass(滑条)只画窗口底/铬层;.reader 再用 --bg2 叠 --reader-add(常量,深 52% / 浅 10%)",
+      "dark_composite": "conc 20 / 40 / 70 → 61.6% / 71.2% / 85.6%(纸面用 --bg2 抬一档,不是同色叠黑)",
+      "light_composite": "glass-lift 后 86–96% + 10% → 87.4–96.4%",
+      "why": "正文永远站在 ~70% 以上的纸上,滑条仍保留 20–70% 的整窗透明区间;文字晕才敢从 55 降到 ~37(×.68)",
+      "forbidden": "禁再引入第二个浓度滑条;禁把 --reader-add 写进 applyGlass(它是 CSS 常量,不是用户旋钮)"
+    },
+    "motion": {
+      "locked_at": "2026-10-29(v1.9,CDS 口径)",
+      "tokens": "swift / enter / out / snap / overshoot / pop / rise / fall(曲线值取自 open-claude-ui 手册)",
+      "durations": "snap 120ms · fast 120ms · base 200ms · sheet 320ms · slow 300ms",
+      "usage": "浮层 cds-menu-in(--ease-out 200ms);按钮按压 scale(.985)(--ease-pop 120ms);主题切换 --ease-enter;toast 用 overshoot",
+      "why": "旧版只有一条 cubic-bezier(.2,0,0,1) + 120/160/220,所有东西匀速到位,没有轻重"
+    },
+    "type_scale": {
+      "locked_at": "2026-10-29(v1.9,CDS 口径)",
+      "h1": "var(--h1-size) / -0.02em / margin 1.6em 0 1em / 无下边框",
+      "h2": "1.45em / -0.012em / margin 2.2em 0 .65em",
+      "h3": "1.18em / -0.008em / margin 1.7em 0 .5em",
+      "h4": "1.02em / 0 / margin 1.35em 0 .4em / color --fg-dim",
+      "body": "p .95em;li+li .28em;表格 tabular-nums + 9/14 padding;宽表进 .md-table-wrap 横向槽(用满纸面宽);引用 2px 条",
+      "why": "层级靠级差与留白,不靠装饰线;H1 的下边框在纸面上会读成一条分隔条"
+    },
+    "scroll_fade": {
+      "locked_at": "2026-10-29(v1.9,CDS 口径)",
+      "size": "28px",
+      "curve": "7 档非线性 alpha(0.051 / 0.149 / 0.302 / 0.502 / 0.702 / 0.851);fade=0 时直接 mask-image:none",
+      "driver": "app.js syncReaderFade:只在 top/bottom 可滚状态翻转时整条重建 mask-image(单层 gradient);ResizeObserver 兜内容与字号变化",
+      "why": "线性两色切线在视网膜屏上色阶断层;滚动过程不写样式,避免每帧重算"
     }
   },
   "assertions": [
@@ -103,6 +135,6 @@
     { "id": "a11y-basics", "kind": "manual", "check": ":focus-visible / 文本替代 / prefers-reduced-motion 三条存在", "threshold": "缺一即红", "how": "r12g #23 + 目视" }
   ],
   "accept": [
-    { "id": "runways-194", "kind": "probe", "check": "四条自动化跑道全绿", "threshold": "81+25+62+26 = 194/194", "how": "node e2e/r12d-full.mjs / r12e-editor.mjs / r12f-v18.mjs / r12g-visual24.mjs --port=<cdp>" }
+    { "id": "runways-224", "kind": "probe", "check": "五条自动化跑道全绿", "threshold": "81+25+70+27+21 = 224/224", "how": "node e2e/r12d-full.mjs / r12e-editor.mjs / r12f-v18.mjs / r12g-visual24.mjs / r12h-i18n.mjs --port=<cdp>" }
   ]
 }

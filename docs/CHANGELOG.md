@@ -1,5 +1,59 @@
 # Changelog · TMMD
 
+## v1.9.0 · 2026-10-29(阅读区版式与材质分层:CDS 口径)
+
+用户:「全都要做。保持透明风格,其他按照刚才的设计仓库的口径来修改就行。」
+参考口径:[`Caho1/open-claude-ui`](https://github.com/Caho1/open-claude-ui)(只借结论与数值,不引 React/Tailwind 依赖)。
+
+### A. 版式:层级靠级差与留白,不靠装饰线
+
+| 项 | 旧 | 新 |
+|---|---|---|
+| H1 | 1.75em + 下边框 | 保留字号变量,去掉边框;`letter-spacing -.02em`,段前 1.6em |
+| H2 / H3 / H4 | 1.4 / 1.15 / 1em | 1.45 / 1.18 / 1.02em;H2 段前 2.2em;H4 降一档墨色 |
+| 段落 / 列表 | .8em / .2em | .95em / .28em;`li::marker` 用 faint |
+| 引用 | 4px 条 | 2px 条(4px 在纸面上像色块);不再叠 wash/plate 背景 |
+| 宽表 | 溢出到整页横向滚 | `wrapTables()` 包 `.md-table-wrap`:占满纸面宽、自己滚;单元格 `nowrap` |
+| 表格/代码 | 7×12 / 12×14 | 9×14 + `tabular-nums` / 14×16 + `tab-size 2` |
+| 中文断行 | normal | `word-break: auto-phrase`(渐进增强,不支持的内核按原样) |
+
+### B. 材质:透明不变,正文抬一档纸
+
+- `.reader` 在窗口底上再叠一层 `--reader-add`(深 52% / 浅 10%),用 `--bg2` 而不是 `--bg` —— 同色叠两层只会把正文压成更黑的洞。
+- 合成后:深色 20/40/70% 档 = **61.6 / 71.2 / 85.6%**;浅色 87.4–96.4%。铬层/侧栏仍只走滑条(20–70%)。
+- 不再有第二个浓度滑条:`--reader-add` 是 CSS 常量,不进 `applyGlass`。
+- **文字晕拆两档**:铬层仍 55(直接压模糊壁纸);正文/编辑器 `--halo-k-reader = --halo-k × .68`,默认峰值 α≈0.34。滑条仍是唯一 SSOT,拖到 0 两边一起停。
+
+### C. 动效:从"到位"变成"有轻重"
+
+- 新增 8 条曲线(swift / enter / out / snap / overshoot / pop / rise / fall)与 5 档时长(120/160/200/300/320ms),`--ease` 默认改为 CDS 的 out 曲线。
+- 抽屉/设置小浮层进场 `cds-menu-in`(200ms);按钮按压 `scale(.985)`(`--ease-pop` 120ms);toast 用 overshoot;主题切换用 enter。
+- `prefers-reduced-motion` 同步把新增时长压到 1ms。
+
+### D. 阅读区边缘渐隐(7 档非线性)
+
+- 顶部/底部各 28px,7 档 alpha(5.1/14.9/30.2/50.2/70.2/85.1%),顶部/底部各自在"还能滚"时出现。
+- `syncReaderFade()` 只在可滚状态翻转时重建 mask;`ResizeObserver` 兜字号/行号/换文档导致的尺寸变化;滚动过程不写样式。
+- **真缺陷(本轮实测)**:最初把 16 档 stop 写死在一条 gradient 里,`fade=0` 时底部那组 stop 全塌到 100%,整条 mask 从顶部不透明渐变到 5% —— 正文整页发虚。改成 JS 按当前边缘状态生成单层 gradient;`fade=0` 时直接 `mask-image: none`。
+
+### 验证
+
+- 回归:**224/224** —— r12d 81 / r12e 25 / r12f 70(新增 I9 晕分档 + L1–L4 渐隐)/ r12g 27 / r12h 21。
+- 5000 行滚动:G2 avg 7.7ms、G3 p95 8.1ms(加 mask 后仍 ≥50fps)。
+- 像素:代码凹槽、行内码板、浅色 token 对比度原判据全绿(J1–J4、r12g #21/#27)。
+- 视觉材料:`docs/preview/v1.9/` 三张 = **CDP 透明截屏 + 高斯模糊壁纸合成**(本机只有一块屏,DWM 真实合成未实拍;合成方法见该目录 README),外加 `local-release-live.png` = **本地 release 版真窗口**。
+- 本地 release 真实窗口实测(真实配置 / 2489×1496 物理 = 1245×748 CSS @2x / 打开 README.md):版式、纸面、渐隐正常。
+  - 截图坑:`PrintWindow` 前必须先声明 per-monitor DPI 感知;否则 2x 屏上 `GetWindowRect` 拿到虚拟化坐标,截出来"内容整体右移被窗口切掉"的假象(曾是误判,**不是应用缺陷**),已记进 `docs/preview/v1.9/README.md`。
+- 打包:`npx tauri build` → NSIS `TMMD_1.9.0_x64-setup.exe`(3,381,284 B,sha256 `15f7a975…c6d6`)+ MSI `TMMD_1.9.0_x64_en-US.msi`;`dist/v1.9.0/` 的 `latest.json` / `SHA256SUMS` 由 `make-manifest.ps1` 生成(强制无 BOM)。
+
+### 边界
+
+- 本轮出 **NSIS + MSI 安装包**(`dist/v1.9.0/`),tag `v1.9.0`,GitHub release 即更新通道;通道侧真机升级实测见 v1.8.x 同款流程。
+- 宽表在 544px 纸面内横向滚动;没有把表格单独做成全窗宽(会破坏正文列居中)。
+- H1 在 19 个汉字时仍会两行折行(中文允许字间断行);没有为单个标题改行宽。
+
+---
+
 ## v1.8.17 · 2026-10-26(全量 i18n + 文案质量整改 + PDF 直出修缺陷 + 静默安装后自动重启)
 
 用户:「语言方面还非常的粗糙,切换日语和英文的时候,还残留着大量的中文。不只是设置面板,到处都有。全量修改。」
