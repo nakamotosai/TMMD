@@ -1484,17 +1484,48 @@ function applyTypewriter(on) {
  * 后端命令:update_check / update_download / update_install / update_note。
  * 这里只负责"问一句 + 显示进度 + 放行关窗";信任链(SHA-256、URL 前缀)全在后端。 */
 let updLast = null;   // 最近一次的更新器状态(键+变量):切语言后要用新语言重画
+let updKnown = null;  // 已知的更新清单(网络或缓存):设置行的状态文字点击时用它直接开弹窗
 function updStatus(key, vars) { updLast = { key, vars }; return t(key, vars); }
 function setUpdateStatus(s) {
   const el = $id('updState');
   if (el) el.textContent = s;
+}
+/* 已更新版本的常驻标记(顶栏设置键上一个小圆点)。
+ * 2026-10-29(用户报「有新版本完全没有任何提示」):旧版唯一的信号是 2.6 秒就消失的气泡,
+ * 而且后端的网络节流会把"有新版"这件事一起吞掉 —— 结果本地可以整天无声。
+ * 现在:知道有新版本就挂标记,直到装掉 / 跳过 / 追平;抢焦点的那一次交给 promptUpdate()。*/
+function setUpdateBadge(on, version) {
+  const dot = $id('updDot');
+  if (dot) { dot.hidden = !on; if (version) dot.dataset.v = version; }
+  const el = $id('updState');
+  if (el) el.classList.toggle('upd-known', !!on);
+  if (!on) updKnown = null;   // 标记摘掉 = 本地不再认为有更新的版本
+}
+/* 自动检查发现新版:先挂标记(一定看得见),再按用户的意愿决定要不要弹窗打断。
+ * update_prompt_gate 在后端只读地回答 ok / later / skip。
+ * 命令失败时兜底 `ok`(宁可多弹一次也不能把新版藏起来),但要把错误说出来 ——
+ * 2026-10-29 踩过:少登记一条 `allow-update-prompt-gate`(capabilities/default.json),
+ * 调用被 ACL 拒掉,`catch` 静默吞成 ok,于是"稍后"当场失效;是 r12i 的 C1 把它揪出来的。*/
+async function announceUpdate(m) {
+  updKnown = m;
+  setUpdateBadge(true, m.version);
+  let gate = 'ok';
+  if (invoke) {
+    gate = await invoke('update_prompt_gate', { version: m.version }).catch((e) => {
+      console.warn('[updater] update_prompt_gate 失败,按"可以弹"处理: ' + e);
+      return 'ok';
+    });
+  }
+  if (gate !== 'ok') return;
+  await promptUpdate(m);
 }
 async function checkUpdate(force) {
   if (!invoke) return null;
   setUpdateStatus(updStatus('upd.checking'));
   try {
     const m = await invoke('update_check', { force: !!force });
-    if (!m) { setUpdateStatus(updStatus('upd.latest')); return null; }
+    if (!m) { updKnown = null; setUpdateStatus(updStatus('upd.latest')); return null; }
+    updKnown = m;
     setUpdateStatus(updStatus('upd.available', { v: m.version }));
     return m;
   } catch (e) {
@@ -1540,19 +1571,28 @@ async function promptUpdate(m) {
       { label: t('upd.skip'), a: 'skip' },
     ],
   });
-  if (r.action === 'later' || r.action === 'skip') {
-    invoke('update_note', { version: m.version, action: r.action }).catch(() => {});
-    setUpdateStatus(r.action === 'skip' ? updStatus('upd.latest') : updStatus('upd.available', { v: m.version }));
+  // 直接关掉 / 点空白 = 当作"稍后"(3 天内不再问)—— 旧版这里会把这次选择丢掉,下次启动再弹一遍
+  const act = r.action === 'cancel' ? 'later' : r.action;
+  if (act === 'later' || act === 'skip') {
+    invoke('update_note', { version: m.version, action: act }).catch(() => {});
+    setUpdateStatus(act === 'skip' ? updStatus('upd.latest') : updStatus('upd.available', { v: m.version }));
+    setUpdateBadge(act !== 'skip', m.version);   // 跳过 = 连标记一起摘;稍后 = 留个痕迹
+    if (act === 'skip') updKnown = null;
     return;
   }
-  if (r.action === 'install') await runUpdate(m);
+  if (act === 'install') await runUpdate(m);
 }
-/* 启动后台检查:不抢流程,4 秒后静默问一次;有新版才提示。 */
+/* 启动后台检查:不抢流程,4 秒后静默问一次;有新版就挂标记并弹一次。
+ * 2026-10-29(用户报「有新版本怎么完全没有任何提示,我是在设置面板里主动按了之后才知道」):
+ * 旧版这里只 `toast()` 一下(2.6s 消失,窗口没在前台就基本等于没有),而后端在节流命中时
+ * 连 `Some(manifest)` 都不会给 —— 两处叠起来就是"整天无声"。现在:标记常驻 + 弹窗一次,
+ * 且后端只在节流时省网络请求、答案照给(见 update_check 注释)。*/
 function scheduleUpdateCheck() {
   if (!invoke) return;
   setTimeout(async () => {
     const m = await checkUpdate(false);
-    if (m) toast(t('upd.available', { v: m.version }));
+    if (m) await announceUpdate(m);
+    else setUpdateBadge(false);
   }, 4000);
 }
 /* 更新器:文案与状态自检(供 e2e 与肉眼核对,不改状态) */
@@ -2218,8 +2258,11 @@ function wire() {
   // 自研更新器:设置页手动检查(force 跳过节流)+ 启动后台静默检查
   $id('btnCheckUpdate')?.addEventListener('click', async () => {
     const m = await checkUpdate(true);
-    if (m) await promptUpdate(m);
+    if (m) { setUpdateBadge(true, m.version); await promptUpdate(m); }
+    else setUpdateBadge(false);
   });
+  // 状态文字本身就是更新版的入口(标记只是"有个新版",这里点一下直接开安装弹窗)
+  $id('updState')?.addEventListener('click', () => { if (updKnown) promptUpdate(updKnown); });
   // 打字机模式(编辑侧滚动跟随)
   $id('setTypewriterOn')?.addEventListener('click', () => applyTypewriter(true));
   $id('setTypewriterOff')?.addEventListener('click', () => applyTypewriter(false));
@@ -2666,6 +2709,7 @@ const I18N = {
   'upd.checking': ['检查中…', 'Checking…', '確認中…'],
   'upd.latest': ['已是最新版本', 'Up to date', '最新版です'],
   'upd.available': ['发现新版 {v}', 'Version {v} available', '新しいバージョン {v} があります'],
+  'upd.badge': ['有新版本可用', 'Update available', '新しいバージョンがあります'],
   'upd.title': ['发现新版本 {v}', 'Version {v} is available', '新しいバージョン {v} があります'],
   'upd.sub': ['大小约 {size} MB。下载后先校验 SHA-256,再静默安装并重启到新版。', 'About {size} MB. It verifies SHA-256, installs silently, then restarts into the new version.', '約 {size} MB。SHA-256 検証後にサイレントインストールして再起動します。'],
   'upd.install': ['下载并安装', 'Download and install', 'ダウンロードして導入'],

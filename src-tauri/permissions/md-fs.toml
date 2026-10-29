@@ -114,6 +114,11 @@ description = "Allow update_check (自研更新器:取发布清单,24h 节流)"
 commands.allow = ["update_check"]
 
 [[permission]]
+identifier = "allow-update-prompt-gate"
+description = "Allow update_prompt_gate (只读回答:现在能不能弹更新提示 ok/later/skip)"
+commands.allow = ["update_prompt_gate"]
+
+[[permission]]
 identifier = "allow-update-download"
 description = "Allow update_download (下载更新包 + SHA-256 强校验)"
 commands.allow = ["update_download"]

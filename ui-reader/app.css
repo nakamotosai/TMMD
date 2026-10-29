@@ -520,6 +520,12 @@ body.settings-open #layout { margin-right: var(--settings-w); }
 .settings-row label { flex-shrink: 0; width: 72px; font-size: 13px; color: var(--fg-dim); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
 .settings-row input[type=range] { flex: 1; min-width: 100px; accent-color: var(--accent); }
 .settings-val { font-size: 12px; color: var(--fg-faint); width: 48px; text-align: right; }
+/* 有新版时状态文字本身就是入口(点一下开安装弹窗),所以给可见的交互态 */
+.settings-val.upd-known { color: var(--accent); cursor: pointer; }
+/* 顶栏设置键上的更新圆点:绝对定位,不参与工具栏宽度计算(折叠判据不受影响) */
+.topbar #btnSettings { position: relative; }
+.upd-dot { position: absolute; top: 4px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface-plate); pointer-events: none; }
+body.tb-icon #btnSettings .upd-dot { top: 3px; right: 3px; }
 #fileAssocStatus { width: auto; flex: 1; text-align: left; white-space: normal; }
 .theme-btn { font-size: 12px; padding: 4px 12px; }
 /* 四选一的控件行(行内代码样式):默认 232px 塞不下 4 个中文按钮 —— 给一档宽版,别把标签切短。

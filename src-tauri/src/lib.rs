@@ -1478,6 +1478,13 @@ pub struct UpdateState {
     pub skipped_version: Option<String>,
     #[serde(default)]
     pub remind_after: Option<u64>,
+    /// 最近一次成功检查看到的**更新版本清单**(回答真相,不只是"检查过")。
+    /// 2026-10-29 加:`update_check` 被节流时不再靠它说"已是最新"——那是假话。
+    #[serde(default)]
+    pub remote: Option<UpdateManifest>,
+    /// 上次成功检查时**本程序**的版本号:装完新版立刻重查一次,不吃上一版留下的 24h 节流。
+    #[serde(default)]
+    pub checked_by_version: Option<String>,
 }
 
 fn now_secs() -> u64 {
@@ -1539,32 +1546,58 @@ fn update_url_trusted(url: &str) -> bool {
     false
 }
 
-/// 检查更新。返回 None = 已是最新(或被跳过/未到节流窗口)。
-/// force=true 跳过 24h 节流与"跳过此版本"(设置页手动点用)。
+/// 已知的"比当前版本新"的清单(缓存)。`force` 时连"跳过此版本"也不认 —— 手动检查必须能看见。
+fn pending_update(st: &UpdateState, cur: &str, force: bool) -> Option<UpdateManifest> {
+    st.remote
+        .as_ref()
+        .filter(|m| is_newer(&m.version, cur))
+        .filter(|m| force || st.skipped_version.as_deref() != Some(m.version.as_str()))
+        .cloned()
+}
+
+/// 检查更新。`Some` = **确实存在**比当前更新的版本(不再因为节流而假装"已是最新")。
+///
+/// 2026-10-29 实测缺陷(用户报「有新版本完全没有任何提示」):旧版把"省一次网络请求"和
+/// "要不要告诉用户"混在同一个 `if` 里 —— 节流命中就 `Ok(None)`,前端于是显示"已是最新版本"。
+/// 后果:上次检查**之后**才发布的新版,本地最长 24 小时完全无声;而且刚装完新版本也会被
+/// 上次留下的 `last_checked` 压住,一次都不查。
+/// 现在:节流只决定**要不要打网络**,答案(缓存 `remote`)照给;该不该弹窗打断用户由
+/// 前端的 `update_prompt_gate` 决定 —— 提示的可见性与网络节流彻底解耦。
 #[tauri::command]
 fn update_check(app: tauri::AppHandle, force: Option<bool>) -> Result<Option<UpdateManifest>, String> {
     let force = force.unwrap_or(false);
     let mut st = read_update_state(&app);
     let now = now_secs();
-    if !force {
-        if let Some(last) = st.last_checked {
-            if now.saturating_sub(last) < UPDATE_CHECK_INTERVAL {
-                return Ok(None);
-            }
-        }
-        if let Some(ra) = st.remind_after {
-            if now < ra {
-                return Ok(None);
-            }
-        }
+    let cur = env!("CARGO_PKG_VERSION");
+    // 打网络的三个条件:强制检查 / 距上次成功检查够 24h / **当前这个版本还没查过**。
+    let net = force
+        || (st.checked_by_version.as_deref() != Some(cur)
+            && st
+                .last_checked
+                .map_or(true, |l| now.saturating_sub(l) >= UPDATE_CHECK_INTERVAL));
+    if !net {
+        return Ok(pending_update(&st, cur, force));
     }
     let url = std::env::var("TMMD_UPDATE_ENDPOINT").unwrap_or_else(|_| UPDATE_MANIFEST_URL.to_string());
-    let body = ureq::get(&url)
+    let fetched = ureq::get(&url)
         .call()
-        .map_err(|e| format!("取更新清单失败: {e}"))?
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("读更新清单失败: {e}"))?;
+        .map_err(|e| format!("取更新清单失败: {e}"))
+        .and_then(|r| {
+            r.into_body()
+                .read_to_string()
+                .map_err(|e| format!("读更新清单失败: {e}"))
+        });
+    let body = match fetched {
+        Ok(b) => b,
+        // 拿不到新答案时,已知的答案不能因为一个网络错误就消失 ——
+        // 报"有新版本"比报"已是最新"诚实;真正没有已知答案时才把错误交出去。
+        Err(e) => {
+            return match pending_update(&st, cur, force) {
+                Some(m) => Ok(Some(m)),
+                None => Err(e),
+            }
+        }
+    };
     // 清单是信任根:不能因为一个看不见的 BOM 整体失效。2026-10-25 实测:GitHub 上的 asset 带
     // UTF-8 BOM(PowerShell 5.1 的 Set-Content -Encoding UTF8 会写 BOM),serde_json 直接
     // 报 "expected value at line 1 column 1" —— 通道看着通、实际全军覆没。生成脚本已改成无 BOM,
@@ -1572,23 +1605,37 @@ fn update_check(app: tauri::AppHandle, force: Option<bool>) -> Result<Option<Upd
     let body = body.trim_start_matches('\u{feff}').trim();
     let m: UpdateManifest =
         serde_json::from_str(body).map_err(|e| format!("更新清单无效: {e}"))?;
-    st.last_checked = Some(now);
     if m.sha256.len() != 64 || !m.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err("更新清单里的 sha256 不合法".into());
     }
     if !update_url_trusted(&m.url) {
         return Err(format!("更新包来源不可信: {}", m.url));
     }
-    if !is_newer(&m.version, env!("CARGO_PKG_VERSION")) {
+    st.last_checked = Some(now);
+    st.checked_by_version = Some(cur.to_string());
+    if !is_newer(&m.version, cur) {
+        st.remote = None; // 追平(或服务端回退):旧缓存必须清掉,否则会一直报一个不存在的"新版"
         write_update_state(&app, &st);
         return Ok(None);
     }
-    if !force && st.skipped_version.as_deref() == Some(m.version.as_str()) {
-        write_update_state(&app, &st);
-        return Ok(None);
-    }
+    st.remote = Some(m.clone()); // 缓存下来:下次不打网络也能回答"有新版本"
+    let report = force || st.skipped_version.as_deref() != Some(m.version.as_str());
     write_update_state(&app, &st);
-    Ok(Some(m))
+    Ok(if report { Some(m) } else { None })
+}
+
+/// 前端"能不能弹窗打断用户":`ok` / `later`(说过"稍后")/ `skip`(说过"跳过此版本")。
+/// 只读、不改状态 —— 弹不弹是前端的决定,后端正本清源只负责"现在有没有更新"。
+#[tauri::command]
+fn update_prompt_gate(app: tauri::AppHandle, version: String) -> String {
+    let st = read_update_state(&app);
+    if st.skipped_version.as_deref() == Some(version.as_str()) {
+        return "skip".into();
+    }
+    if st.remind_after.map_or(false, |ra| now_secs() < ra) {
+        return "later".into();
+    }
+    "ok".into()
 }
 
 /// 下载更新包到配置目录的 updates/,边下边算 SHA-256,完成后比对;不符直接删掉并报错。
@@ -1706,9 +1753,10 @@ fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
         .arg(&script)
         .spawn()
         .map_err(|e| format!("起安装脚本失败: {e}"))?;
-    // 记一笔:装完之后"已提示过这个版本"
+    // 记一笔:装完之后"已提示过这个版本";缓存也要清 —— 正在装的就是它,重启后重新查。
     let mut st = read_update_state(&app);
     st.last_prompted = Some(env!("CARGO_PKG_VERSION").to_string());
+    st.remote = None;
     write_update_state(&app, &st);
     Ok(())
 }
@@ -2001,6 +2049,7 @@ pub fn run() {
             allow_close,
             export_pdf,
             update_check,
+            update_prompt_gate,
             update_download,
             update_install,
             update_note,

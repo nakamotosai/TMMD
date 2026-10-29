@@ -345,6 +345,12 @@
           "markdownDescription": "Allow update_note (记录 跳过/稍后)"
         },
         {
+          "description": "Allow update_prompt_gate (只读回答:现在能不能弹更新提示 ok/later/skip)",
+          "type": "string",
+          "const": "allow-update-prompt-gate",
+          "markdownDescription": "Allow update_prompt_gate (只读回答:现在能不能弹更新提示 ok/later/skip)"
+        },
+        {
           "description": "Allow watch_file (外部文件变更监听:父目录非递归 + fs-changed 事件,None 取消)",
           "type": "string",
           "const": "allow-watch-file",
