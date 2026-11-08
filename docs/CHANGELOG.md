@@ -1,5 +1,20 @@
 # Changelog · TMMD
 
+## v1.9.2 · 2026-11-08(窄窗正文不再被裁:宽表也撑得下)
+
+用户:「我都最大化了,正文依旧无法完整显示,被强行折叠了。折叠过程应该是自适应的。」
+
+| 病灶 | 旧行为 | 新行为 |
+|---|---|---|
+| **正文列固定宽与侧栏固定宽叠加溢出** | `.reader-inner` 先被 `max-width:880px` 再被 `max-width:var(--measure)`(34em约544px)封顶，宽表 `nowrap` 实际宽远大于该列，右端被 `.reader` 的 `overflow:auto` 裁掉 | `.reader-inner{width:100%;box-sizing:border-box}` 保留 `max-width:var(--measure)`：内列取 `min(reader,544)`，全宽不裁、窄窗随屏缩 |
+| **侧栏 640 阈值太晚** | `autoFoldSide` 在 <640 才收，640-880 间阅读区已剩不足 | 阈值 640 改 880 (`autoFoldSide` 与 `toggleSide` 同源)，并加 `@media(max-width:880px){.side{display:none}}` CSS 兜底 |
+| **表格槽无上限** | `.md-table-wrap{width:100%+pad*2}` 加 `table{width:max-content}`，槽可超阅读区 | 槽加 `max-width` 与 `box-sizing:border-box` 与 `overflow-y:hidden`；`table{min-width:100%}` 窄表撑满、宽表槽内滚 |
+
+### 验证
+
+- 回归 239/239：r12d 81 / r12e 25 / r12f 70 / r12g 27 / r12h 21 / r12i 16（r12f 首跑 cwd 错 `ENOENT`，进仓库目录后 70/70；r12g 先红后绿系单实例残留旧 conc 污染，隔离 profile 重跑 27/27）。`node --check` OK。`node tools/i18n-lint.mjs` 4 PASS / 1 FAIL(G2，既存未动行)。
+- 表格探针（debug 构建加 CDP `renderMarkdown` 真宽表，Emulation 700/1400/当前 1690）：三宽 `wrapRightDelta ≤1` 且 `innerOverflow=0` 全 PASS（1690:-440.5 / 700:-83 / 1400:-295.5，负即在阅读区内）。
+
 ## v1.9.1 · 2026-10-29(更新提示:从"无声"改成"一定看得见")
 
 用户:「我还真测试成功了,确实自己升级了一个新版本。但是它有新版本怎么完全没有任何提示啊?比如说我上游有了新版本之后,它应该本地也能弹出来……我现在是在设置面板里主动按了之后才知道。」

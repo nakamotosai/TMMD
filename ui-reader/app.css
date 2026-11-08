@@ -362,6 +362,13 @@ body.side-compact #side .toc[data-level="6"] { display: none; }
 }
 .side-resizer:hover, .side-resizer.dragging { background: var(--accent); }
 .side.collapsed + .side-resizer { display: none; }
+/* v1.9.2:CSS-level narrow-window guard (JS autoFoldSide at 640px also collapses).
+   Below 880px the sidebar would squeeze .reader below readable width, so hide it.
+   JS restores on widen; this keeps layout sane even before JS runs. */
+@media (max-width: 880px) {
+  .side, .side-resizer { display: none !important; }
+  .reader-inner { --reader-pad: 22px; }
+}
 
 /* ===== reader ===== */
 /* v1.9:正文板 = 窗口底色之上的一层中性纸面(--reader-add)。
@@ -374,11 +381,9 @@ body.side-compact #side .toc[data-level="6"] { display: none; }
   position: relative;
   mask-image: none;
 }
-.reader-inner { --reader-pad: 42px; max-width: 880px; margin: 0 auto; padding: 34px var(--reader-pad) 60px; }
-/* 窗口窄时收内边距(CDS 4 阶压缩的本地化:只留 3 阶,超过 760 不缩)。
- * 行宽仍由 --measure 管,这里只让"纸边"变窄,不改每行字数上限。
- * 用窗口断点而不是 @container:阅读区宽度会随侧栏/设置抽屉变化,但内边距只需要跟窗口走;
- * 少一层 containment 也少一个合成层(查找条已移出 .reader,不再受 mask 影响)。 */
+.reader-inner { --reader-pad: 42px; width: 100%; margin: 0 auto; padding: 34px var(--reader-pad) 60px; box-sizing: border-box; }
+/* v1.9.2: fluid width + min(--measure, available) cap. Reader shrinks with window;
+   prose capped by --measure; wide elements (tables/pre) scroll inside their own slot. */
 @media (max-width: 760px) {
   .reader-inner { --reader-pad: 30px; padding: 28px var(--reader-pad) 52px; }
 }
@@ -615,10 +620,12 @@ body.code-bare .markdown-body pre code {
  * 现在只留横向发丝线(表头一条暖线),竖线全删。v1.9 只把行高与数字对齐调到编辑感一档。 */
 /* v1.9:宽表用满纸面宽度并在自己的槽里横向滚动 —— 不再让整页跟着横向滚。
  * 槽用负 margin 吃掉 reader-inner 的左右内边距,表格与纸边对齐;窄窗的 padding 变化由 --reader-pad 跟随。 */
-.md-table-wrap { width: calc(100% + var(--reader-pad) * 2); margin: 1.2em 0 1.2em calc(var(--reader-pad) * -1);
-  overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: thin; }
-.md-table-wrap > table { margin: 0; width: max-content; max-width: none; }
+.md-table-wrap { width: calc(100% + var(--reader-pad) * 2); max-width: calc(100% + var(--reader-pad) * 2); margin: 1.2em 0 1.2em calc(var(--reader-pad) * -1);
+  overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; box-sizing: border-box; }
+.md-table-wrap > table { margin: 0; width: max-content; min-width: 100%; max-width: none; }
 .md-table-wrap th, .md-table-wrap td { white-space: nowrap; }
+/* v1.9.2:table fits wrap by default (min-width:100%); wraps only when content exceeds.
+   white-space:nowrap kept for code-like cells; wide tables scroll inside wrap, never outside. */
 .markdown-body table { border-collapse: collapse; margin: 1.2em 0; width: auto; font-variant-numeric: tabular-nums; }
 .markdown-body th, .markdown-body td { border: 0; padding: 9px 14px; }
 .markdown-body th { background: none; border-bottom: 1px solid var(--hair-strong); font-weight: 600; letter-spacing: .01em; }
@@ -723,6 +730,8 @@ body.code-bare .markdown-body pre code {
 
 /* —— 排版:行宽 / 行高 / 正文家族 —— */
 .reader-inner { max-width: var(--measure); }
+/* v1.9.2: plain --measure cap + width:100%/border-box above already fits narrow windows
+   (inner = min(reader, 544px)). min() would only break r12g #17's parseFloat check. */
 .markdown-body { font-family: var(--body-font); line-height: var(--line-h); }
 body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
 

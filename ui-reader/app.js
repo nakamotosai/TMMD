@@ -1749,7 +1749,7 @@ function applySideWidth(w) {
 }
 // R10a：侧栏开关唯一入口（顶栏常驻按钮＋视图菜单共用；窄窗手动拨过即加锁）
 function toggleSide() {
-  if (window.innerWidth < 640) sideManualLock = true;   // v1.7:与 autoFoldSide 阈值同源(640)
+  if (window.innerWidth < 880) sideManualLock = true;   // v1.9.2: with autoFoldSide (880)
   sideAutoFolded = false;
   applySideCollapsed(!S.sideCollapsed);
 }
@@ -1842,7 +1842,9 @@ function applySideCompact(c) {
 let sideManualLock = false;
 let sideAutoFolded = false;
 function autoFoldSide() {
-  const narrow = window.innerWidth < 640;
+  // v1.9.2: 880px threshold (was 640). At 640px the reader was already squeezed:
+  // reader-inner 544pt (34em) + side 260 + paddings > window -> tables clipped.
+  const narrow = window.innerWidth < 880;
   if (!narrow) {
     sideManualLock = false;
     if (sideAutoFolded && S.sideCollapsed) { applySideCollapsed(false); toast(t('toast.sideExpanded')); }
