@@ -176,10 +176,11 @@ await T('A21', '设置 抽屉几何:右贴边 + 宽 min(820px,58vw)', async () =
 })()`)) === 'ok');
 await T('A22', '设置 导航宽 208', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-nav').getBoundingClientRect().width; })()`), 208, 4));
 await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-search').getBoundingClientRect().height; })()`), 74, 6));
-// 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行(打字机模式 + 导出 PDF 相关)→ 28 行 7 区,
-// v1.9.4 删掉「行宽」行(宽度改为铺满,不再可调)→ 29 行 7 区。数字是真在数行数,别改代码不改这里。
+// 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行 → 28 行 7 区,
+// v1.9.4 删掉「行宽」行(宽度改为铺满)→ 29 行,v1.9.5 加「启动时还原来开的标签页」→ 30 行 7 区。
+// 数字是真在数行数,别改代码不改这里。
 await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
-await T('A25', '设置 清空还原 29 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '29/7');
+await T('A25', '设置 清空还原 30 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '30/7');
 // v1.8.4 起设置页是**右侧抽屉**:阅读区不再被藏起来/盖住,而是重排到左边(改外观能立刻看见正文)
 await T('A26', '设置 开设置时阅读区收窄到左侧(不遮挡)', async () => (await val(`(() => {
   showPanel('settings');
@@ -261,6 +262,23 @@ await T('A54', '拖入 openExternal 同路绿(T20 同路)', async () => {
 await T('A55', '最近 3 条可读', async () => (await val(`(() => Array.isArray(S.recent) && S.recent.length >= 1)()`)) === true);
 // 真选择器 #recentList .side-recent（app.js L1000-1021；renderRecent 只取 10）
 await T('A56', '最近 只取十（renderRecent 取 10 上限）', async () => (await val(`(() => document.querySelectorAll('#recentList .side-recent').length <= 10)()`)) === true);
+// v1.9.5 启动干净:标签持久化本身照旧(sr_tabs 有值),但启动不再自动还原 —— 开关默认关。
+// 这两条守的是「用户报的原话」:每次重开都是一堆旧文件 / 历史应该只出现在左栏。
+await T('A56b', '启动干净 默认关＋sr_tabs 仍archived(历史不丢)', async () => (await val(`(() => {
+  const saved = JSON.parse(localStorage.getItem('sr_tabs') || '[]');
+  return S.restoreTabs === false && Array.isArray(saved) && saved.length >= 1;
+})()`)) === true);
+await T('A56c', '启动干净 开关可开可关并落盘', async () => (await val(`(() => {
+  applyRestoreTabs(true);
+  const on = S.restoreTabs === true && LS.get('sr_restore_tabs', null) === '1'
+    && document.getElementById('setRestoreOn').classList.contains('active')
+    && !document.getElementById('setRestoreOff').classList.contains('active');
+  applyRestoreTabs(false);
+  const off = S.restoreTabs === false && LS.get('sr_restore_tabs', null) === '0'
+    && document.getElementById('setRestoreOff').classList.contains('active')
+    && !document.getElementById('setRestoreOn').classList.contains('active');
+  return on && off;
+})()`)) === true);
 // ===== 树 A57–A58 =====
 // 真容器 #sideBody＋.tree-item.file（app.js L618-643）；openExternal 已触发 scanSiblingTree
 // 把 tmp 同目录扫成 S.root；kind=ext 会 setView('toc')（L465），故先切回 tree 再 renderSide

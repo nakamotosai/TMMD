@@ -145,8 +145,16 @@ const S = {
   root: null,
   cur: null,
   // R7 标签页：多 md 并存。tabs 存描述符（持久化只留路径三元组），raw/draft/editing 常驻内存。
-  tabs: (() => { const t = LS.get('sr_tabs', []); return Array.isArray(t) ? t.filter((x) => x && typeof x.abs === 'string') : []; })(),
-  activeKey: LS.get('sr_active_tab', null),
+  /* 启动要不要把上次那排标签原样摆回来。用户 2026-11-09:每次打开都是一堆旧文件,
+   * 「每次都不是干净的重新打开」。默认 0 = 干净启动(空阅读区,历史仍留在左栏「最近打开」);
+   * 1 = 旧行为(整排还原)。sr_tabs 两种模式都照常存,切回 1 立刻可用。 */
+  restoreTabs: LS.get('sr_restore_tabs', null) === '1',
+  // 干净启动时**根本不读**那份会话:读了再清会让启动瞬间打开的文件被误伤(S.tabs 已被替换)。
+  tabs: (() => {
+    if (LS.get('sr_restore_tabs', null) !== '1') return [];
+    const t = LS.get('sr_tabs', []); return Array.isArray(t) ? t.filter((x) => x && typeof x.abs === 'string') : [];
+  })(),
+  activeKey: LS.get('sr_restore_tabs', null) === '1' ? LS.get('sr_active_tab', null) : null,
   view: 'tree',
   toc: [],
   editing: false,
@@ -1050,6 +1058,9 @@ async function openInRoot(rel) {
 // 持久化只留路径三元组（sr_tabs/sr_active_tab），内容重启重读，draft 不落盘。
 // S.cur 恒指 active tab 的 live 文档，其余代码（保存/刷新/收藏/导读卡）零改动。
 function persistTabs() {
+  /* 干净启动模式下「一个标签都没有」不是一次真会话 —— 别拿空数组盖掉上次那份。
+   * 否则用户在空窗里逛一下再开「还原」,能还原的只剩空:盘上必须留最近一次真实会话。 */
+  if (!S.restoreTabs && S.tabs.length === 0) return;
   LS.set('sr_tabs', S.tabs.map((t) => ({ abs: t.abs, relPos: t.relPos || null, rootPath: t.rootPath || null })));
   LS.set('sr_active_tab', S.activeKey);
 }
@@ -1678,6 +1689,15 @@ function applyTypewriter(on) {
   if (S.editorTypewriter) typewriterFollow();
 }
 
+/* 启动是否还原来开的标签页。只影响**下次启动**该还原什么,不关掉当前已经开着的标签 ——
+ * 用户此刻按这个开关,期望的是"下次干净",不是"现在就关我的文件"。 */
+function applyRestoreTabs(on) {
+  S.restoreTabs = !!on;
+  LS.set('sr_restore_tabs', S.restoreTabs ? '1' : '0');
+  $id('setRestoreOn')?.classList.toggle('active', S.restoreTabs);
+  $id('setRestoreOff')?.classList.toggle('active', !S.restoreTabs);
+}
+
 /* ==================== 自研更新器(2026-10-25,用户定调:程序内部自己更新) ====================
  * 后端命令:update_check / update_download / update_install / update_note。
  * 这里只负责"问一句 + 显示进度 + 放行关窗";信任链(SHA-256、URL 前缀)全在后端。 */
@@ -1710,7 +1730,7 @@ async function announceUpdate(m) {
   let gate = 'ok';
   if (invoke) {
     gate = await invoke('update_prompt_gate', { version: m.version }).catch((e) => {
-      console.warn('[updater] update_prompt_gate 失败,按"可以弹"处理: ' + e);
+      console.warn('[updater] update_prompt_gate failed, treating as "may prompt": ' + e);
       return 'ok';
     });
   }
@@ -1873,6 +1893,8 @@ const ERR_MAP = [
   [/^更新包未经校验$|^没有已校验的更新包/, 'err.updUnverified'],
   [/^更新包位置非法$/, 'err.updBadDest'],
   [/^更新包校验失败: ?.*$/, 'err.pkgChanged'],
+  [/^无法解析更新包路径: /, 'err.updBadDest'],
+  [/^已校验的更新包已不存在,请重新下载$/, 'err.pkgMissing'],
   [/^读更新包失败: /, 'err.read'],
   [/^写文件失败|^保存失败/, 'err.write'],
   [/^删除失败/, 'err.delete'],
@@ -2477,6 +2499,9 @@ function wire() {
   $id('setTypewriterOn')?.addEventListener('click', () => applyTypewriter(true));
   $id('setTypewriterOff')?.addEventListener('click', () => applyTypewriter(false));
   applyTypewriter(LS.get('sr_typewriter') === '1');
+  applyRestoreTabs(S.restoreTabs);
+  $id('setRestoreOn')?.addEventListener('click', () => applyRestoreTabs(true));
+  $id('setRestoreOff')?.addEventListener('click', () => applyRestoreTabs(false));
   scheduleUpdateCheck();
   $id('btnEdit')?.addEventListener('click', () => { if (!S.cur) return; if (S.editing) saveEdit(); else enterEdit(); });
   $id('btnUndo')?.addEventListener('click', () => { if (S.editing) doUndo(); });
@@ -2676,7 +2701,17 @@ async function boot() {
   if (!invoke) { toast(t('toast.needDesktop')); return; }
   S.roots = await invoke('load_roots').catch(() => []);
   if (S.roots.length) await loadRoot(S.roots[0]);
-  await restoreTabs();   // R7：恢复上次标签页（内容重读，draft 不恢复）
+  /* 干净启动是默认(用户 2026-11-09 要求):上次那排标签留在 localStorage 里不动,
+   * 但这次不摆回来 —— 左边「最近打开」本身就是历史入口,不需要拿标签栏当历史用。
+   * 想恢复旧行为:设置 → 启动时还原来开的标签页。外链/命令行打开的文件照旧走 pending_open。 */
+  if (S.restoreTabs) await restoreTabs();
+  else {
+    /* 干净模式:会话根本没加载(S.tabs 起步就是空),这里只把空态画出来。
+     * 不能在这里硬清 S.tabs —— 启动瞬间已有文件被打开(双击 .md / 命令行 / pending_open)时,
+     * 那样会连它一起清掉,用户点了文件却看不到任何东西。 */
+    renderTabs();
+    if (!S.tabs.length) renderEmpty();
+  }
   if (listen) {
     try { listen('open-file', (e) => { if (e && typeof e.payload === 'string') openExternal(e.payload); }); } catch {}
     // 关窗守卫:后端 CloseRequested 只发事件不真关;这里先处理未保存内容,再放行 allow_close。
@@ -2786,6 +2821,8 @@ const I18N = {
   's.file.assoc': ['MD 默认打开', 'Default .md app', '.md 既定アプリ'],
   's.file.current': ['当前默认', 'Current default', '現在の既定'],
   's.file.export': ['导出 / 打印', 'Export / Print', '書き出し / 印刷'],
+  's.file.restoreTabs': ['启动时还原来开的标签页', 'Reopen previous tabs on start', '起動時に前回のタブを復元'],
+  's.file.restoreTabsDesc': ['关 = 每次打开都是干净的空阅读区,之前看过的文件只在左栏「最近打开」里列出(默认);开 = 把上次那排标签原样摆回来', 'Off = every launch starts with an empty reader; previously opened files stay in the sidebar Recent list (default). On = bring back the exact tabs from last time.', 'オフ = 起動のたびに空のリーダーで開始。以前開いたファイルは左の「最近開いた項目」に残ります(既定)。オン = 前回のタブをそのまま復元。'],
   's.about.ver': ['版本', 'Version', 'バージョン'],
   's.about.design': ['设计依据', 'Design basis', '設計根拠'],
   'sys.ok': ['透明效果可用', 'Transparency available', '透明効果: 利用できます'],
