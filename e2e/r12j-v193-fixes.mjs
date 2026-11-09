@@ -97,13 +97,23 @@ try {
   const j01 = await val(`(async () => { try { await invoke('set_lang', { lang: 'zh' }); return 'ok'; } catch (e) { return 'rej:' + String(e).slice(0, 120); } })()`, 8000);
   ok('J01', 'set_lang 被 ACL 放行(旧版 allow-set-lang 未登记 → 一直被拒)', j01 === 'ok', j01);
 
-  // ---------- J02 宽度:槽吃满 + 宽表不被裁 ----------
+  // ---------- J02 宽度:整篇铺满阅读区 + 宽表不被裁 + 全篇同一列宽 ----------
   await val(`(async () => { await invoke('open_path', { path: ${q(winPath(P.wide))} }); await openTab({ abs: ${q(winPath(P.wide))}, kind: 'ext' }); await new Promise(r=>setTimeout(r,700)); return 1; })()`, 12000);
   const j02 = await val(`(() => {
     const r = document.getElementById('reader'), inner = document.getElementById('readerInner');
     const wrap = inner.querySelector('.md-table-wrap'), t = wrap && wrap.querySelector('table');
     const g = (e) => e.getBoundingClientRect();
-    return { readerW: Math.round(g(r).width), slotW: Math.round(g(inner).width),
+    const cs = getComputedStyle(inner);
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    // 顶级块的左右缘必须全部一致(旧 bug:标题/段落居中限宽,表格铺满 → 两种列宽)
+    const lefts = [...new Set(['p','h1','h2','blockquote','.md-table-wrap','pre']
+      .map((s) => inner.querySelector(s)).filter(Boolean)
+      .map((e) => Math.round(g(e).left)))];
+    const rights = [...new Set(['p','h1','h2','blockquote','.md-table-wrap','pre']
+      .map((s) => inner.querySelector(s)).filter(Boolean)
+      .map((e) => Math.round(g(e).right)))];
+    return { readerW: Math.round(g(r).width), slotW: Math.round(g(inner).width), pad: Math.round(pad),
+      lefts, rights,
       tableOver: t ? Math.round(g(t).right - g(wrap).right) : null,
       wrapOver: wrap ? wrap.scrollWidth - wrap.clientWidth : null,
       pageOver: document.documentElement.scrollWidth - window.innerWidth };
@@ -111,13 +121,8 @@ try {
   ok('J02', '阅读槽吃满阅读区(slot≈reader)', j02 && Math.abs(j02.slotW - j02.readerW) <= 2, j02);
   ok('J03', '超宽表格不再被裁 / 不需横向滚', j02 && j02.tableOver <= 1 && j02.wrapOver <= 1, j02);
   ok('J04', '最大化后页面无横向滚动条', j02 && j02.pageOver <= 0, j02);
-
-  // ---------- J05 全宽开关 ----------
-  const j05 = await val(`(() => { const m0 = S.measure; S.measure = 0; applyTypography();
-    const v = getComputedStyle(document.documentElement).getPropertyValue('--prose-w').trim();
-    const w = Math.round(document.querySelector('.markdown-body > p').getBoundingClientRect().width);
-    S.measure = m0; applyTypography(); return { v, w }; })()`, 6000);
-  ok('J05', '设置里的「全宽」把正文块也放开', j05 && j05.v === '100%' && j05.w > 900, j05);
+  // v1.9.4:整篇同宽 —— 用户实拍投诉「有的扩展到两边 有的还是中间」,这条就是防它复发
+  ok('J05', '全篇同一列宽(标题/正文/表格左右缘全一致)', j02 && j02.lefts.length === 1 && j02.rights.length === 1, j02);
 
   // ---------- J06 编码:GBK / UTF-16 ----------
   const j06 = await val(`(async () => {

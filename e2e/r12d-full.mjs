@@ -177,9 +177,9 @@ await T('A21', '设置 抽屉几何:右贴边 + 宽 min(820px,58vw)', async () =
 await T('A22', '设置 导航宽 208', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-nav').getBoundingClientRect().width; })()`), 208, 4));
 await T('A23', '设置 搜索头高 74', async () => near(await val(`(() => { showPanel('settings'); return document.querySelector('.setpage-search').getBoundingClientRect().height; })()`), 74, 6));
 // 真类名 .set-row/.set-section;v1.7 起 26 行 7 区,v1.8 第二批加了 2 行(打字机模式 + 导出 PDF 相关)→ 28 行 7 区,
-// v1.8.4 再加 1 行(行内代码样式四档)→ 29 行 7 区。数字是真在数行数,别改代码不改这里。
+// v1.9.4 删掉「行宽」行(宽度改为铺满,不再可调)→ 29 行 7 区。数字是真在数行数,别改代码不改这里。
 await T('A24', '设置 过滤:有结果行(玻璃命中1行藏语义)', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = '玻璃'; inp.dispatchEvent(new Event('input', { bubbles: true })); const vis = [...document.querySelectorAll('#settingsPanel .set-row')].filter((r) => r.offsetParent !== null).length; return vis >= 1 && vis < document.querySelectorAll('#settingsPanel .set-row').length; })()`)) === true);
-await T('A25', '设置 清空还原 30 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '30/7');   // 30 = 原 29 + v1.8.9 的「文字阴影」行
+await T('A25', '设置 清空还原 29 行 7 区', async () => (await val(`(() => { showPanel('settings'); const inp = document.getElementById('setSearch'); inp.value = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); const rows = document.querySelectorAll('#settingsPanel .set-row').length; const secs = document.querySelectorAll('#settingsPanel .set-section').length; showPanel(null); return rows + '/' + secs; })()`)) === '29/7');
 // v1.8.4 起设置页是**右侧抽屉**:阅读区不再被藏起来/盖住,而是重排到左边(改外观能立刻看见正文)
 await T('A26', '设置 开设置时阅读区收窄到左侧(不遮挡)', async () => (await val(`(() => {
   showPanel('settings');
@@ -313,8 +313,20 @@ await T('V06', '文内查找 当前命中加 now 标记', async () => (await val
 await T('V07', '文内查找 关闭清理高亮', async () => (await val(`(() => { closeFind(); return document.querySelectorAll('mark.srh-hit').length === 0 && document.getElementById('findBar').hidden === true; })()`)) === true);
 // 库级搜索:侧栏视图 + 输入框就绪
 await T('V08', '库搜索 侧栏视图与输入框就绪', async () => (await val(`(() => { setView('search'); const inp = document.getElementById('libSearchInput'); const ok = !!inp && !!document.getElementById('libSearchList'); setView('tree'); return ok; })()`)) === true);
-// 排版:行宽/行高落 CSS 变量(数值只进变量,不动结构)
-await T('V09', '排版 行宽行高写变量', async () => (await val(`(() => { const m0 = S.measure, l0 = S.lineH; S.measure = 40; S.lineH = 1.9; applyTypography(); const m = getComputedStyle(document.documentElement).getPropertyValue('--measure').trim(); const l = getComputedStyle(document.documentElement).getPropertyValue('--line-h').trim(); S.measure = m0; S.lineH = l0; applyTypography(); return m === '40em' && l === '1.9'; })()`)) === true);
+// 排版:v1.9.4 起行宽不再可调(整篇铺满阅读区),只剩行高落变量。
+// 这里验证「行高仍走 --line-h」+「宽度已不再受 --measure 控制」两件事。
+await T('V09', '排版 行高写变量 + 行宽不再限宽', async () => (await val(`(() => {
+  const l0 = S.lineH;
+  S.lineH = 1.9; applyTypography();
+  const l = getComputedStyle(document.documentElement).getPropertyValue('--line-h').trim();
+  const m = getComputedStyle(document.documentElement).getPropertyValue('--measure').trim();
+  const p = document.querySelector('.markdown-body > p');
+  const inner = document.getElementById('readerInner');
+  const g = (e) => e && e.getBoundingClientRect();
+  const flush = !!(p && inner && Math.abs(g(p).width - (g(inner).width - parseFloat(getComputedStyle(inner).paddingLeft) - parseFloat(getComputedStyle(inner).paddingRight))) <= 1);
+  S.lineH = l0; applyTypography();
+  return l === '1.9' && m === 'none' && flush;
+})()`)) === true);
 await T('V10', '排版 正文字体可切等宽', async () => (await val(`(() => { const f0 = S.bodyFont; S.bodyFont = 'mono'; applyTypography(); const on = document.body.classList.contains('body-mono'); S.bodyFont = f0 || 'sans'; applyTypography(); return on === true && document.body.classList.contains('body-mono') === false; })()`)) === true);
 // 材质三选(含 mica)与文字透明度下限
 await T('V11', '材质 三选含 mica', async () => (await val(`(() => { const opts = [...document.querySelectorAll('#setGlassMaterial option')].map((o) => o.value); return opts.includes('none') && opts.includes('acrylic') && opts.includes('mica'); })()`)) === true);

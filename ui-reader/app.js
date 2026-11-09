@@ -2126,24 +2126,18 @@ function applySettings() {
   applyTypography();
 }
 
-/* v1.7 排版三件套:行宽 / 行高 / 正文字体。数值只落 CSS 变量,不动结构。 */
+/* v1.7 排版:行高 / 正文字体。
+ * v1.9.4:`--measure` 不再参与正文宽度 —— 宽度已由 CSS 统一为「阅读区减内边距」,
+ * 整篇铺满、随窗口自适应(见 app.css 末尾 v1.9.4 段)。这里保留该变量是为了兼容
+ * 既有存档与 r12d V09 的读取,但不再有样式消费它。行宽滑条一并撤掉(见 index.html)。 */
 function applyTypography() {
   const st = document.documentElement.style;
-  const full = Number(S.measure) === 0;               // v1.9.3:0 = 全宽(正文也不设上限)
-  const m = full ? 34 : Math.min(52, Math.max(26, Number(S.measure) || 34));
   const lh = Math.min(2, Math.max(1.4, Number(S.lineH) || 1.7));
-  st.setProperty('--measure', m + 'em');
-  // --prose-w 是「正文块」的真正上限:用 rem 而不是 em,否则 34em 摊到 30px 的标题上 = 1020px,
-  // 标题会破出正文列。--measure(em)保留给设置面板与 r12d V09 的量法。
-  st.setProperty('--prose-w', full ? '100%' : m + 'rem');
-  document.body.classList.toggle('prose-full', full);
-  $id('setMeasureFull')?.classList.toggle('active', full);
+  st.setProperty('--measure', 'none');
   st.setProperty('--line-h', String(lh));
   document.body.classList.toggle('body-mono', S.bodyFont === 'mono');
   $id('setBodySans')?.classList.toggle('active', S.bodyFont !== 'mono');
   $id('setBodyMono')?.classList.toggle('active', S.bodyFont === 'mono');
-  const rv = $id('setMeasure'); if (rv) rv.value = String(m);
-  const rvl = $id('valMeasure'); if (rvl) rvl.textContent = full ? t('s.read.measureFull') : m + 'em';
   const lv = $id('setLineH'); if (lv) lv.value = String(lh);
   const lvl = $id('valLineH'); if (lvl) lvl.textContent = lh.toFixed(2);
 }
@@ -2772,7 +2766,6 @@ const I18N = {
   'nav.about': ['关于', 'About', 'このアプリについて'],
   's.read.preset': ['字号预设', 'Type scale', '文字サイズ'],
   's.read.font': ['正文字体', 'Body font', '本文フォント'],
-  's.read.measure': ['行宽', 'Line width', '行幅'],
   's.read.lineH': ['行高', 'Line height', '行間'],
   's.read.toolbar': ['工具栏', 'Toolbar', 'ツールバー'],
   's.read.side': ['侧栏宽度', 'Sidebar width', 'サイドバー幅'],
@@ -2977,9 +2970,6 @@ const I18N = {
   's.set.navAria': ['设置分类', 'Settings sections', '設定の分類'],
   // ── 设置页:阅读
   's.read.fontDesc': ['中文长文建议无衬线;等宽更"工程感"', 'Sans-serif reads better for long CJK text; mono feels more "engineered"', '長文の CJK テキストにはサンセリフ推奨。等幅のほうがエンジニアらしい印象です。'],
-  's.read.measureDesc': ['中文规范 32–38 字/行;宽表与代码始终用满窗口宽度', 'The CJK norm is 32–38 characters per line; wide tables and code always use the full window width', 'CJK の目安は 1 行 32–38 字(広い表とコードは常にウィンドウ幅いっぱい)'],
-  's.read.measureFull': ['全宽', 'Full', '全幅'],
-  's.read.measureFullTitle': ['正文也拉满窗口宽度(再点一次回到 34em)', 'Let prose use the full window width too (click again to go back to 34em)', '本文もウィンドウ幅いっぱいにする(もう一度押すと 34em に戻る)'],
   's.read.lineHDesc': ['正文行距倍数(1.4–2.0)', 'Body line-height multiplier (1.4–2.0)', '本文の行間倍率(1.4–2.0)'],
   's.read.toolbarDesc': ['顶栏按钮显示模式', 'How the toolbar buttons are rendered', 'ツールバーの表示モード'],
   's.read.sideDesc': ['拖拽侧栏分隔条调整(160–480px,自动记忆)', 'Drag the sidebar splitter (160–480px, remembered)', 'サイドバーの仕切りをドラッグ(160–480px、記憶されます)。'],
@@ -3667,9 +3657,7 @@ async function buildStandaloneHtml() {
     // PDF 只剩几个矩形、0 字体、0 文本算子,命令却照样返回成功(2026-10-26 实测:1441 字节空页)。
     // 加这一行之后同一个 HTML 打出 108 KB / 21 字体 / 283 个文本算子。
     '.markdown-body{animation:none}',
-    // v1.9.3:导出物跟着当前的宽度模型走(全宽时也给全宽);行宽上限变量在这里显式落一份,
-    // 因为导出物没有 JS,读不到 documentElement 上的内联变量。
-    `:root{--prose-w:${/^100%$/.test(document.documentElement.style.getPropertyValue('--prose-w')) ? '100%' : (document.documentElement.style.getPropertyValue('--prose-w') || '34rem')}}`,
+    // v1.9.4:宽度模型已统一为「阅读区减内边距」,导出物不需要额外注入行宽变量。
     '.markdown-body > *{opacity:1}',
     ':root{--halo-k:0}',
   ].join('\n');
@@ -3701,7 +3689,7 @@ ${TOKENS}}`;
 ${pageCss}
 ${printCss}
 </style></head>
-<body class="${document.body.className.split(/\s+/).filter((c) => c && !['focus-mode', 'immersive', 'settings-open', 'no-effects', 'prose-full'].includes(c)).join(' ')}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
+<body class="${document.body.className.split(/\s+/).filter((c) => c && !['focus-mode', 'immersive', 'settings-open', 'no-effects'].includes(c)).join(' ')}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
   return { html, inlined };
 }
 /* 单张媒体内联上限:超过就退回相对路径(6MB base64 后约 8MB,再多导出物就不好用了) */
@@ -3834,13 +3822,6 @@ function initV17() {
   // 排版
   on('setBodySans', 'click', () => { S.bodyFont = 'sans'; LS.set('sr_body_font', 'sans'); applyTypography(); });
   on('setBodyMono', 'click', () => { S.bodyFont = 'mono'; LS.set('sr_body_font', 'mono'); applyTypography(); });
-  on('setMeasure', 'input', (e) => { S.measure = Number(e.target.value); LS.set('sr_measure', S.measure); applyTypography(); });
-  // v1.9.3 全宽:正文块也放开上限(槽本来就吃满阅读区)。再点一次回到 34em。
-  on('setMeasureFull', 'click', () => {
-    S.measure = Number(S.measure) === 0 ? 34 : 0;
-    LS.set('sr_measure', S.measure);
-    applyTypography();
-  });
   on('setLineH', 'input', (e) => { S.lineH = Number(e.target.value); LS.set('sr_line_h', S.lineH); applyTypography(); });
   // 语言
   on('langZh', 'click', () => setLang('zh'));

@@ -719,7 +719,7 @@ body.code-bare .markdown-body pre code {
   --ease-pop: cubic-bezier(.34, 1.56, .64, 1);
   --ease-rise: cubic-bezier(.3, .7, .4, 1);
   --ease-fall: cubic-bezier(0, 0, .2, 1);
-  --measure: 34em;          /* 正文行宽:34em ≈ 34 个全角字(中文规范 32–38) */
+  --measure: none;           /* v1.9.4:宽度统一铺满阅读区,此变量已无样式消费(保留仅为兼容存档) */
   --line-h: 1.7;             /* 正文行高(中文建议 1.6–1.75) */
   --body-font: var(--sans);  /* 正文家族:无衬线;可切等宽 */
   /* v1.7 排版换血:旧的 --sans 首选项是 Maple Mono(等宽),导致中文正文全等宽。
@@ -902,16 +902,20 @@ body.immersive .immersive-hint { opacity: .9; }
 .lang-switch { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* =====================================================================
- * v1.9.3 · 宽度模型换血(2026-11-09 用户二次投诉「最大化了,正文区域依旧宽度被限制,
- * 无法完全显示出来」)。
- * 旧模型:`.reader-inner{max-width:var(--measure)}` —— 槽自己封顶 544px,超出的表格只能
- * 在槽里横向滚,最大化窗口后窗口两侧各空 379px。
- * 新模型:**槽吃满阅读区;行宽上限只压「正文块」**。于是
- *   - 正文仍按设计锁 32–38 汉字/行(居中,和旧版像素一致);
- *   - 表格 / 代码 / 图 / 公式块用满可用宽度,不再被裁;
- *   - 想连正文也拉满,设置里「行宽」滑条右侧的「全宽」按钮把 --prose-w 置成 100%。
- * `--measure`(em)保留:滑条与 r12d V09 仍量它;这里新加 `--prose-w`(px 等价,rem),
- * 因为 em 会随标题自身字号变大(34em@30px 标题 = 1020px),那样标题会破出正文列。
+ * v1.9.4 · 宽度模型定稿:整篇统一铺满阅读区,随窗口自适应。
+ *
+ * v1.9.3 那次把行宽上限**压到每个正文块上**(p/h1-h6/blockquote…),表格/代码却吃满槽宽,
+ * 结果一篇文章里出现两种宽度:标题和段落居中限宽、表格铺到两边 —— 用户实拍:
+ * 「有的是扩展到两边 有的还是中间 整篇文章被搞得乱七八糟」(2026-11-09 三诉)。
+ * 教训:**不能只给「部分块」设上限**。要么整篇都限宽(旧 v1.9.2:窗口两侧大片留白),
+ * 要么整篇都铺满(本版)。既然用户要"全扩展到两边自适应",就只有一种选择。
+ *
+ * 现在的模型:`.reader-inner` 只留呼吸内边距(--reader-pad),宽度 = 阅读区减去左右内边距,
+ * 随窗口实时收缩/扩张;正文、标题、表格、代码、图、公式**同一个宽度基准**,不存在第二种列宽。
+ * 窄窗时唯一的变化是内边距按断点收紧(下面 760/560 两档),内容宽度始终 = 可用宽度。
+ *
+ * 折行保护:中文按字折,英文长串/URL 用 overflow-wrap:anywhere 兜住,不会撑出横向滚动条;
+ * 只有真正的宽表/宽代码行才在自己的槽里横向滚(那是内容本身超宽,不是布局裁切)。
  * ===================================================================== */
 .markdown-body > p,
 .markdown-body > ul,
@@ -928,15 +932,16 @@ body.immersive .immersive-hint { opacity: .9; }
 .markdown-body > details,
 .markdown-body > .footnotes,
 .markdown-body > .md-math-block,
-.markdown-body > .md-embed {
-  max-width: var(--prose-w, 34rem);
-  margin-left: auto;
-  margin-right: auto;
+.markdown-body > .md-embed,
+.markdown-body > .md-table-wrap,
+.markdown-body > .code-wrap {
+  max-width: none;
+  margin-left: 0;
+  margin-right: 0;
 }
-/* 表格槽:吃满阅读区;表体 = 「自然宽,但不小于正文行宽,不大于槽宽」。
- * 于是窄表不会缩成一条、宽表不再被裁(只有真的超过槽宽才在自己槽里横滚)。 */
+/* 表格槽与表体:统一基准 = 可用宽度;只有内容真的超过才在槽内滚 */
 .md-table-wrap { width: 100%; max-width: 100%; margin: 1.2em 0; }
-.md-table-wrap > table { margin: 0 auto; width: max-content; min-width: min(100%, var(--prose-w, 34rem)); max-width: none; }
+.md-table-wrap > table { margin: 0; width: max-content; min-width: 100%; max-width: none; }
 .md-table-wrap th, .md-table-wrap td { white-space: normal; overflow-wrap: anywhere; }
 .md-table-wrap code { white-space: nowrap; overflow-wrap: normal; }
 

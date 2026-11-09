@@ -213,13 +213,27 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   const tiers = px.filter((k) => !['16px'].includes(k));
   ok('16', '圆角收敛到 ≤4 档(+胶囊/圆形)', odd.length === 0 && tiers.length <= 4, { keys, odd, tiers, shape });
 }
-
-/* 17 中文 32–38 字行宽(量的是正文块,不是槽) */
-/* v1.9.3:槽不再封顶(最大化后宽表不再被裁),行宽上限改压正文块。这里改量第一段 <p>
- * 的真实宽度 ÷ 正文字号,设计口径 32–38 字不变。 */
+/* 17 正文宽度:v1.9.4 起整篇铺满阅读区(不再限宽居中)。
+ * 旧判据「中文行宽 32–38 字」已随宽度模型定稿退役 —— 用户三次投诉要"全扩展到两边自适应"。
+ * 新判据:正文块宽度 = 阅读区宽度 - 左右内边距(即铺满),且与标题/表格同一左缘。 */
 {
-  const r = await val(`(() => { const p = document.querySelector('.markdown-body > p'); const cs = getComputedStyle(document.querySelector('.markdown-body')); const fs = parseFloat(cs.fontSize); const pw = p ? p.getBoundingClientRect().width : NaN; const n = pw / fs; return { fs, pW: Math.round(pw), cjkChars: Math.round(n * 10) / 10 }; })()`);
-  ok('17', '中文行宽 32–38 字', r && r.cjkChars >= 32 && r.cjkChars <= 38, r);
+  const r = await val(`(() => {
+    const inner = document.getElementById('readerInner');
+    const g = (e) => e && e.getBoundingClientRect();
+    const p = document.querySelector('.markdown-body > p');
+    const h = document.querySelector('.markdown-body h1, .markdown-body h2');
+    const iw = g(inner) ? g(inner).width : 0;
+    const cs = getComputedStyle(inner);
+    const pad = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+    return {
+      innerW: Math.round(iw),
+      pad: Math.round(pad),
+      pW: p ? Math.round(g(p).width) : null,
+      pL: p ? Math.round(g(p).left) : null,
+      hL: h ? Math.round(g(h).left) : null,
+    };
+  })()`);
+  ok('17', '正文铺满阅读区且与标题同一左缘', r && r.pW === r.innerW - r.pad && r.pL === r.hL, r);
 }
 
 /* 18 正文行高:中文 1.7(允许 1.6–1.75) */
