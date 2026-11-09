@@ -176,6 +176,17 @@ fn hidden_cmd(program: &str) -> std::process::Command {
     c
 }
 
+/// Win32 API 只认 NUL 结尾的 UTF-16:`ShellExecuteW` 这类调用拿它当参数,
+/// 而不是像 `cmd /C start` 那样把路径塞进一条会被二次解析的命令行(审计 D-04)。
+#[cfg(target_os = "windows")]
+fn wide(s: &str) -> Vec<u16> {
+    use std::os::windows::ffi::OsStrExt;
+    std::ffi::OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
+}
+
 /// 配置目录(roots.json / window.json / update_state.json / updates/ 都住这里)。
 /// **测试缝**:`TMMD_CONFIG_DIR` 覆盖之 —— 自动化起隔离实例时用,保证绝不碰用户真实配置
 /// (此前 e2e 只能蹭用户真实 app_config_dir,roots.json/window.json 都有被改的风险)。
@@ -523,19 +534,79 @@ fn is_under_root(root_can: &Path, full: &Path) -> bool {
     f.starts_with(&prefix)
 }
 
+/// 路径自身是不是 NTFS 重解析点(junction / 目录联接 / symlink)?
+/// 文本前缀比较与 `\\?\` 前缀都看不出这一点:`root\link\x.md` 的字面在根内,
+/// 真身可能在 `C:\Windows`(审计 D-06)。
+#[cfg(windows)]
+fn is_reparse_point(p: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0000_0400;
+    fs::symlink_metadata(p)
+        .map(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(p: &Path) -> bool {
+    fs::symlink_metadata(p)
+        .map(|m| m.file_type().is_symlink())
+        .unwrap_or(false)
+}
+
+/// 把(可能尚不存在的)目标解析到"最近一个存在的祖先"真身上,再拼回剩下的段。
+/// 存在的祖先一律 `canonicalize`:junction / symlink 只能靠真身解析暴露,
+/// 而 cage 的"文本前缀在根内"对它们完全无效(审计 D-06)。
+fn resolve_nearest(p: &Path) -> Result<PathBuf, String> {
+    let mut tail: Vec<std::ffi::OsString> = Vec::new();
+    let mut cur = if p.as_os_str().is_empty() {
+        std::env::current_dir().map_err(|e| format!("无法解析路径: {e}"))?
+    } else {
+        p.to_path_buf()
+    };
+    loop {
+        if cur.exists() {
+            let mut base = cur.canonicalize().map_err(|e| format!("无法解析路径: {e}"))?;
+            for part in tail.iter().rev() {
+                base.push(part);
+            }
+            return Ok(base);
+        }
+        let name = match cur.file_name() {
+            Some(n) => n.to_os_string(),
+            None => return Err("无法解析路径".into()),
+        };
+        let par = match cur.parent() {
+            Some(par) if !par.as_os_str().is_empty() => par.to_path_buf(),
+            // 相对路径(父目录是空串)按当前目录展开,否则会一路走空
+            _ => std::env::current_dir().map_err(|e| format!("无法解析路径: {e}"))?,
+        };
+        tail.push(name);
+        cur = par;
+    }
+}
+
 fn cage_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let root_can = root
         .canonicalize()
         .map_err(|e| format!("无法解析根目录: {e}"))?;
     let rel_pb = sanitize_rel(rel)?;
+    // 逐段拒绝重解析点:根内一旦有 junction / symlink,后面所有"在根内"的判断都不作数
+    let mut walk = root_can.clone();
+    for comp in rel_pb.components() {
+        walk.push(comp.as_os_str());
+        if is_reparse_point(&walk) {
+            return Err("路径越界".into());
+        }
+    }
     let joined = root_can.join(&rel_pb);
     let full = if joined.exists() {
         joined
             .canonicalize()
             .map_err(|e| format!("无法解析路径: {e}"))?
     } else {
-        // allow non-existing for clearer error later
-        joined
+        // 尚不存在:先把**父目录**解析成真身再拼末段。旧写法直接用文本拼接结果,
+        // 于是 `root\link\新文件.md` 能通过前缀检查、实际写到根外面去(审计 D-06)。
+        resolve_nearest(&joined)?
     };
     if !is_under_root(&root_can, &full) {
         // 只留可映射的前缀:中文解释放 i18n 字典里,否则 EN/JA 界面会出现"英文前缀 + 中文后半句"
@@ -712,25 +783,284 @@ fn remember_read(p: &Path) {
     }
 }
 
-/// 原文件风格:编辑器里的 textarea 会把 CRLF 归一成 LF,保存时必须还原,否则"改一个字"
-/// 会把整个文件的换行风格改掉(VS Code 同款回归)。BOM 按原样保留。
-struct FileStyle {
-    crlf: bool,
-    bom: bool,
-}
-
-fn probe_style(p: &Path) -> FileStyle {
-    let mut st = FileStyle {
-        crlf: false,
-        bom: false,
-    };
+/// 原文件换行风格:编辑器里的 textarea 会把 CRLF 归一成 LF,保存时必须还原,否则"改一个字"
+/// 会把整个文件的换行风格改掉(VS Code 同款回归)。
+/// BOM / 编码不在这里 —— 那是 FILE_ENCODING 一份真相说了算,两处都决定就会"每存一次多一个 BOM"(审计 B3)。
+fn probe_crlf(p: &Path) -> bool {
     if let Ok(bytes) = fs::read(p) {
-        st.bom = bytes.starts_with(&[0xEF, 0xBB, 0xBF]);
         let crlf = bytes.windows(2).filter(|w| *w == b"\r\n").count();
         let lf = bytes.iter().filter(|b| **b == b'\n').count();
-        st.crlf = crlf > 0 && crlf * 2 >= lf; // 多数行是 CRLF 就按 CRLF 写回
+        return crlf > 0 && crlf * 2 >= lf; // 多数行是 CRLF 就按 CRLF 写回
     }
-    st
+    false
+}
+
+// ───────────────────────── 编码探测与还原(B2 / B3) ─────────────────────────
+// 中文 Windows 上大量 .md 是 GB18030,UTF-16 也不少;旧版只认 UTF-8,这些文件**直接打不开**。
+// 顺序固定:BOM(UTF-8 / UTF-16LE / UTF-16BE)→ 严格 UTF-8 → GB18030 → lossy 兜底。
+// 读出来剥掉前导 BOM,写回去按**探测到的那一种编码 + 同样的 BOM 状态**还原。
+
+/// 文本文件的编码(唯一真源):读的时候探测一次,写回时必须用它。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TextEncoding {
+    Utf8,
+    Utf8Bom,
+    Utf16Le,
+    Utf16Be,
+    Gb18030,
+}
+
+/// 读过 / 写过的文件的编码。键与 LAST_READ 同一套 `cage_key` 归一化,
+/// 否则"树里读、对话框存"两条路径会对不上,保存就还原不回原编码。
+static FILE_ENCODING: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, TextEncoding>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
+fn remember_encoding(p: &Path, enc: TextEncoding) {
+    if let Ok(mut m) = FILE_ENCODING.lock() {
+        m.insert(cage_key(p), enc);
+    }
+}
+
+fn known_encoding(p: &Path) -> Option<TextEncoding> {
+    FILE_ENCODING
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&cage_key(p)).copied())
+}
+
+/// 没读过(或读失败)时的兜底:直接看盘上的字节判 BOM / 编码。
+fn encoding_from_disk(p: &Path) -> TextEncoding {
+    fs::read(p)
+        .map(|b| decode_bytes(&b).1)
+        .unwrap_or(TextEncoding::Utf8)
+}
+
+/// 剥内容里的前导 BOM。读出后必须先剥(否则前端渲染成 `\uFEFF# Head`,首标题不成立),
+/// 写回时只由编码本身决定补不补 —— 否则每存一次多一个 BOM,文件逐步损坏(审计 B3)。
+fn strip_leading_bom(mut s: String) -> String {
+    if s.starts_with('\u{feff}') {
+        s.remove(0);
+    }
+    s
+}
+
+/// UTF-16 字节流 → String(`le` = 小端)。不合法代理对按替换字符处理,不整篇失败。
+fn decode_utf16(bytes: &[u8], le: bool) -> String {
+    let n = bytes.len() / 2;
+    let mut units: Vec<u16> = Vec::with_capacity(n + 1);
+    for i in 0..n {
+        let b = [bytes[i * 2], bytes[i * 2 + 1]];
+        units.push(if le {
+            u16::from_le_bytes(b)
+        } else {
+            u16::from_be_bytes(b)
+        });
+    }
+    if bytes.len() % 2 == 1 {
+        // 尾部单字节(截断文件):补一个码元,不让整篇变成"解码失败"
+        units.push(bytes[bytes.len() - 1] as u16);
+    }
+    String::from_utf16_lossy(&units)
+}
+
+// GB18030 / 系统代码页:Windows 自带 MultiByteToWideChar / WideCharToMultiByte。
+// 这里直接声明 kernel32 导出 —— windows-sys 已启用的 feature 里没有 Win32_Globalization,
+// 而本工单不允许改 Cargo.toml 加依赖(见交付说明)。
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn MultiByteToWideChar(
+        code_page: u32,
+        dw_flags: u32,
+        lp_multibyte_str: *const u8,
+        cb_multibyte: i32,
+        lp_wide_char_str: *mut u16,
+        cch_wide_char: i32,
+    ) -> i32;
+    fn WideCharToMultiByte(
+        code_page: u32,
+        dw_flags: u32,
+        lp_wide_char_str: *const u16,
+        cch_wide_char: i32,
+        lp_multibyte_str: *mut u8,
+        cb_multibyte: i32,
+        lp_default_char: *const u8,
+        lp_used_default_char: *mut i32,
+    ) -> i32;
+}
+
+/// 用系统代码页解码。`MB_ERR_INVALID_CHARS` 让"根本不是这个编码"的字节直接失败,
+/// 而不是静默产出一篇乱码 —— 失败就走后面的 lossy 兜底。
+#[cfg(target_os = "windows")]
+fn decode_cp(code_page: u32, bytes: &[u8]) -> Option<String> {
+    const MB_ERR_INVALID_CHARS: u32 = 0x0000_0008;
+    if bytes.is_empty() {
+        return Some(String::new());
+    }
+    if bytes.len() > i32::MAX as usize {
+        return None;
+    }
+    let len = bytes.len() as i32;
+    let need = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            MB_ERR_INVALID_CHARS,
+            bytes.as_ptr(),
+            len,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if need <= 0 {
+        return None;
+    }
+    let mut out: Vec<u16> = vec![0; need as usize];
+    let got = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            MB_ERR_INVALID_CHARS,
+            bytes.as_ptr(),
+            len,
+            out.as_mut_ptr(),
+            need,
+        )
+    };
+    if got <= 0 {
+        return None;
+    }
+    out.truncate(got as usize);
+    String::from_utf16(&out).ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn decode_cp(_code_page: u32, _bytes: &[u8]) -> Option<String> {
+    None
+}
+
+/// 把正文编回指定代码页(保存 GB18030 文件时用)。有字符打不出来就返回 None,由调用方兜底。
+#[cfg(target_os = "windows")]
+fn encode_cp(code_page: u32, text: &str) -> Option<Vec<u8>> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    if units.is_empty() {
+        return Some(Vec::new());
+    }
+    if units.len() > i32::MAX as usize {
+        return None;
+    }
+    let len = units.len() as i32;
+    let need = unsafe {
+        WideCharToMultiByte(
+            code_page,
+            0,
+            units.as_ptr(),
+            len,
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        )
+    };
+    if need <= 0 {
+        return None;
+    }
+    let mut out = vec![0u8; need as usize];
+    let got = unsafe {
+        WideCharToMultiByte(
+            code_page,
+            0,
+            units.as_ptr(),
+            len,
+            out.as_mut_ptr(),
+            need,
+            std::ptr::null(),
+            std::ptr::null_mut(),
+        )
+    };
+    if got <= 0 {
+        return None;
+    }
+    out.truncate(got as usize);
+    Some(out)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn encode_cp(_code_page: u32, _text: &str) -> Option<Vec<u8>> {
+    None
+}
+
+/// 字节 → (文本, 探测到的编码)。文本已剥前导 BOM。
+fn decode_bytes(bytes: &[u8]) -> (String, TextEncoding) {
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        let rest = &bytes[3..];
+        let text = match std::str::from_utf8(rest) {
+            Ok(s) => s.to_string(),
+            Err(_) => String::from_utf8_lossy(rest).into_owned(),
+        };
+        return (strip_leading_bom(text), TextEncoding::Utf8Bom);
+    }
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        let text = decode_utf16(&bytes[2..], true);
+        return (strip_leading_bom(text), TextEncoding::Utf16Le);
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        let text = decode_utf16(&bytes[2..], false);
+        return (strip_leading_bom(text), TextEncoding::Utf16Be);
+    }
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return (strip_leading_bom(s.to_string()), TextEncoding::Utf8);
+    }
+    // 严格 UTF-8 不成立:中文 Windows 的老文档多半是 GB18030
+    if let Some(s) = decode_cp(54936, bytes) {
+        return (strip_leading_bom(s), TextEncoding::Gb18030);
+    }
+    // 兜底:宁可出现替换字符,也不让用户打不开文件
+    (
+        strip_leading_bom(String::from_utf8_lossy(bytes).into_owned()),
+        TextEncoding::Utf8,
+    )
+}
+
+/// 按"原文件的编码 + 原文件的 BOM 状态"把正文编回字节。
+/// GB18030 走系统编码表;真有字符编不回去时退回 UTF-8 —— 宁可编码变了,也绝不写坏 / 写丢正文。
+fn encode_text(body: &str, enc: TextEncoding) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::with_capacity(body.len() + 3);
+    match enc {
+        TextEncoding::Utf8 => out.extend_from_slice(body.as_bytes()),
+        TextEncoding::Utf8Bom => {
+            out.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
+            out.extend_from_slice(body.as_bytes());
+        }
+        TextEncoding::Utf16Le | TextEncoding::Utf16Be => {
+            let le = enc == TextEncoding::Utf16Le;
+            if le {
+                out.extend_from_slice(&[0xFF, 0xFE]);
+            } else {
+                out.extend_from_slice(&[0xFE, 0xFF]);
+            }
+            for u in body.encode_utf16() {
+                let b = if le { u.to_le_bytes() } else { u.to_be_bytes() };
+                out.extend_from_slice(&b);
+            }
+        }
+        TextEncoding::Gb18030 => match encode_cp(54936, body) {
+            Some(b) => return b,
+            None => out.extend_from_slice(body.as_bytes()),
+        },
+    }
+    out
+}
+
+/// 静默补基线:把盘上的"当前真身"读一遍(解出编码 + 记指纹),失败就什么都不记。
+/// 只为一件事:让保存路径上的冲突检测在"另存为 / 拖拽 / 从没读过"这些情况下也有基线可依(审计 B4)。
+fn prime_baseline(p: &Path) -> bool {
+    let Ok(bytes) = fs::read(p) else {
+        return false;
+    };
+    let (_text, enc) = decode_bytes(&bytes);
+    remember_encoding(p, enc);
+    remember_read(p);
+    true
 }
 
 /// 原子写:同目录临时文件 → sync → rename 覆盖。中途失败(崩溃/断电/杀进程)不会留下
@@ -758,7 +1088,8 @@ fn write_atomic(p: &Path, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// 保存统一收尾:冲突检测(force=false 时对比读入指纹)→ 还换行/BOM → 原子写 → 刷新指纹。
+/// 保存统一收尾:冲突检测(force=false 时对比读入指纹;基线缺失先补一次,补不上按冲突返回)
+/// → 按原编码 + 原 BOM 状态还原换行/编码 → 原子写 → 刷新指纹。
 /// 冲突以 `CONFLICT|<path>` 返回给前端,由前端决定覆盖 / 另存 / 取消(不静默覆盖)。
 fn save_guarded(path: &Path, content: &str, force: bool) -> Result<(), String> {
     if !is_openable(path) {
@@ -766,26 +1097,49 @@ fn save_guarded(path: &Path, content: &str, force: bool) -> Result<(), String> {
     }
     let key = cage_key(path);   // 与 remember_read 同一套归一化,否则键对不上 = 冲突检测静默失效
     if !force {
+        // 基线缺口(B4):除 read_text/open_path 之外(另存为、拖拽、外部改过)没有基线时,
+        // 旧写法直接放行 = 把用户在别的编辑器里的改动静默覆盖。这里先补一次基线(读一遍盘);
+        // 补不上就不写,按既有 `CONFLICT|<path>` 协议交给前端确认(前端已有 force 通道)。
+        let has_base = LAST_READ
+            .lock()
+            .map(|m| m.contains_key(&key))
+            .unwrap_or(false);
+        if !has_base && path.is_file() {
+            prime_baseline(path);
+        }
         let known = LAST_READ.lock().ok().and_then(|m| m.get(&key).copied());
-        if let (Some(k), Some(now)) = (known, fingerprint(path)) {
-            if k != now {
-                return Err(format!("CONFLICT|{key}"));
+        match (known, fingerprint(path)) {
+            (Some(k), Some(now)) => {
+                if k != now {
+                    return Err(format!("CONFLICT|{key}"));
+                }
             }
+            // 目标在、基线却建立不起来(读不出 / 没权限):宁可不写,也不静默覆盖
+            (None, Some(_)) => return Err(format!("CONFLICT|{key}")),
+            _ => {}
         }
     }
-    let st = probe_style(path);
-    let lf = content.replace("\r\n", "\n");
-    let body = if st.crlf {
-        lf.replace('\n', "\r\n")
+    // 编码 + BOM 一律按"原文件是什么"还原;UTF-16 的换行只能从解码后的文本里数
+    let enc = known_encoding(path).unwrap_or_else(|| encoding_from_disk(path));
+    let crlf = if matches!(enc, TextEncoding::Utf16Le | TextEncoding::Utf16Be) {
+        fs::read(path)
+            .map(|b| {
+                let (text, _) = decode_bytes(&b);
+                let c = text.matches("\r\n").count();
+                let l = text.matches('\n').count();
+                c > 0 && c * 2 >= l
+            })
+            .unwrap_or(false)
     } else {
-        lf
+        probe_crlf(path)
     };
-    let mut bytes = Vec::with_capacity(body.len() + 3);
-    if st.bom {
-        bytes.extend_from_slice(&[0xEF, 0xBB, 0xBF]);
-    }
-    bytes.extend_from_slice(body.as_bytes());
+    let lf = content.replace("\r\n", "\n");
+    let body = if crlf { lf.replace('\n', "\r\n") } else { lf };
+    // 先剥正文里的前导 BOM:补不补只由 enc 决定,两处都补就是"每存一次多一个 BOM"
+    let body = strip_leading_bom(body);
+    let bytes = encode_text(&body, enc);
     write_atomic(path, &bytes)?;
+    remember_encoding(path, enc);
     if let Ok(mut m) = LAST_READ.lock() {
         if let Some(fp) = fingerprint(path) {
             m.insert(key, fp);
@@ -807,6 +1161,7 @@ fn create_file(root: String, rel: String, content: Option<String>) -> Result<(),
     }
     let body = content.unwrap_or_default();
     write_atomic(&full, body.as_bytes())?;
+    remember_encoding(&full, TextEncoding::Utf8); // 新建文件就是无 BOM 的 UTF-8,保存时按它还原
     remember_read(&full);
     Ok(())
 }
@@ -924,7 +1279,9 @@ fn save_path(path: String, content: String, force: Option<bool>) -> Result<(), S
     if content.len() as u64 > MAX_BYTES {
         return Err(format!("内容过大(超过 {}MB)", MAX_BYTES / 1024 / 1024));
     }
-    let p = PathBuf::from(&path);
+    // 目标可能还不存在:先解析到最近存在的祖先真身再写(B5),
+    // 否则经 junction / symlink 的"路径在别处"完全看不出来(审计 D-05/D-06)。
+    let p = resolve_nearest(Path::new(&path))?;
     save_guarded(&p, &content, force.unwrap_or(false))
 }
 
@@ -961,7 +1318,10 @@ fn read_text(root: String, rel: String) -> Result<String, String> {
             MAX_BYTES / 1024 / 1024
         ));
     }
-    let md = fs::read_to_string(&full).map_err(|e| format!("读文件失败: {e}"))?;
+    // 不再 `read_to_string`:GB18030 / UTF-16 的中文文档要能打开,且读出来必须已剥 BOM(否则首标题不成立)
+    let bytes = fs::read(&full).map_err(|e| format!("读文件失败: {e}"))?;
+    let (md, enc) = decode_bytes(&bytes);
+    remember_encoding(&full, enc); // 记编码:保存时按同一种编码 + 同样的 BOM 状态写回
     remember_read(&full); // 记指纹:保存时用来发现"外部已改"
     Ok(md)
 }
@@ -1008,23 +1368,27 @@ fn pick_file() -> Result<Option<PickedFile>, String> {
     }))
 }
 
-/// 打开单个 `.md` 文件（双击/拖拽/单实例转发）：校验扩展名后读内容并返回。
-/// 纯只读：路径不写死囚笼（单文件浏览），仅防非 md 与超大文件。
+/// 打开单个 `.md` 文件(双击/拖拽/单实例转发):校验扩展名后读内容并返回。
+/// 纯只读:路径不写死囚笼(单文件浏览),仅防非 md 与超大文件;读出前先把路径解析成真身,
+/// 再按 BOM / UTF-8 / GB18030 顺序解码并剥掉前导 BOM(B2/B3/B5)。
 #[tauri::command]
 fn open_path(path: String) -> Result<String, String> {
-    let p = Path::new(&path);
-    if !is_openable(p) {
+    let p0 = Path::new(&path);
+    if !is_openable(p0) {
         return Err(format!("仅支持 {} 文件", ext_hint()));
     }
-    let meta = fs::metadata(p).map_err(|e| format!("无法读取文件: {e}"))?;
+    let p = resolve_nearest(p0)?;
+    let meta = fs::metadata(&p).map_err(|e| format!("无法读取文件: {e}"))?;
     if !meta.is_file() {
         return Err("不是文件".into());
     }
     if meta.len() > MAX_BYTES {
         return Err("文件过大(超过 8MB)".into());
     }
-    let md = fs::read_to_string(p).map_err(|e| format!("读取失败: {e}"))?;
-    remember_read(p); // 记指纹:保存时用来发现"外部已改"
+    let bytes = fs::read(&p).map_err(|e| format!("读取失败: {e}"))?;
+    let (md, enc) = decode_bytes(&bytes);
+    remember_encoding(&p, enc); // 记编码:保存时按同一种编码 + 同样的 BOM 状态写回
+    remember_read(&p); // 记指纹:保存时用来发现"外部已改"
     Ok(md)
 }
 
@@ -1094,7 +1458,10 @@ fn search_file(full: &Path, root: &Path, needle: &str, limit: usize, hits: &mut 
     if meta.len() > MAX_BYTES {
         return;
     }
-    let Ok(text) = fs::read_to_string(full) else { return };
+    // 非 UTF-8(GBK / GB18030 / UTF-16)不再整文件静默跳过 —— 走与 read_text 同一套解码,
+    // 否则中文老文档"明明存在却搜不到"(审计 D-12 / B2)。
+    let Ok(bytes) = fs::read(full) else { return };
+    let (text, _) = decode_bytes(&bytes);
     let abs = full.to_string_lossy().into_owned();
     let rel = rel_posix(root, full);
     let root_s = root.to_string_lossy().into_owned();
@@ -1321,12 +1688,24 @@ fn export_pdf(html_path: String, pdf_path: String) -> Result<String, String> {
         .args(["/PID", &pid.to_string(), "/T", "/F"])
         .output();
     let _ = fs::remove_dir_all(&profile);
-    if !produced {
+    // 判据再加一层**内容**校验:错误页 / 空白 / 截断产物同样"存在且大小稳定",
+    // 旧版只看到大小就报成功,用户拿到一页空白却提示"已生成"(审计 D-10 / B8)。
+    if !produced || !has_pdf_magic(&pdf_path) {
         // 文案必须能被前端 ERR_MAP(^PDF 未生成)+ ERR_TAIL_MAP(可改用「打印 / 存 PDF」手动另存)
         // 完整吃掉:E11 会拿本文件全部中文错误串喂 trErr,EN 面留一个汉字就是红的。
         return Err("PDF 未生成;可改用「打印 / 存 PDF」手动另存".to_string());
     }
     Ok(pdf_path)
+}
+
+/// 产物是不是真 PDF:读前 5 字节比对 `%PDF-`。不是就不许报成功(审计 D-10 / B8)。
+fn has_pdf_magic(p: &str) -> bool {
+    use std::io::Read as _;
+    let Ok(mut f) = fs::File::open(p) else {
+        return false;
+    };
+    let mut head = [0u8; 5];
+    f.read_exact(&mut head).is_ok() && &head == b"%PDF-"
 }
 
 /// 找一个可用的 Chromium 内核浏览器(Edge 先,Chrome 后)。顺序:
@@ -1411,7 +1790,9 @@ fn export_file(path: String, content: String) -> Result<String, String> {
     if ext != "html" && ext != "htm" {
         return Err("仅支持 .html / .htm 文件".into());
     }
-    fs::write(p, content).map_err(|e| format!("导出失败: {e}"))?;
+    // 写盘前先把目标解析到最近的祖先真身(B5):junction / symlink 不会把"看起来在导出目录"的写带出去
+    let target = resolve_nearest(p)?;
+    fs::write(&target, content).map_err(|e| format!("导出失败: {e}"))?;
     // 直接返回绝对路径:canonicalize 在 Windows 会带上 `\\?\` 前缀,喂给 start/浏览器反而出问题
     let abs = if p.is_absolute() {
         p.to_path_buf()
@@ -1423,21 +1804,52 @@ fn export_file(path: String, content: String) -> Result<String, String> {
     Ok(abs.to_string_lossy().into_owned())
 }
 
-/// 用系统默认程序打开任意文件/目录(ShellExecute:`cmd /C start "" "<path>"`)。
-/// 用于「用默认浏览器打印导出稿」和打开导出目录;不限扩展名(区别于 open_path 的 .md 笼子)。
+/// 用系统默认程序打开一个**白名单内的**目标:http / https / mailto 链接,或真实存在的本地文件/目录。
+/// 旧写法把前端给的任意串拼进 `cmd /C start "" <path>`:cmd 会**二次解析**命令行,`&`/`|`/`"` 直接变成
+/// 命令分隔与注入点(`C:\a&calc`),`start` 本身还能执行 .exe/.bat(审计 D-04 / B6)。
+/// 现在:协议白名单 + 存在性校验 + `ShellExecuteW` 传指针 —— 不经 cmd,shell 元字符失去一切意义。
 #[tauri::command]
 fn open_any(path: String) -> Result<(), String> {
+    let target = path.trim();
+    if target.is_empty() {
+        return Err("打开失败:路径为空".into());
+    }
+    match url_scheme(target) {
+        Some(scheme) if scheme == "http" || scheme == "https" || scheme == "mailto" => {}
+        // `file:` / `javascript:` / `ms-settings:` / 自造协议:一律拒绝
+        Some(_) => return Err("打开失败:不支持的协议".into()),
+        // 没有协议前缀 = 本地路径,必须真实存在(否则 `start` 会去找同名程序执行)
+        None => {
+            if !Path::new(target).exists() {
+                return Err(format!("打开失败:路径不存在: {target}"));
+            }
+        }
+    }
     #[cfg(target_os = "windows")]
     {
-        hidden_cmd("cmd")
-            .args(["/C", "start", "", path.as_str()])
-            .spawn()
-            .map_err(|e| format!("打开失败: {e}"))?;
+        use windows_sys::Win32::UI::Shell::ShellExecuteW;
+        use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        let op = wide("open");
+        let file = wide(target);
+        let rc = unsafe {
+            ShellExecuteW(
+                std::ptr::null_mut(),
+                op.as_ptr(),
+                file.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                SW_SHOWNORMAL,
+            )
+        } as isize;
+        // ShellExecute 的返回值 <= 32 都是错误码(不是句柄):照实报错,不假装成功
+        if rc <= 32 {
+            return Err(format!("打开失败: code={rc}"));
+        }
         return Ok(());
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = path;
+        let _ = target;
         Err("仅 Windows 支持".to_string())
     }
 }
@@ -1450,9 +1862,11 @@ fn open_any(path: String) -> Result<(), String> {
 // 用来在不动线上仓库的前提下跑通整条链路)。
 const UPDATE_FILE: &str = "update_state.json";
 const UPDATE_CHECK_INTERVAL: u64 = 24 * 3600; // 自动检查节流:一天一次
-const UPDATE_TRUSTED: [&str; 2] = [
-    "https://github.com/nakamotosai/TMMD/releases/download/",
-    "https://github.com/nakamotosai/TMMD/releases/latest/download/",
+/// 信任根:本仓 release 资产。**只在 host + 路径段都核对过之后**才算可信(见 update_url_trusted)。
+const UPDATE_TRUSTED_HOST: &str = "github.com";
+const UPDATE_TRUSTED_PATHS: [&str; 2] = [
+    "/nakamotosai/tmmd/releases/download/",
+    "/nakamotosai/tmmd/releases/latest/download/",
 ];
 const UPDATE_MANIFEST_URL: &str =
     "https://github.com/nakamotosai/TMMD/releases/latest/download/latest.json";
@@ -1514,31 +1928,132 @@ fn write_update_state(app: &tauri::AppHandle, st: &UpdateState) {
     }
 }
 
-/// 版本比较:按点分段数值比(v1.8.0 > 1.7.9);非数字段当 0,不 panic。
-fn version_key(v: &str) -> Vec<u64> {
-    v.trim_start_matches(['v', 'V'])
-        .split(['.', '-', '+'])
-        .map(|s| s.parse::<u64>().unwrap_or(0))
-        .collect()
-}
-
-fn is_newer(remote: &str, local: &str) -> bool {
-    let (a, b) = (version_key(remote), version_key(local));
-    let n = a.len().max(b.len());
-    for i in 0..n {
-        let x = a.get(i).copied().unwrap_or(0);
-        let y = b.get(i).copied().unwrap_or(0);
-        if x != y {
-            return x > y;
+/// 解析版本号为 (主, 次, 修订, 预发布段)。`v` 前缀与 `+build` 元数据都允许;缺段补 0。
+/// 旧写法把所有非数字段当 0,于是 `2.0.0-beta` 与 `2.0.0` 判等(用过测试版的用户永远收不到正式版),
+/// 而 `1.9.2-rc.1` 反被判成比 `1.9.2` 新(审计 D-09 / B8)。
+fn parse_version(v: &str) -> ([u64; 3], Vec<String>) {
+    let core = v.trim_start_matches(['v', 'V']);
+    let core = core.split('+').next().unwrap_or(""); // 构建元数据不参与比较
+    let (nums_s, pre_s) = match core.split_once('-') {
+        Some((a, b)) => (a, b),
+        None => (core, ""),
+    };
+    let mut nums = [0u64; 3];
+    let mut extra: Vec<String> = Vec::new();
+    for (i, seg) in nums_s.split('.').enumerate() {
+        if i < 3 {
+            nums[i] = seg.trim().parse::<u64>().unwrap_or(0);
+        } else if !seg.trim().is_empty() {
+            // `1.9.2.1` 这类非 SemVer 写法:多出来的段按预发布段处理(低于同号正式版),不 panic
+            extra.push(seg.trim().to_string());
         }
     }
-    false
+    let mut pre: Vec<String> = pre_s
+        .split('.')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    pre.extend(extra);
+    (nums, pre)
+}
+
+/// 预发布段比较(SemVer §11):数字段按数值、字母段按 ASCII、数字段 < 字母段;前缀相同则短的更小。
+fn cmp_pre(a: &[String], b: &[String]) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let ord = match (x.parse::<u64>().ok(), y.parse::<u64>().ok()) {
+            (Some(p), Some(q)) => p.cmp(&q),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => x.cmp(y),
+        };
+        if ord != Ordering::Equal {
+            return ord;
+        }
+    }
+    a.len().cmp(&b.len())
+}
+
+/// 远端是否比本地新:主 / 次 / 修订逐段数值比;**同号时,有预发布段的 < 无预发布段的**。
+fn is_newer(remote: &str, local: &str) -> bool {
+    use std::cmp::Ordering;
+    let (an, ap) = parse_version(remote);
+    let (bn, bp) = parse_version(local);
+    for i in 0..3 {
+        match an[i].cmp(&bn[i]) {
+            Ordering::Greater => return true,
+            Ordering::Less => return false,
+            Ordering::Equal => {}
+        }
+    }
+    match (ap.is_empty(), bp.is_empty()) {
+        (true, true) => false,
+        (true, false) => true,  // 正式版 > 同号预发布
+        (false, true) => false, // 预发布 < 同号正式版
+        (false, false) => cmp_pre(&ap, &bp) == Ordering::Greater,
+    }
+}
+
+/// `http:` / `mailto:` 这类协议前缀;`C:\` 这种单字母盘符不算(冒号在第 1 位)。
+/// 手写而不引 `url` crate:本工单不允许改 Cargo.toml 依赖(见交付说明)。
+fn url_scheme(s: &str) -> Option<String> {
+    let idx = s.find(':')?;
+    if idx < 2 {
+        return None;
+    }
+    let head = &s[..idx];
+    if head
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+    {
+        Some(head.to_ascii_lowercase())
+    } else {
+        None
+    }
+}
+
+/// URL 拆成(协议, 主机[:端口], 路径),协议与主机统一小写;拆不出来返回 None。
+fn split_url(u: &str) -> Option<(String, String, String)> {
+    let u = u.trim();
+    let (scheme, rest) = u.split_once("://")?;
+    if scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+    {
+        return None;
+    }
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(end);
+    // 带 userinfo 的 `https://github.com@evil.tld/` 一律不认(host 是 evil.tld,肉眼却像本仓)
+    if authority.is_empty() || authority.contains('@') {
+        return None;
+    }
+    let path = tail.split(['?', '#']).next().unwrap_or("").to_string();
+    Some((
+        scheme.to_ascii_lowercase(),
+        authority.to_ascii_lowercase(),
+        path,
+    ))
 }
 
 /// 清单 URL 是否可信。设了 TMMD_UPDATE_ENDPOINT(测试缝)时额外放行本机地址。
+/// 2026-11 加固(审计 D-08 / B7):不再只看字符串前缀 —— 先解析出 scheme / host / 路径,
+/// 路径里出现 `..`(或 `%2e`)一律拒绝;否则 `.../releases/download/../../../../other/repo/...`
+/// 因为"字面以可信前缀开头"就能指向**别人的仓库**。
 fn update_url_trusted(url: &str) -> bool {
-    if UPDATE_TRUSTED.iter().any(|p| url.starts_with(p)) {
-        return true;
+    if let Some((scheme, host, path)) = split_url(url) {
+        let lc_path = path.to_ascii_lowercase();
+        let dotted = lc_path.split('/').any(|seg| seg == "..") || lc_path.contains("%2e");
+        if !dotted
+            && scheme == "https"
+            && host == UPDATE_TRUSTED_HOST
+            && UPDATE_TRUSTED_PATHS
+                .iter()
+                .any(|p| lc_path.starts_with(*p))
+        {
+            return true;
+        }
     }
     if std::env::var("TMMD_UPDATE_ENDPOINT").is_ok() {
         return url.starts_with("http://127.0.0.1") || url.starts_with("file://");
@@ -1638,8 +2153,41 @@ fn update_prompt_gate(app: tauri::AppHandle, version: String) -> String {
     "ok".into()
 }
 
+/// 本次进程里"刚下载且 SHA-256 对得上"的安装包:(落位绝对路径, 小写十六进制 sha256)。
+/// 不进 `UpdateState` —— 那份 JSON 每次调用都从盘上重读,写进去也留不住;而且"上次校验过"
+/// 不等于"现在还是那份字节"。**拒绝是默认值**:没有这条记录,`update_install` 一律报错。
+static UPDATE_DOWNLOADED: std::sync::LazyLock<std::sync::Mutex<Option<(PathBuf, String)>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/// 清单里的 `asset` 只许是**纯文件名**:不许有分隔符 / 盘符 / `..`,也不许带 PS / cmd 元字符
+/// (它会进安装脚本的启动行)。旧版直接 `dir.join(&manifest.asset)`,`..\..\Startup\x.exe`
+/// 就是把包写到启动目录(审计 D-03)。
+fn safe_asset_name(asset: &str) -> Result<String, String> {
+    let bad = asset.trim().is_empty()
+        || asset.contains('/')
+        || asset.contains('\\')
+        || asset.contains(':')
+        || asset.contains("..")
+        || asset.chars().any(|c| {
+            matches!(
+                c,
+                '"' | '\'' | '&' | '|' | '^' | '%' | '<' | '>' | '!' | '`' | '$' | '\r' | '\n'
+            )
+        });
+    let name = Path::new(asset)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(|n| n.to_string())
+        .unwrap_or_default();
+    if bad || name.is_empty() || name == "." || name == ".." {
+        return Err("更新包名非法".into());
+    }
+    Ok(name)
+}
+
 /// 下载更新包到配置目录的 updates/,边下边算 SHA-256,完成后比对;不符直接删掉并报错。
 /// 进度通过 `update-progress` 事件回前端({received,total})。
+/// 顺序钉死:下载 → 算 SHA-256 → 与清单比对 → **记下这个包** → 才轮到 install(审计 B1)。
 #[tauri::command]
 fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<String, String> {
     use sha2::{Digest, Sha256};
@@ -1649,10 +2197,12 @@ fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<St
     if manifest.size > 512 * 1024 * 1024 {
         return Err("更新包体积异常".into());
     }
+    // 文件名只认 basename(清单由前端传入,不可信)
+    let asset = safe_asset_name(&manifest.asset)?;
     let dir = config_path(&app, "updates")?;
     fs::create_dir_all(&dir).map_err(|e| format!("建更新目录失败: {e}"))?;
-    let dest = dir.join(&manifest.asset);
-    let part = dir.join(format!("{}.part", manifest.asset));
+    let dest = dir.join(&asset);
+    let part = dir.join(format!("{asset}.part"));
     let mut resp = ureq::get(&manifest.url)
         .call()
         .map_err(|e| format!("下载失败: {e}"))?;
@@ -1695,6 +2245,11 @@ fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<St
     }
     let _ = fs::remove_file(&dest);
     fs::rename(&part, &dest).map_err(|e| format!("落位失败: {e}"))?;
+    // 校验已通过、字节已落位:此刻才把"这个包可以装"记下来(install 只认这一条记录)
+    let sha = got.to_ascii_lowercase();
+    if let Ok(mut slot) = UPDATE_DOWNLOADED.lock() {
+        *slot = Some((dest.clone(), sha));
+    }
     let _ = app.emit(
         "update-progress",
         serde_json::json!({ "received": received, "total": total, "done": true }),
@@ -1704,30 +2259,74 @@ fn update_download(app: tauri::AppHandle, manifest: UpdateManifest) -> Result<St
 
 /// 安装:写一个临时 PS 脚本(等本进程退出 → 静默装 → 自删),隐藏窗口起它,然后由前端放行关窗。
 /// 为什么不等自己退出:*安装包要覆盖正在运行的 exe*,必须先让本进程走。
+/// 2026-11 加固(审计 D-02 / D-03 / B1):
+/// 1 只认**本次进程里刚下载且 SHA-256 校验通过**的那一个文件:规范化路径必须相同,执行前再重算一次 SHA;
+/// 2 脚本正文不再拼接任何外部字符串 —— 路径经 `-File <脚本> <参数>` 进 `$Target`,
+///   日志行只用 `$Target` 插值;旧版把 path 裸插进单引号串,路径里一个 `'` 就是 PS 注入;
+/// 3 落位必须仍在配置目录的 `updates/` 下。
 #[tauri::command]
 fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let p = Path::new(&path);
     if !p.is_file() {
         return Err(format!("更新包不存在: {path}"));
     }
+    // 没有"刚校验过的包"这条记录 = 拒绝(默认值);不再"只要是本机存在的文件就执行"
+    let (want, want_sha) = match UPDATE_DOWNLOADED.lock() {
+        Ok(g) => g
+            .clone()
+            .ok_or_else(|| "没有已校验的更新包,请先下载".to_string())?,
+        Err(_) => return Err("更新状态锁失败".into()),
+    };
+    let got = p
+        .canonicalize()
+        .map_err(|e| format!("无法解析更新包路径: {e}"))?;
+    let want_can = want
+        .canonicalize()
+        .map_err(|_| "已校验的更新包已不存在,请重新下载".to_string())?;
+    if cage_key(&got) != cage_key(&want_can) {
+        return Err("更新包未经校验".into());
+    }
+    let updates_dir = config_path(&app, "updates")?;
+    if !is_under_root(&updates_dir, &got) {
+        return Err("更新包位置非法".into());
+    }
+    // 执行前重算 SHA-256:让"要执行的字节"确实等于"校验过的字节"(下载与安装之间可以被动手脚)
+    {
+        use sha2::{Digest, Sha256};
+        let bytes = fs::read(&got).map_err(|e| format!("读更新包失败: {e}"))?;
+        let got_sha = format!("{:x}", Sha256::digest(&bytes));
+        if got_sha.to_ascii_lowercase() != want_sha {
+            let _ = fs::remove_file(&got);
+            if let Ok(mut slot) = UPDATE_DOWNLOADED.lock() {
+                *slot = None;
+            }
+            return Err("更新包校验失败: 内容已变".into());
+        }
+    }
     let pid = std::process::id();
     let dir = std::env::temp_dir();
     let script = dir.join(format!("tmmd-update-{pid}.ps1"));
     let log = dir.join("tmmd-update.log");
     let q = |s: &str| format!("'{}'", s.replace('\'', "''"));
-    // .exe 直接静默装(NSIS /S);其它后缀(测试替身 / 自定义脚本)交给 cmd /c
-    let launch = if path.to_ascii_lowercase().ends_with(".exe") {
-        format!("Start-Process -FilePath {} -ArgumentList '/S'", q(&path))
+    // .exe 直接静默装(NSIS /S);其它后缀(测试替身 / 自定义脚本)交给 cmd /c。
+    // `Start-Process` 没有 `-LiteralPath`(它本来也不做通配展开),`-FilePath` 收到的就是字面量。
+    let launch = if want
+        .to_string_lossy()
+        .to_ascii_lowercase()
+        .ends_with(".exe")
+    {
+        "Start-Process -FilePath $Target -ArgumentList '/S'".to_string()
     } else {
-        format!(
-            "Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', {}, '/S' -WindowStyle Hidden",
-            q(&path)
-        )
+        "Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $Target, '/S' -WindowStyle Hidden"
+            .to_string()
     };
+    // 正文里没有一处来自外部的字符串拼接:`$Target` 由 PS 自己从命令行参数取,
+    // `'` / `;` / `$` / 反引号都只是普通字符;唯一仍拼接的 `$log` 是我们自己的临时路径且过了 `q()`。
     let body = format!(
-        "$ErrorActionPreference='SilentlyContinue'\r\n\
+        "param([string]$Target)\r\n\
+         $ErrorActionPreference='SilentlyContinue'\r\n\
          $log = {log}\r\n\
-         Add-Content -LiteralPath $log -Value ((Get-Date).ToString('s') + ' helper start pid={pid} target={path}')\r\n\
+         Add-Content -LiteralPath $log -Value ((Get-Date).ToString('s') + ' helper start pid={pid} target=' + $Target)\r\n\
          Start-Sleep -Milliseconds 800\r\n\
          Wait-Process -Id {pid} -Timeout 120\r\n\
          Add-Content -LiteralPath $log -Value 'app exited, launching installer'\r\n\
@@ -1736,7 +2335,6 @@ fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
          Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force\r\n",
         log = q(&log.to_string_lossy()),
         pid = pid,
-        path = path,
         launch = launch,
     );
     fs::write(&script, body).map_err(|e| format!("写安装脚本失败: {e}"))?;
@@ -1751,6 +2349,8 @@ fn update_install(app: tauri::AppHandle, path: String) -> Result<(), String> {
             "-File",
         ])
         .arg(&script)
+        // 路径走参数而不是脚本正文;用落位记录里的原始路径(不带 `\\?\`),PS/Start-Process 才认
+        .arg(&want)
         .spawn()
         .map_err(|e| format!("起安装脚本失败: {e}"))?;
     // 记一笔:装完之后"已提示过这个版本";缓存也要清 —— 正在装的就是它,重启后重新查。
@@ -1956,18 +2556,46 @@ fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            // 第二及以后实例：argv[1] = 双击/关联传进来的 .md 路径 → 转发前端渲染
-            if let Some(p) = argv.get(1) {
-                let _ = app.emit("open-file", p.clone());
+    let builder = tauri::Builder::default();
+    // v1.9.3 测试缝:置 TMMD_TEST_NOACTIVATE=1 时不注册单实例插件。
+    // 否则验证用的 debug 实例会被用户正开着的正式版"吃掉"(转发 argv 后自己退出,窗口根本不出现),
+    // 一条 e2e 都跑不了 —— 而且为了让验证实例起来还得先把用户的窗口关掉。
+    // 该变量本来就是验证专用(`launch-on-secondary.ps1` 写它),不影响正常安装版。
+    let builder = if std::env::var_os("TMMD_TEST_NOACTIVATE").is_none() {
+        builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            // 第二及以后实例:argv[1..] = 双击/关联/命令行传进来的文档路径 → 逐个转发前端渲染。
+            // v1.9.3:旧实现只取 argv[1],一次传多个文件时后面的全丢。
+            let mut forwarded = false;
+            for p in argv.iter().skip(1) {
+                if !p.starts_with('-') {
+                    if let Some(ext) = Path::new(p.as_str()).extension().and_then(|e| e.to_str()) {
+                        if DOC_EXTS.contains(&ext.to_ascii_lowercase().as_str()) || TEXT_EXTS.contains(&ext.to_ascii_lowercase().as_str()) {
+                            let _ = app.emit("open-file", p.clone());
+                            forwarded = true;
+                        }
+                    }
+                }
             }
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+            if !forwarded && argv.len() > 1 {
+                // 不是文档参数(旧行为:盲目转发第一个)也照旧转一次,避免"点了没反应"
+                if let Some(p) = argv.get(1) {
+                    let _ = app.emit("open-file", p.clone());
+                }
+            }
+            // v1.9.3:验证/自动化实例(TMMD_TEST_NOACTIVATE)不许抢焦点 —— 旧实现无条件
+            // set_focus(),会把用户从当前窗口踢开(审计 B16)。
+            if std::env::var_os("TMMD_TEST_NOACTIVATE").is_none() {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
             }
         }))
+    } else {
+        builder
+    };
+    builder
         .setup(|app| {
             // 冷启动(首个进程):argv[1] 可能带着 .md 路径,先存起来等前端就绪再取
             let first = std::env::args().nth(1);

@@ -315,6 +315,12 @@
           "markdownDescription": "Allow set_glass_material (R2 玻璃材质下拉：none/mica/acrylic + tint，aero 已删)"
         },
         {
+          "description": "Allow set_lang (前端把当前语言推给原生壳:托盘/对话框文案同步)",
+          "type": "string",
+          "const": "allow-set-lang",
+          "markdownDescription": "Allow set_lang (前端把当前语言推给原生壳:托盘/对话框文案同步)"
+        },
+        {
           "description": "Allow system_effects_state (系统透明/高对比开关只读探针)",
           "type": "string",
           "const": "allow-system-effects-state",

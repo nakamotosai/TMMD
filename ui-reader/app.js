@@ -140,7 +140,7 @@ const S = {
   zen: false,
   lang: LS.get('sr_lang', null),
   sysNoEffects: false,
-  find: { q: '', hits: [], idx: -1 },
+  find: { q: '', hits: [], idx: -1, cs: false, re: false, ww: false },
   search: { q: '', hits: [], busy: false },
   root: null,
   cur: null,
@@ -154,7 +154,10 @@ const S = {
 };
 
 /* ==================== 渲染 ==================== */
-marked.setOptions({ gfm: true, breaks: true, headerIds: true, headerPrefix: 'srh-' });
+/* v1.9.3:`headerIds` / `headerPrefix` 是 marked v13 之前的选项,当前 vendor 是 v15.0.12 —— 这两个
+ * 早已无效(grep vendor 命中 0),标题 id 一直由我们的 buildToc 自己写。留着会给人"锚点前缀由
+ * marked 管"的错觉,删掉。`breaks:true` 保留(产品既有口径:单换行出 <br>)。 */
+marked.setOptions({ gfm: true, breaks: true });
 
 // —— 本地多媒体（图片/视频/音频）asset 协议解析 ——
 // WebView2 禁 file://；markdown 里的相对/绝对本地路径必须转成 tauri asset:// URL 才能加载。
@@ -226,13 +229,54 @@ function wireImgFallback(root) {
   });
 }
 
+/* ---------------- 净化:v1.9.3 从「只删 script」换成白名单 + GFM tagfilter ----------------
+ * 旧实现只 remove <script>、剥 on*、拦 javascript: —— <iframe srcdoc="<script>…</script>">、
+ * <object>/<embed>/<meta http-equiv=refresh>、data:text/html 与 vbscript: 全部原样进 DOM
+ * (2026-11-09 运行时实测:8 类危险标签存活)。这里按 GFM「tagfilter 是把 < 转义成文本」
+ * 的语义处理,危险协议一律置空。 */
+/** 这两个标签按 GFM tagfilter 转成**可见文本**(转义),不是直接删 —— 删掉等于改了作者内容 */
+const TF_ESCAPE = new Set(['title', 'textarea', 'xmp', 'iframe', 'noembed', 'noframes', 'plaintext', 'style']);
+/** 这些一律丢弃:可执行 / 可外联 / 可重定向 / 可提交 */
+const TF_DROP = new Set(['script', 'object', 'embed', 'meta', 'link', 'base', 'frame', 'frameset', 'applet', 'param', 'portal']);
+/** 这些只脱壳、保留子内容(丢掉会连作者的文字一起丢) */
+const TF_UNWRAP = new Set(['form']);
+const URL_ATTRS = new Set(['href', 'src', 'poster', 'action', 'formaction', 'cite', 'background', 'data', 'xlink:href']);
+/** 只放行 http/https/mailto/asset/blob 与 data:image/*;相对路径原样(站内锚点也走这条) */
+function safeUrl(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return null;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s)) {
+    if (/^(https?|mailto|asset|blob):/i.test(s)) return s;
+    if (/^data:image\//i.test(s)) return s;
+    return null;
+  }
+  return s;
+}
 function sanitize(root) {
-  $qa('script', root).forEach((n) => n.remove());
-  const w = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
-  for (let n = w.nextNode(); n; n = w.nextNode()) {
+  for (const el of [...root.querySelectorAll('*')]) {
+    const tag = el.tagName.toLowerCase();
+    if (TF_DROP.has(tag)) { el.remove(); continue; }
+    if (TF_UNWRAP.has(tag)) { el.replaceWith(...el.childNodes); continue; }
+    if (TF_ESCAPE.has(tag)) {
+      const src = el.outerHTML;
+      el.replaceWith(document.createTextNode(src));
+    }
+  }
+  for (const n of [...root.querySelectorAll('*')]) {
     for (const a of Array.from(n.attributes)) {
-      if (/^on/i.test(a.name)) n.removeAttribute(a.name);
-      else if (a.name === 'href' && /^javascript:/i.test(a.value)) n.removeAttribute(a.name);
+      const name = a.name.toLowerCase();
+      if (name.startsWith('on') || name === 'srcdoc') { n.removeAttribute(a.name); continue; }
+      if (URL_ATTRS.has(name)) {
+        const u = safeUrl(a.value);
+        if (u === null) n.removeAttribute(a.name);
+        else if (u !== a.value) n.setAttribute(a.name, u);
+        continue;
+      }
+      if (name === 'srcset') {
+        const items = String(a.value || '').split(',').map((x) => x.trim()).filter(Boolean);
+        const ok = items.length > 0 && items.every((item) => safeUrl(item.split(/\s+/)[0]) !== null);
+        if (!ok) n.removeAttribute(a.name);
+      }
     }
   }
 }
@@ -244,19 +288,159 @@ function highlightCode(root) {
     el.classList.add('hljs');
   });
 }
-function renderMath(root) {
-  if (!window.renderMathInElement) return;
-  try {
-    renderMathInElement(root, {
-      delimiters: [{ left: '$$', right: '$$', display: true }, { left: '$', right: '$', display: false }],
-      ignoredTags: ['pre', 'code', 'script', 'style'], throwOnError: false,
-    });
-  } catch {}
+/* ---------------- 数学:v1.9.3 自己切分,不再靠 auto-render ----------------
+ * 旧实现直接把整棵 DOM 交给 renderMathInElement,两个可复现的坏结果(2026-11-09 实测):
+ *   1) `$$\nE=mc^2\n$$`(块级公式最常见的写法)不渲染 —— marked 的 breaks:true 在围栏内插了
+ *      <br>,定界符跨不过去,结果是一段字面量 `$$ E=mc^2 $$`;
+ *   2) `I paid $5 and $10 today.` 被当行内公式吃掉,正文变成 `I paid 5and5 and 5and10 today.`。
+ * 现在改成:渲染前用正则把 `$$…$$`(可跨行)与 `$…$`(不跨行、内侧非空白、后面不紧跟数字)
+ * 抠成占位元素,渲染后再对占位元素调用 katex —— 公式不进 marked 的段落解析,`<br>` 也就无从干扰。 */
+/* 占位元素:块级用真 <div>(marked 认它是块起止、不会包进 <p>),行内用 <span>;统一用 .md-math-ph 找。 */
+/** 标出「不许动」的区间:围栏代码块与行内代码(否则代码里的 $x$ 会被换成占位元素) */
+function protectedRanges(s) {
+  const mask = new Uint8Array(s.length);
+  const mark = (a, b) => { for (let i = a; i < b; i++) mask[i] = 1; };
+  const fenceRe = /^[ \t]*(`{3,}|~{3,})[^\n]*$/gm;
+  let f = null, m;
+  while ((m = fenceRe.exec(s))) {
+    if (!f) f = { ch: m[1][0], len: m[1].length, start: m.index };
+    else if (m[1][0] === f.ch && m[1].length >= f.len) { mark(f.start, m.index + m[0].length); f = null; }
+  }
+  if (f) mark(f.start, s.length);
+  const codeRe = /(`+)[^`]*?\1/g;
+  while ((m = codeRe.exec(s))) mark(m.index, m.index + m[0].length);
+  return mask;
+}
+function preprocessMath(src) {
+  const s = String(src == null ? '' : src);
+  const mask = protectedRanges(s);
+  const items = [];
+  const out = [];
+  let i = 0, last = 0;
+  const esc = (k) => k > 0 && s[k - 1] === '\\';
+  while (i < s.length) {
+    if (mask[i] || s[i] !== '$' || esc(i)) { i++; continue; }
+    if (s[i + 1] === '$' && !mask[i + 1]) {
+      // 块级:跨行找不受保护的收尾 $$
+      let j = i + 2;
+      while (j < s.length && !(s[j] === '$' && s[j + 1] === '$' && !mask[j] && !mask[j + 1])) j++;
+      if (j < s.length) {
+        const tex = s.slice(i + 2, j);
+        if (tex.trim()) {
+          items.push({ tex: tex.trim(), display: true });
+          out.push(s.slice(last, i), `\n\n<div class="md-math-ph" data-mi="${items.length - 1}"></div>\n\n`);
+          last = j + 2; i = j + 2; continue;
+        }
+      }
+      i += 2; continue;
+    }
+    // 行内:同一行内、内侧首尾非空白、收尾 $ 后面不紧跟数字(否则 $5 与 $10 会被吞)
+    let j = i + 1;
+    while (j < s.length && s[j] !== '\n' && s[j] !== '$' && !mask[j] && !esc(j)) j++;
+    if (j < s.length && s[j] === '$' && !mask[j]) {
+      const tex = s.slice(i + 1, j);
+      const after = s[j + 1] || '';
+      if (tex.trim() && !/^\s/.test(tex) && !/\s$/.test(tex) && !/\d/.test(after)) {
+        items.push({ tex: tex.trim(), display: false });
+        out.push(s.slice(last, i), `<span class="md-math-ph" data-mi="${items.length - 1}"></span>`);
+        last = j + 1; i = j + 1; continue;
+      }
+    }
+    i++;
+  }
+  out.push(s.slice(last));
+  return { src: out.join(''), items };
+}
+function renderMath(root, items) {
+  if (!window.katex || !items || !items.length) return;
+  $qa('.md-math-ph', root).forEach((el) => {
+    const it = items[Number(el.dataset.mi)];
+    if (!it) return;
+    const span = document.createElement(it.display ? 'div' : 'span');
+    if (it.display) span.className = 'md-math-block';
+    try {
+      span.innerHTML = window.katex.renderToString(it.tex, { displayMode: it.display, throwOnError: false });
+      const host = el.parentElement;
+      // 兜底:占位如果被包进 <p>(且 p 里没有别的实质内容),把 p 整个换成公式块
+      if (it.display && host && host.tagName === 'P' && !host.textContent.replace(/[\s​]/g, '')) host.replaceWith(span);
+      else el.replaceWith(span);
+    } catch { el.replaceWith(document.createTextNode(it.display ? '$$' + it.tex + '$$' : '$' + it.tex + '$')); }
+  });
+}
+/* v1.9.3:标题 id 改成**确定性 slug**。
+ * 旧实现 'srh-'+i+'-'+Math.random() 每次渲染都变 → 文内 [x](#target) 锚点、TOC 深链、
+ * 导出物里的内链全部指向不存在的 id(2026-11-09 实测:同一 ## Same 连渲三次得三个不同 id,
+ * targetExists:false)。同时把调用点提前到 renderMath 之前 —— KaTeX 会往标题里插 <span>,
+ * 之后再取 textContent 会把渲染结果当标题文本。 */
+const CJK_PUNCT = '\u3000-\u303f\uff01-\uff0f\uff1a-\uff20\uff3b-\uff40\uff5b-\uff65\u2018\u2019\u201c\u201d\u2026\u2014\u2013\u00b7';
+function slugifyHeading(text) {
+  let s = String(text == null ? '' : text).toLowerCase();
+  s = s.replace(/[\s\u3000]+/g, '-');
+  s = s.replace(new RegExp('[' + CJK_PUNCT + ']', 'g'), '');
+  s = s.replace(/[!-/:-@\[-`{-~]/g, '');
+  s = s.replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
+  return s || 'section';
 }
 function buildToc(root) {
-  return $qa('h1,h2,h3,h4', root).map((h, i) => {
-    if (!h.id) h.id = 'srh-' + i + '-' + Math.random().toString(36).slice(2, 6);
-    return { level: +h.tagName[1], text: h.textContent, id: h.id };
+  const seen = new Map();
+  return $qa('h1,h2,h3,h4,h5,h6', root).map((h) => {
+    const text = h.textContent;
+    if (!h.id) {
+      const base = slugifyHeading(text);
+      const n = seen.has(base) ? seen.get(base) + 1 : 0;
+      seen.set(base, n);
+      h.id = n ? `${base}-${n}` : base;
+    } else {
+      const cur = seen.get(h.id);
+      seen.set(h.id, cur === undefined ? 0 : cur + 1);
+    }
+    return { level: +h.tagName[1], text, id: h.id };
+  });
+}
+/** 站内锚点跳转:只滚阅读容器(不触发 WebView2 的 hash 导航,那会改写 location 并可能重载页面) */
+function jumpToAnchor(id) {
+  const rd = $id('reader');
+  const el = document.getElementById(id);
+  if (!rd || !el) return false;
+  const top = rd.scrollTop + (el.getBoundingClientRect().top - rd.getBoundingClientRect().top) - 12;
+  try { rd.scrollTo({ top: Math.max(0, top), behavior: 'smooth' }); } catch { rd.scrollTop = Math.max(0, top); }
+  el.classList.add('anchor-flash');
+  setTimeout(() => el.classList.remove('anchor-flash'), 1200);
+  return true;
+}
+/** 相对链接指向另一篇 md → 开成新标签页 */
+function openRelativeDoc(href) {
+  const cur = S.cur && S.cur.abs;
+  if (!cur) return false;
+  const clean = String(href).split('#')[0].split('?')[0];
+  if (!clean) return false;
+  const dir = cur.replace(/[\\/][^\\/]*$/, '');
+  const abs = normLocalMediaPath(dir + '\\' + clean);
+  if (!abs) return false;
+  openTab({ abs, name: abs.split(/[\\/]/).pop() });
+  return true;
+}
+/* v1.9.3:阅读区链接委托 —— 旧版**完全没有**正文 <a> 的处理,WebView2 里点外链是就地导航,
+ * 阅读器直接被换成那个网站(2026-11-09 运行时实测:挂捕获监听后 defaultPrevented:false,
+ * 且该用例之后同页后续用例全部报 renderMarkdown is not defined)。 */
+function wireReaderLinks() {
+  const inner = $id('readerInner');
+  if (!inner || inner.dataset.linksWired === '1') return;
+  inner.dataset.linksWired = '1';
+  inner.addEventListener('click', (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a) return;
+    const href = a.getAttribute('href') || '';
+    e.preventDefault();   // 不论哪一种,都不许 WebView2 就地导航
+    if (href.startsWith('#')) { jumpToAnchor(href.slice(1)); return; }
+    if (/^(https?:|mailto:)/i.test(href)) {
+      if (invoke) invoke('open_any', { path: href }).catch(() => {});
+      return;
+    }
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return;   // 其它协议一律吞掉
+    if (/\.(md|markdown|mdx|txt)$/i.test(href.split('#')[0].split('?')[0])) { openRelativeDoc(href); return; }
+    openRelativeDoc(href);
   });
 }
 
@@ -277,18 +461,24 @@ function renderMarkdown(md, absParam) {
   const body = document.createElement('div');
   body.className = 'markdown-body';
   CURRENT_ABS = absParam || null;
-  body.innerHTML = marked.parse(preprocessFootnotes(md.replace(/^\uFEFF?---\r?\n[\s\S]*?\r?\n---\r?\n/, '')));
+  // v1.9.3:BOM 必须**无条件**先剥。旧正则 /^\uFEFF?---/ 只在文件带 frontmatter 时才吃 BOM,
+  // 于是 "\uFEFF# Head" 渲染成 <p>\uFEFF# Head</p> —— 首标题直接不成立(2026-11-09 实测)。
+  const src0 = String(md == null ? '' : md).replace(/^\uFEFF+/, '');
+  const src1 = preprocessFootnotes(src0.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, ''));
+  const math = preprocessMath(src1);
+  body.innerHTML = marked.parse(math.src);
   CURRENT_ABS = null;
   sanitize(body);
   wrapTables(body);
   highlightCode(body);
-  renderMath(body);
   fixMediaSrc(body);
   enhanceCodeBlocks(body);   // v1.7:代码块复制按钮 + 行号(必须在 highlightCode 之后)
   wireImgFallback(body);
-  S.toc = buildToc(body);
+  S.toc = buildToc(body);    // v1.9.3:必须在 renderMath 之前(KaTeX 会往标题里插 span,污染 textContent)
+  renderMath(body, math.items);
   inner.innerHTML = '';
   inner.appendChild(body);
+  wireReaderLinks();
   const name = absParam ? absParam.split(/[\\/]/).pop() : '';
   document.title = name ? name + ' · TMMD' : t('app.title');
   const top = Number(LS.raw('sr_scr_' + absParam) || 0);
@@ -449,6 +639,14 @@ function syncHistBtns() {
   const u = $id('btnUndo'); if (u) u.disabled = !S.editing || !editHist.undo.length;
   const r = $id('btnRedo'); if (r) r.disabled = !S.editing || !editHist.redo.length;
 }
+/* v1.9.3:脏标唯一算法。旧版只有 doUndo/doRedo 会**重算**,input / Tab 缩进 / 查找替换
+ * 一律 `= true` —— 于是把改动改回原文(或整段删掉再粘回去)后 tab 上的脏点仍然亮着,
+ * 关窗时还要多弹一次三选。这里抽成一处,四个入口共用。 */
+function recomputeDirty() {
+  const ed = $id('editor');
+  const raw = (S.cur && S.cur.raw != null) ? S.cur.raw : '';
+  S.editDirty = !!ed && ed.value !== raw.replace(/\r\n?/g, '\n');
+}
 function doUndo() {
   const ed = $id('editor');
   if (!S.editing || !editHist.undo.length || !ed) return;
@@ -458,7 +656,7 @@ function doUndo() {
     ed.value = editHist.undo.pop();
     prevEditValue = ed.value;
     lastHistT = 0;
-    S.editDirty = (ed.value !== (S.cur && S.cur.raw != null ? S.cur.raw : '').replace(/\r\n?/g, '\n'));
+    recomputeDirty();
   } finally { histLock = false; }
   syncHistBtns();
   renderTabs();
@@ -472,7 +670,7 @@ function doRedo() {
     ed.value = editHist.redo.pop();
     prevEditValue = ed.value;
     lastHistT = 0;
-    S.editDirty = (ed.value !== (S.cur && S.cur.raw != null ? S.cur.raw : '').replace(/\r\n?/g, '\n'));
+    recomputeDirty();
   } finally { histLock = false; }
   syncHistBtns();
   renderTabs();
@@ -816,7 +1014,7 @@ function editFindReplaceOne() {
   pushUndo(prevEditValue);
   ed.setRangeText(r ? r.value : '', ed.selectionStart, ed.selectionEnd, 'end');
   prevEditValue = ed.value;
-  S.editDirty = true;
+  recomputeDirty();
   renderTabs();
   editFindRun(1);
 }
@@ -830,7 +1028,7 @@ function editFindReplaceAll() {
   pushUndo(prevEditValue);
   ed.value = val.split(editFind.q).join(r ? r.value : '');
   prevEditValue = ed.value;
-  S.editDirty = true;
+  recomputeDirty();
   renderTabs();
   toast(t('toast.replaced', { n }));
   editFindRun(0);
@@ -1163,7 +1361,7 @@ function renderToc(side) {
     it.dataset.tocId = h.id;
     it.dataset.level = h.level;
     it.textContent = h.text;
-    it.onclick = () => { const el = document.getElementById(h.id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+    it.onclick = () => { jumpToAnchor(h.id) || document.getElementById(h.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
     list.appendChild(it);
   });
   side.appendChild(list);
@@ -1614,6 +1812,7 @@ const ERR_MAP = [
   [/^路径越界.*$/, 'err.outOfCage'],
   [/^应用句柄尚未初始化$/, 'err.noAppHandle'],
   [/^无法解析根目录: /, 'err.badRoot'],
+  [/^无法解析路径$/, 'err.badPathResolve'],
   [/^无法解析路径: /, 'err.badPathResolve'],
   [/^无父目录$/, 'err.noParent'],
   [/^不是目录: /, 'err.notDir'],
@@ -1636,6 +1835,9 @@ const ERR_MAP = [
   // —— 导出 / 打开 / 浏览器 ——
   [/^导出 HTML 不存在/, 'err.exportHtmlMissing'],
   [/^导出失败: /, 'err.export'],
+  [/^打开失败:路径为空$/, 'err.openEmpty'],
+  [/^打开失败:不支持的协议$/, 'err.openProto'],
+  [/^打开失败:路径不存在: ?/, 'err.openNotFound'],
   [/^打开失败: /, 'err.open'],
   [/^找不到 Chromium 内核浏览器.*$/, 'err.noBrowser'],
   [/^起无头浏览器失败: /, 'err.browserSpawn'],
@@ -1666,6 +1868,12 @@ const ERR_MAP = [
   [/^写盘失败: /, 'err.write'],
   [/^落位失败: /, 'err.moveFail'],
   [/^校验失败/, 'err.sha'],
+  [/^更新包名非法$/, 'err.pkgName'],
+  [/^更新状态锁失败$/, 'err.updLock'],
+  [/^更新包未经校验$|^没有已校验的更新包/, 'err.updUnverified'],
+  [/^更新包位置非法$/, 'err.updBadDest'],
+  [/^更新包校验失败: ?.*$/, 'err.pkgChanged'],
+  [/^读更新包失败: /, 'err.read'],
   [/^写文件失败|^保存失败/, 'err.write'],
   [/^删除失败/, 'err.delete'],
 ];
@@ -1921,15 +2129,21 @@ function applySettings() {
 /* v1.7 排版三件套:行宽 / 行高 / 正文字体。数值只落 CSS 变量,不动结构。 */
 function applyTypography() {
   const st = document.documentElement.style;
-  const m = Math.min(52, Math.max(26, Number(S.measure) || 34));
+  const full = Number(S.measure) === 0;               // v1.9.3:0 = 全宽(正文也不设上限)
+  const m = full ? 34 : Math.min(52, Math.max(26, Number(S.measure) || 34));
   const lh = Math.min(2, Math.max(1.4, Number(S.lineH) || 1.7));
   st.setProperty('--measure', m + 'em');
+  // --prose-w 是「正文块」的真正上限:用 rem 而不是 em,否则 34em 摊到 30px 的标题上 = 1020px,
+  // 标题会破出正文列。--measure(em)保留给设置面板与 r12d V09 的量法。
+  st.setProperty('--prose-w', full ? '100%' : m + 'rem');
+  document.body.classList.toggle('prose-full', full);
+  $id('setMeasureFull')?.classList.toggle('active', full);
   st.setProperty('--line-h', String(lh));
   document.body.classList.toggle('body-mono', S.bodyFont === 'mono');
   $id('setBodySans')?.classList.toggle('active', S.bodyFont !== 'mono');
   $id('setBodyMono')?.classList.toggle('active', S.bodyFont === 'mono');
   const rv = $id('setMeasure'); if (rv) rv.value = String(m);
-  const rvl = $id('valMeasure'); if (rvl) rvl.textContent = m + 'em';
+  const rvl = $id('valMeasure'); if (rvl) rvl.textContent = full ? t('s.read.measureFull') : m + 'em';
   const lv = $id('setLineH'); if (lv) lv.value = String(lh);
   const lvl = $id('valLineH'); if (lvl) lvl.textContent = lh.toFixed(2);
 }
@@ -2295,7 +2509,7 @@ function wire() {
         ed.setRangeText(next, lineStart, lineEnd, 'select');
       }
       // setRangeText 不触发 input 事件,手动记一步历史 + 点脏
-      S.editDirty = true;
+      recomputeDirty();
       pushUndo(prevEditValue);
       prevEditValue = ed.value;
       renderTabs();
@@ -2310,7 +2524,7 @@ function wire() {
   });
   $id('editor')?.addEventListener('input', () => {
     if (histLock) return; // doUndo/doRedo 编程赋值不记历史(防栈污染/弹跳)
-    S.editDirty = true; pushUndo(prevEditValue); prevEditValue = $id('editor').value;
+    recomputeDirty(); pushUndo(prevEditValue); prevEditValue = $id('editor').value;
     renderTabs();   // R7:即时点亮 tab 脏点
     typewriterFollow();
   });
@@ -2543,6 +2757,10 @@ const I18N = {
   'find.prev': ['上一个 (Shift+Enter)', 'Previous (Shift+Enter)', '前へ (Shift+Enter)'],
   'find.next': ['下一个 (Enter)', 'Next (Enter)', '次へ (Enter)'],
   'find.close': ['关闭 (Esc)', 'Close (Esc)', '閉じる (Esc)'],
+  'find.case': ['区分大小写', 'Match case', '大文字小文字を区別'],
+  'find.regex': ['正则表达式', 'Regular expression', '正規表現'],
+  'find.word': ['全字匹配', 'Whole word', '単語単位'],
+  'find.badRegex': ['正则表达式无效', 'Invalid regular expression', '正規表現が不正です'],
   'settings.title': ['设置', 'Settings', '設定'],
   'glass.title': ['玻璃质感', 'Glass', 'ガラス'],
   'nav.read': ['阅读', 'Reading', '閲覧'],
@@ -2632,6 +2850,9 @@ const I18N = {
   'err.exportHtmlMissing': ['导出 HTML 不存在', 'The exported HTML does not exist', '書き出した HTML が存在しません'],
   'err.export': ['导出失败: ', 'Export failed: ', '書き出しに失敗: '],
   'err.open': ['打开失败: ', 'Opening failed: ', 'オープンに失敗: '],
+  'err.openEmpty': ['打开失败:路径为空', 'Nothing to open: the path is empty', '開くパスが空です'],
+  'err.openProto': ['打开失败:不支持的协议', 'Unsupported protocol', '未対応のプロトコルです'],
+  'err.openNotFound': ['打开失败:路径不存在: ', 'Path does not exist: ', 'パスが存在しません: '],
   'err.browserSpawn': ['起无头浏览器失败: ', 'Starting the headless browser failed: ', 'ヘッドレスブラウザの起動に失敗: '],
   'err.pdfFailed': ['PDF 未生成', 'The PDF was not generated', 'PDF を生成できませんでした'],
   'err.noWindow': ['找不到主窗口', 'Main window not found', 'メインウィンドウが見つかりません'],
@@ -2644,6 +2865,11 @@ const I18N = {
   'err.badSize': ['更新包体积异常', 'The update package size looks wrong', '更新パッケージのサイズが異常です'],
   'err.pkgMissing': ['更新包不存在: ', 'Update package not found: ', '更新パッケージが存在しません: '],
   'err.updDir': ['建更新目录失败: ', 'Creating the update folder failed: ', '更新用フォルダの作成に失敗: '],
+  'err.pkgName': ['更新包名非法', 'Illegal update package name', '更新パッケージ名が不正です'],
+  'err.updLock': ['更新状态锁失败', 'Update state lock failed', '更新状態のロックに失敗'],
+  'err.updUnverified': ['更新包未经校验,请先下载', 'Update package not verified - download it first', '更新パッケージが未検証です - 先にダウンロードしてください'],
+  'err.updBadDest': ['更新包位置非法', 'Illegal update package location', '更新パッケージの配置先が不正です'],
+  'err.pkgChanged': ['更新包校验失败:内容已变', 'Update package verification failed: content changed', '更新パッケージの検証に失敗:内容が変更されています'],
   'err.moveFail': ['落位失败: ', 'Moving the package into place failed: ', '所定の位置への移動に失敗: '],
   'err.watch': ['监听文件失败: ', 'Watching the file failed: ', 'ファイル監視に失敗: '],
   'err.installScript': ['写安装脚本失败: ', 'Writing the installer hand-off script failed: ', 'インストールスクリプトの作成に失敗: '],
@@ -2751,7 +2977,9 @@ const I18N = {
   's.set.navAria': ['设置分类', 'Settings sections', '設定の分類'],
   // ── 设置页:阅读
   's.read.fontDesc': ['中文长文建议无衬线;等宽更"工程感"', 'Sans-serif reads better for long CJK text; mono feels more "engineered"', '長文の CJK テキストにはサンセリフ推奨。等幅のほうがエンジニアらしい印象です。'],
-  's.read.measureDesc': ['中文规范 32–38 字/行;当前按 em 折算', 'The CJK norm is 32–38 characters per line; shown here in em', 'CJK の目安は 1 行 32–38 字(ここでは em 換算)'],
+  's.read.measureDesc': ['中文规范 32–38 字/行;宽表与代码始终用满窗口宽度', 'The CJK norm is 32–38 characters per line; wide tables and code always use the full window width', 'CJK の目安は 1 行 32–38 字(広い表とコードは常にウィンドウ幅いっぱい)'],
+  's.read.measureFull': ['全宽', 'Full', '全幅'],
+  's.read.measureFullTitle': ['正文也拉满窗口宽度(再点一次回到 34em)', 'Let prose use the full window width too (click again to go back to 34em)', '本文もウィンドウ幅いっぱいにする(もう一度押すと 34em に戻る)'],
   's.read.lineHDesc': ['正文行距倍数(1.4–2.0)', 'Body line-height multiplier (1.4–2.0)', '本文の行間倍率(1.4–2.0)'],
   's.read.toolbarDesc': ['顶栏按钮显示模式', 'How the toolbar buttons are rendered', 'ツールバーの表示モード'],
   's.read.sideDesc': ['拖拽侧栏分隔条调整(160–480px,自动记忆)', 'Drag the sidebar splitter (160–480px, remembered)', 'サイドバーの仕切りをドラッグ(160–480px、記憶されます)。'],
@@ -2929,6 +3157,7 @@ function refreshDynI18n() {
     fp.textContent = t('s.read.presetDesc', { p: t(pk), h: S.h1Size.toFixed(2), b: S.bodySize, c: S.codeSize });
   }
   updateMapHighlight();   // 内部自带 S.view!=='map' 早退;"第 N/M 章"是现算文案,得跟着语言重刷
+  applyTypography();      // valMeasure 的「全宽」/「34em」也是现算文案
   if (updLast) setUpdateStatus(t(updLast.key, updLast.vars));   // 更新器那行读数也是现算的
   refreshFileAssoc();
 }
@@ -2943,52 +3172,146 @@ function setLang(l) {
 /* v1.8.17:原生壳(托盘菜单 / 选文件夹对话框标题 / 默认文件名)读不到 localStorage,由前端把当前语言推给它 */
 function pushLangToShell(l) {
   if (!invoke) return;
-  try { invoke('set_lang', { lang: l }); } catch { /* 浏览器预览没有后端 */ }
+  // v1.9.3:invoke 返回 Promise,ACL 拒权(allow-set-lang 未登记)是**异步拒绝**,
+  // try/catch 抓不到 → 切语言时托盘/对话框文案静默不同步,控制台只留一条 unhandled rejection。
+  // 这里显式 catch,并把失败降级成控制台一行英文告警(不打扰用户)。
+  try {
+    const r = invoke('set_lang', { lang: l });
+    if (r && typeof r.catch === 'function') r.catch((e) => console.warn('[tmmd] set_lang rejected:', e));
+  } catch (e) { console.warn('[tmmd] set_lang failed:', e); }
 }
 
-/* ---------------- 脚注(独立于 marked,零依赖) ---------------- */
 const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-function preprocessFootnotes(src) {
-  const lines = String(src).split(/\r?\n/);
+
+/* ---------------- 脚注(独立于 marked,零依赖) ----------------
+ * v1.9.3 重写。旧实现的四个可复现缺陷(2026-11-09 实测):
+ *   1) 同一 [^1] 引用两次 → 两个 .fn-ref 的 id 都是 fnref-1,回链只能指向第一个;
+ *   2) 定义里的 **bold** / [链接] 被 escHtml 全转义成字面量;
+ *   3) 定义后空行 + 缩进的续行被丢掉;
+ *   4) 块引用里的定义(> [^q]: …)完全不生成。
+ * 新实现:先收集定义(带缩进续行,跳过代码块),再替换引用;每个引用实例分配唯一 id;
+ * 定义正文走 marked.parse(不再是 escHtml);只有被引用到的定义才输出 <li>。 */
+function collectFootnoteDefs(lines) {
   const defs = [];
-  const body = [];
-  let fence = false;
+  let fence = null;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (/^\s*(```|~~~)/.test(line)) { fence = !fence; body.push(line); continue; }
-    if (!fence) {
-      const m = /^\[\^([^\]\s]+)\]:[ \t]*(.*)$/.exec(line);
-      if (m) {
-        let text = m[2];
-        let j = i + 1;
-        while (j < lines.length && /^[ \t]{2,}\S/.test(lines[j])) { text += ' ' + lines[j].trim(); j++; }
-        defs.push({ id: m[1], text });
-        i = j - 1;
+    const fm = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+    if (fm) {
+      if (!fence) fence = { ch: fm[1][0], len: fm[1].length };
+      else if (fm[1][0] === fence.ch && fm[1].length >= fence.len) fence = null;
+      continue;
+    }
+    if (fence) continue;
+    const m = /^[ \t]{0,3}((?:>[ \t]?)*)\[\^([^\]\s]+)\]:[ \t]*(.*)$/.exec(line);
+    if (!m) continue;
+    const quote = m[1] || '';
+    const parts = [m[3]];
+    const contRe = new RegExp('^[ \\t]{0,3}' + (quote ? '>' + '[ \\t]?' : '') + '[ \\t]{2,}\\S');
+    const anyRe = new RegExp('^[ \\t]{0,3}' + (quote ? '>' + '[ \\t]?' : '') + '(.*)$');
+    let j = i + 1;
+    while (j < lines.length) {
+      const nx = lines[j];
+      // 空行只有在下一条**非空**行确实是缩进续行时才允许跨过(否则会把后面的段落整段吞进定义)
+      if (nx.trim() === '') {
+        let k = j + 1;
+        while (k < lines.length && lines[k].trim() === '') k++;
+        if (k < lines.length && contRe.test(lines[k])) { j++; continue; }
+        break;
+      }
+      if (!contRe.test(nx)) break;
+      const qn = anyRe.exec(nx);
+      if (!qn) break;
+      parts.push(qn[1].trim());
+      j++;
+    }
+    defs.push({ id: m[2], text: parts.join('\n\n') });
+    i = j - 1;
+  }
+  return defs;
+}
+function preprocessFootnotes(src) {
+  const lines = String(src).split(/\r?\n/);
+  const defs = collectFootnoteDefs(lines);
+  if (!defs.length) return src;
+  const body = [];
+  {
+    // 去掉定义行(含其续行),保留其余正文
+    const drop = new Set();
+    let fence = null;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const fm = /^[ \t]*(`{3,}|~{3,})/.exec(line);
+      if (fm) {
+        if (!fence) fence = { ch: fm[1][0], len: fm[1].length };
+        else if (fm[1][0] === fence.ch && fm[1].length >= fence.len) fence = null;
         continue;
       }
+      if (fence) continue;
+      if (/^[ \t]{0,3}(?:>[ \t]?)*\[\^([^\]\s]+)\]:/.test(line)) {
+        drop.add(i);
+        let j = i + 1;
+        while (j < lines.length) {
+          if (lines[j].trim() === '') {
+            let k = j + 1;
+            while (k < lines.length && lines[k].trim() === '') k++;
+            if (k < lines.length && /^[ \t]{2,}\S|^[ \t]{0,3}>[ \t]?[ \t]{2,}\S/.test(lines[k])) { j++; continue; }
+            break;
+          }
+          if (!/^[ \t]{2,}\S|^[ \t]{0,3}>[ \t]?[ \t]{2,}\S/.test(lines[j])) break;
+          drop.add(j);
+          j++;
+        }
+        i = j - 1;
+      }
     }
-    body.push(line);
+    for (let i = 0; i < lines.length; i++) if (!drop.has(i)) body.push(lines[i]);
   }
-  if (!defs.length) return src;
   const num = new Map(defs.map((d, i) => [d.id, i + 1]));
-  let fence2 = false;
-  const text = body.map((line) => {
-    if (/^\s*(```|~~~)/.test(line)) { fence2 = !fence2; return line; }
-    if (fence2) return line;
-    return line.replace(/\[\^([^\]\s]+)\]/g, (s, id) => (num.has(id)
-      ? `<sup class="fn-ref" id="fnref-${num.get(id)}"><a href="#fn-${num.get(id)}">${num.get(id)}</a></sup>` : s));
-  }).join('\n');
-  const items = defs.map((d, i) => `<li id="fn-${i + 1}">${escHtml(d.text)} <a class="fn-back" href="#fnref-${i + 1}">↩</a></li>`).join('');
-  return `${text}\n\n<section class="footnotes" data-footnotes="1"><ol>${items}</ol></section>\n`;
+  const used = new Map();      // defId → 出现的次数(用来生成唯一 id)
+  const refIds = new Map();    // defId → [回链目标 id,…]
+  const text = body.join('\n');
+  const mask = protectedRanges(text);
+  const out = [];
+  let i = 0, last = 0;
+  while (i < text.length) {
+    if (mask[i] || text[i] !== '[' || (i > 0 && text[i - 1] === '\\')) { i++; continue; }
+    const m = /^\[\^([^\]\s]+)\]/.exec(text.slice(i, i + 80));
+    if (!m || !num.has(m[1])) { i++; continue; }
+    const n = num.get(m[1]);
+    const k = (used.get(m[1]) || 0) + 1;
+    used.set(m[1], k);
+    const rid = k === 1 ? `fnref-${n}` : `fnref-${n}-${k}`;
+    const list = refIds.get(m[1]) || [];
+    list.push(rid);
+    refIds.set(m[1], list);
+    out.push(text.slice(last, i), `<sup class="fn-ref" id="${rid}"><a href="#fn-${n}">${n}</a></sup>`);
+    last = i + m[0].length;
+    i = last;
+  }
+  out.push(text.slice(last));
+  const items = defs.map((d, i) => {
+    const n = i + 1;
+    const refsArr = refIds.get(d.id);
+    if (!refsArr || !refsArr.length) return '';      // 未被引用 → 不输出死回链
+    const backs = refsArr.map((rid, k) => `<a class="fn-back" href="#${rid}">\u21a9${k ? k + 1 : ''}</a>`).join(' ');
+    const inner = marked.parse(d.text).replace(/<\/?p>/g, '').trim();
+    return `<li id="fn-${n}">${inner} ${backs}</li>`;
+  }).join('');
+  if (!items) return out.join('');
+  return `${out.join('')}\n\n<section class="footnotes" data-footnotes="1"><ol>${items}</ol></section>\n`;
 }
 
 /* ---------------- 代码块:复制按钮 + 行号 ---------------- */
+/* v1.9.3:不再把行号写进 DOM 文本 —— 旧实现 <span class="ln">1</span> 让
+ * `pre code.textContent` 变成 "1alpha\n2beta\n3",屏幕阅读器逐行念数字、浏览器原生 Ctrl+F
+ * 会命中行号、整页复制与打印都带行号。现在由 CSS 计数器 .code-line::before 画,文本层干净。 */
 function addCodeLineNumbers(code) {
-  const html = code.innerHTML;
+  const html = code.innerHTML.replace(/\n$/, '');   // v1.9.3:hljs 输出以 \n 结尾,不裁掉会多出一行空行号
   if (!html.includes('\n')) return;
   let open = [];
   const out = [];
-  html.split('\n').forEach((line, idx) => {
+  html.split('\n').forEach((line) => {
     const prefix = open.map((c) => `<span class="${c}">`).join('');
     const opens = [...line.matchAll(/<span[^>]*>/g)].map((m) => {
       const cm = /class="([^"]*)"/.exec(m[0]);
@@ -2998,7 +3321,7 @@ function addCodeLineNumbers(code) {
     const stack = open.concat(opens);
     for (let k = 0; k < closes; k++) stack.pop();
     const suffix = stack.length ? '</span>'.repeat(stack.length) : '';
-    out.push(`<span class="code-line"><span class="ln">${idx + 1}</span>${prefix}${line}${suffix}</span>`);
+    out.push(`<span class="code-line">${prefix}${line}${suffix}</span>`);
     open = stack;
   });
   code.innerHTML = out.join('\n');
@@ -3031,7 +3354,57 @@ function enhanceCodeBlocks(root) {
   });
 }
 
-/* ---------------- 文内查找(Ctrl+F) ---------------- */
+/* ---------------- 文内查找(Ctrl+F) ----------------
+ * v1.9.3:旧实现只在**单个文本节点**里找,于是 `**nee**dle`(命中跨 <strong>)这类
+ * "看得见、搜不到"的情况恒为 0 命中(2026-11-09 实测 hits:0)。
+ * 现在按"块"把块内所有文本节点拼成一条再搜,命中区间再映射回各节点切片。
+ * 同时补上大小写 / 正则 / 全字三个开关(旧版只有一个裸输入框)。 */
+const FIND_BLOCK_SEL = 'p,li,td,th,h1,h2,h3,h4,h5,h6,blockquote,dd,dt,figcaption,summary,.footnotes li';
+function findBlocks(body) {
+  const groups = new Map();
+  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      const p = n.parentElement;
+      if (!p || p.closest('pre, code, script, style, .footnotes a.fn-back')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    const blk = n.parentElement.closest(FIND_BLOCK_SEL) || body;
+    if (!groups.has(blk)) groups.set(blk, []);
+    groups.get(blk).push(n);
+  }
+  return groups;
+}
+function findRanges(text, q) {
+  const ranges = [];
+  if (S.find.re) {
+    let re;
+    try { re = new RegExp(q, S.find.cs ? 'g' : 'gi'); } catch { return null; }
+    let m;
+    while ((m = re.exec(text))) {
+      if (m[0] === '') { re.lastIndex++; continue; }
+      ranges.push([m.index, m.index + m[0].length]);
+      if (ranges.length > 5000) break;
+    }
+    return ranges;
+  }
+  const hay = S.find.cs ? text : text.toLowerCase();
+  const needle = S.find.cs ? q : q.toLowerCase();
+  let from = 0, idx;
+  while ((idx = hay.indexOf(needle, from)) !== -1) {
+    if (!S.find.ww || isWordBoundary(text, idx, idx + q.length)) ranges.push([idx, idx + q.length]);
+    from = idx + q.length || idx + 1;
+    if (ranges.length > 5000) break;
+  }
+  return ranges;
+}
+function isWordBoundary(text, a, b) {
+  const W = (c) => c !== undefined && /[A-Za-z0-9_]/.test(c);
+  return !W(text[a - 1]) && !W(text[b]);
+}
 function isFindOpen() { const f = $id('findBar'); return !!(f && !f.hidden); }
 function openFind() {
   const f = $id('findBar'); if (!f) return;
@@ -3042,8 +3415,13 @@ function openFind() {
 }
 function closeFind() {
   const f = $id('findBar'); if (f) f.hidden = true;
+  const rd = $id('reader');
+  const back = S.find.scrollTop;
   clearFindMarks();
   S.find.hits = []; S.find.idx = -1; S.find.q = '';
+  // v1.9.3:关查找条要把阅读位置还原 —— 旧版直接丢掉,用户按 Esc 后停在最后一条命中处(2026-08-xx 起的既存问题)
+  if (rd && typeof back === 'number') rd.scrollTop = back;
+  S.find.scrollTop = undefined;
   const c = $id('findCount'); if (c) c.textContent = '0/0';
 }
 function clearFindMarks() {
@@ -3058,40 +3436,43 @@ function clearFindMarks() {
 function runFind(q) {
   clearFindMarks();
   S.find.hits = []; S.find.idx = -1; S.find.q = q || '';
+  if (S.find.scrollTop === undefined) S.find.scrollTop = $id('reader') ? $id('reader').scrollTop : 0;
   const body = $q('.markdown-body');
   const count = $id('findCount');
   if (!body || !q || q.trim() === '') { if (count) count.textContent = '0/0'; return; }
-  const lq = q.toLowerCase();
-  const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, {
-    acceptNode(n) {
-      if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
-      const p = n.parentElement;
-      if (!p || p.closest('pre, code, script, style, .footnotes a.fn-back')) return NodeFilter.FILTER_REJECT;
-      return n.nodeValue.toLowerCase().includes(lq) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-    },
-  });
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
   const marks = [];
-  nodes.forEach((node) => {
-    const text = node.nodeValue;
-    const lower = text.toLowerCase();
-    const frag = document.createDocumentFragment();
-    let from = 0;
-    let idx = lower.indexOf(lq, from);
-    while (idx !== -1) {
-      if (idx > from) frag.appendChild(document.createTextNode(text.slice(from, idx)));
-      const mk = document.createElement('mark');
-      mk.className = 'srh-hit';
-      mk.textContent = text.slice(idx, idx + q.length);
-      frag.appendChild(mk);
-      marks.push(mk);
-      from = idx + q.length;
-      idx = lower.indexOf(lq, from);
-    }
-    if (from < text.length) frag.appendChild(document.createTextNode(text.slice(from)));
-    if (marks.length && node.parentNode) node.parentNode.replaceChild(frag, node);
-  });
+  for (const nodes of findBlocks(body).values()) {
+    const texts = nodes.map((n) => n.nodeValue);
+    const joined = texts.join('');
+    const ranges = findRanges(joined, q);
+    if (ranges === null) { if (count) count.textContent = '0/0'; toast(t('find.badRegex')); return; }
+    if (!ranges.length) continue;
+    let off = 0;
+    nodes.forEach((node, k) => {
+      const len = texts[k].length;
+      const local = [];
+      for (const [s, e] of ranges) {
+        const a = Math.max(s, off) - off;
+        const b = Math.min(e, off + len) - off;
+        if (b > a) local.push([a, b]);
+      }
+      off += len;
+      if (!local.length) return;
+      const frag = document.createDocumentFragment();
+      let cur = 0;
+      for (const [a, b] of local) {
+        if (a > cur) frag.appendChild(document.createTextNode(texts[k].slice(cur, a)));
+        const mk = document.createElement('mark');
+        mk.className = 'srh-hit';
+        mk.textContent = texts[k].slice(a, b);
+        frag.appendChild(mk);
+        marks.push(mk);
+        cur = b;
+      }
+      if (cur < texts[k].length) frag.appendChild(document.createTextNode(texts[k].slice(cur)));
+      if (node.parentNode) node.parentNode.replaceChild(frag, node);
+    });
+  }
   S.find.hits = marks;
   if (marks.length) gotoFind(0);
   else if (count) count.textContent = '0/0';
@@ -3257,7 +3638,8 @@ async function buildStandaloneHtml() {
   const clone = inner.cloneNode(true);
   $qa('mark.srh-hit', clone).forEach((mk) => { mk.parentNode.replaceChild(document.createTextNode(mk.textContent), mk); });
   $qa('.code-copy', clone).forEach((b) => b.remove());
-  $qa('.code-line .ln', clone).forEach((n) => n.remove());
+  // v1.9.3:导出物是静态页,懒加载图在无头打印里可能没被布局出来 → 打印/PDF 里缺图。全部转 eager。
+  $qa('img[loading]', clone).forEach((im) => im.removeAttribute('loading'));
   const docDir = String(cur.abs || '').replace(/[\\/][^\\/]*$/, '');
   // 媒体:优先**内联成 data: URI**(导出物自包含,换台机器/发给别人也看得到图);
   // 单张过大或读失败就退回相对路径(宁可图丢链,也不让导出物变成几十 MB)
@@ -3285,7 +3667,10 @@ async function buildStandaloneHtml() {
     // PDF 只剩几个矩形、0 字体、0 文本算子,命令却照样返回成功(2026-10-26 实测:1441 字节空页)。
     // 加这一行之后同一个 HTML 打出 108 KB / 21 字体 / 283 个文本算子。
     '.markdown-body{animation:none}',
-    'main.reader-inner{max-width:var(--measure,34em)}',
+    // v1.9.3:导出物跟着当前的宽度模型走(全宽时也给全宽);行宽上限变量在这里显式落一份,
+    // 因为导出物没有 JS,读不到 documentElement 上的内联变量。
+    `:root{--prose-w:${/^100%$/.test(document.documentElement.style.getPropertyValue('--prose-w')) ? '100%' : (document.documentElement.style.getPropertyValue('--prose-w') || '34rem')}}`,
+    '.markdown-body > *{opacity:1}',
     ':root{--halo-k:0}',
   ].join('\n');
   // 打印 / 直出 PDF 一律"白纸深字"。深色主题的 --fg 是**浅色**(给深底配的),直接打到白纸上
@@ -3316,7 +3701,7 @@ ${TOKENS}}`;
 ${pageCss}
 ${printCss}
 </style></head>
-<body class="${document.body.className}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
+<body class="${document.body.className.split(/\s+/).filter((c) => c && !['focus-mode', 'immersive', 'settings-open', 'no-effects', 'prose-full'].includes(c)).join(' ')}"><main class="reader-inner">${clone.innerHTML}</main></body></html>`;
   return { html, inlined };
 }
 /* 单张媒体内联上限:超过就退回相对路径(6MB base64 后约 8MB,再多导出物就不好用了) */
@@ -3450,6 +3835,12 @@ function initV17() {
   on('setBodySans', 'click', () => { S.bodyFont = 'sans'; LS.set('sr_body_font', 'sans'); applyTypography(); });
   on('setBodyMono', 'click', () => { S.bodyFont = 'mono'; LS.set('sr_body_font', 'mono'); applyTypography(); });
   on('setMeasure', 'input', (e) => { S.measure = Number(e.target.value); LS.set('sr_measure', S.measure); applyTypography(); });
+  // v1.9.3 全宽:正文块也放开上限(槽本来就吃满阅读区)。再点一次回到 34em。
+  on('setMeasureFull', 'click', () => {
+    S.measure = Number(S.measure) === 0 ? 34 : 0;
+    LS.set('sr_measure', S.measure);
+    applyTypography();
+  });
   on('setLineH', 'input', (e) => { S.lineH = Number(e.target.value); LS.set('sr_line_h', S.lineH); applyTypography(); });
   // 语言
   on('langZh', 'click', () => setLang('zh'));
@@ -3472,6 +3863,16 @@ function initV17() {
   on('findNext', 'click', () => findStep(1));
   on('findPrev', 'click', () => findStep(-1));
   on('findClose', 'click', () => closeFind());
+  // v1.9.3:大小写 / 正则 / 全字三个开关(开关变了就用当前词重跑)
+  const findOpt = (id, key) => on(id, 'click', (e) => {
+    S.find[key] = !S.find[key];
+    e.currentTarget.classList.toggle('active', S.find[key]);
+    if (fi && fi.value.trim()) runFind(fi.value);
+    if (fi) fi.focus();
+  });
+  findOpt('findCase', 'cs');
+  findOpt('findRegex', 're');
+  findOpt('findWord', 'ww');
   // 全局快捷键:只在非编辑态生效(Ctrl+F/F11/F3/Esc)
   document.addEventListener('keydown', (e) => {
     const k = (e.key || '').toLowerCase();

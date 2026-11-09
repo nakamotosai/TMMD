@@ -31,6 +31,7 @@
     "allow-save-path",
     "allow-load-roots",
     "allow-save-roots",
+    "allow-set-lang",
     "allow-pending-open",
     "allow-system-effects-state",
     "allow-watch-file",

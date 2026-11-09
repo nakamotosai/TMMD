@@ -12,7 +12,6 @@
   <link rel="stylesheet" href="app.css" />
   <script src="vendor/marked.min.js" defer></script>
   <script src="vendor/katex.min.js" defer></script>
-  <script src="vendor/auto-render.min.js" defer></script>
   <script src="vendor/highlight.min.js" defer></script>
   <script src="app.js" defer></script>
 </head>
@@ -164,7 +163,7 @@
             </div>
             <div class="set-row" data-search-ascii="measure width" data-search-zh="行宽 每行 字数 阅读宽度">
               <div class="set-row-info"><div class="set-row-title" data-i18n="s.read.measure">行宽</div><div class="set-row-desc" data-i18n="s.read.measureDesc">中文规范 32–38 字/行;当前按 em 折算</div></div>
-              <div class="set-row-ctl"><input type="range" id="setMeasure" min="26" max="52" step="1" /><span class="settings-val" id="valMeasure">34em</span></div>
+              <div class="set-row-ctl"><input type="range" id="setMeasure" min="26" max="52" step="1" /><span class="settings-val" id="valMeasure">34em</span><button type="button" id="setMeasureFull" class="theme-btn" data-i18n-title="s.read.measureFullTitle" data-i18n="s.read.measureFull">全宽</button></div>
             </div>
             <div class="set-row" data-search-ascii="line height leading" data-search-zh="行高 间距 行距">
               <div class="set-row-info"><div class="set-row-title" data-i18n="s.read.lineH">行高</div><div class="set-row-desc" data-i18n="s.read.lineHDesc">正文行距倍数(1.4–2.0)</div></div>
@@ -390,6 +389,9 @@
   <!-- v1.7 文内查找(Ctrl+F):浮在阅读区右上,不参与正文流 -->
   <div class="findbar" id="findBar" hidden>
     <input type="text" id="findInput" class="set-text" placeholder="在本文中查找" data-i18n-ph="find.placeholder" autocomplete="off" />
+    <button type="button" id="findCase" class="tb-btn find-opt" title="区分大小写" data-i18n-title="find.case">Aa</button>
+    <button type="button" id="findRegex" class="tb-btn find-opt" title="正则表达式" data-i18n-title="find.regex">.*</button>
+    <button type="button" id="findWord" class="tb-btn find-opt" title="全字匹配" data-i18n-title="find.word">ab</button>
     <span class="find-count" id="findCount">0/0</span>
     <button type="button" id="findPrev" class="tb-btn" title="上一个 (Shift+Enter)" data-i18n-title="find.prev"><svg class="ic sm"><use href="#i-caret"/></svg></button>
     <button type="button" id="findNext" class="tb-btn" title="下一个 (Enter)" data-i18n-title="find.next"><svg class="ic sm" style="transform:rotate(180deg)"><use href="#i-caret"/></svg></button>

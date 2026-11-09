@@ -20,7 +20,8 @@
   --red: #fb4934;
   --radius: var(--r-sm);   /* 兼容别名:新代码请用 --r-xs/sm/md/lg */
   --ink: #ebdbb2;
-  --sans: "Maple Mono NF CN", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  /* --sans / --body-font / --measure / --line-h 统一在文件后半「排版」段的 :root 里定义一次
+   * (v1.9.3 去重:这里原来还有一份 --sans,但后一份同选择器覆盖了它,属于双真相源)。 */
   --mono: "Maple Mono NF CN", Consolas, "JetBrains Mono", monospace;
   --side-w: 260px;
   --h1-size: 1.75em;
@@ -381,9 +382,11 @@ body.side-compact #side .toc[data-level="6"] { display: none; }
   position: relative;
   mask-image: none;
 }
+/* v1.9.3:槽不再封顶 —— `.reader-inner` 占满阅读区;行宽上限只压在「正文块」上(见文件末
+ * v1.9.3 段),宽内容(表格/代码/图)破出去吃满槽宽。v1.9.2 把上限压在槽上,最大化后
+ * 槽只有 544px,超出的表格必须横向滚才看得全(2026-11-09 用户第二次投诉"正文区域
+ * 宽度被限制、无法完全显示")。 */
 .reader-inner { --reader-pad: 42px; width: 100%; margin: 0 auto; padding: 34px var(--reader-pad) 60px; box-sizing: border-box; }
-/* v1.9.2: fluid width + min(--measure, available) cap. Reader shrinks with window;
-   prose capped by --measure; wide elements (tables/pre) scroll inside their own slot. */
 @media (max-width: 760px) {
   .reader-inner { --reader-pad: 30px; padding: 28px var(--reader-pad) 52px; }
 }
@@ -612,15 +615,15 @@ body.code-bare .markdown-body pre code {
 }
 .markdown-body img { max-width: 100%; border-radius: var(--r-md); display: block; margin: 1.4em auto; }
 .markdown-body img.srh-img-err {
-  min-height: 2.4em; border: 1px dashed var(--border); color: var(--muted);
+  min-height: 2.4em; border: 1px dashed var(--border); color: var(--fg-dim);
   font-size: .9em; display: flex; align-items: center; justify-content: center; padding: .6em 1em;
 }
 .markdown-body video, .markdown-body audio { max-width: 100%; display: block; margin: 1.4em auto; border-radius: var(--r-md); }
 /* 表格:v1.8.8 去板 —— 旧版是"表头灰带 + 单元格 1px 全网格",在玻璃上就是一块灰色表格皮;
  * 现在只留横向发丝线(表头一条暖线),竖线全删。v1.9 只把行高与数字对齐调到编辑感一档。 */
-/* v1.9:宽表用满纸面宽度并在自己的槽里横向滚动 —— 不再让整页跟着横向滚。
- * 槽用负 margin 吃掉 reader-inner 的左右内边距,表格与纸边对齐;窄窗的 padding 变化由 --reader-pad 跟随。 */
-.md-table-wrap { width: calc(100% + var(--reader-pad) * 2); max-width: calc(100% + var(--reader-pad) * 2); margin: 1.2em 0 1.2em calc(var(--reader-pad) * -1);
+/* v1.9:宽表在自己的槽里横向滚动 —— 不再让整页跟着横向滚。
+ * v1.9.3:槽不再用负 margin 破窗(正文槽已经占满阅读区),直接吃满 `.markdown-body` 宽。 */
+.md-table-wrap { width: 100%; max-width: 100%; margin: 1.2em 0;
   overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: thin; box-sizing: border-box; }
 .md-table-wrap > table { margin: 0; width: max-content; min-width: 100%; max-width: none; }
 .md-table-wrap th, .md-table-wrap td { white-space: nowrap; }
@@ -729,9 +732,8 @@ body.code-bare .markdown-body pre code {
 }
 
 /* —— 排版:行宽 / 行高 / 正文家族 —— */
-.reader-inner { max-width: var(--measure); }
-/* v1.9.2: plain --measure cap + width:100%/border-box above already fits narrow windows
-   (inner = min(reader, 544px)). min() would only break r12g #17's parseFloat check. */
+/* v1.9.3:槽宽上限已移除(行宽上限改压正文块,见文件末 v1.9.3 段)。
+ * 保留 `--measure` 变量本身:设置面板的行宽滑条仍写它,r12d V09 仍量它。 */
 .markdown-body { font-family: var(--body-font); line-height: var(--line-h); }
 body.body-mono .markdown-body { font-family: var(--mono); font-size: calc(var(--body-size) - 1px); }
 
@@ -838,11 +840,6 @@ body.no-effects { --glass: 100%; }
 .code-wrap:hover .code-copy, .code-copy.done { opacity: 1; }
 .code-copy.done { color: var(--green); border-color: var(--green); }
 .code-line { display: block; }
-.code-line .ln {
-  display: inline-block; width: 2.2em; margin-right: 12px; text-align: right;
-  color: var(--fg-faint); user-select: none; -webkit-user-select: none;
-}
-body.no-code-ln .code-line .ln { display: none; }
 
 /* —— 脚注 —— */
 sup.fn-ref { font-size: .72em; line-height: 0; }
@@ -903,3 +900,95 @@ body.immersive .immersive-hint { opacity: .9; }
 
 /* —— 语言切换 —— */
 .lang-switch { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* =====================================================================
+ * v1.9.3 · 宽度模型换血(2026-11-09 用户二次投诉「最大化了,正文区域依旧宽度被限制,
+ * 无法完全显示出来」)。
+ * 旧模型:`.reader-inner{max-width:var(--measure)}` —— 槽自己封顶 544px,超出的表格只能
+ * 在槽里横向滚,最大化窗口后窗口两侧各空 379px。
+ * 新模型:**槽吃满阅读区;行宽上限只压「正文块」**。于是
+ *   - 正文仍按设计锁 32–38 汉字/行(居中,和旧版像素一致);
+ *   - 表格 / 代码 / 图 / 公式块用满可用宽度,不再被裁;
+ *   - 想连正文也拉满,设置里「行宽」滑条右侧的「全宽」按钮把 --prose-w 置成 100%。
+ * `--measure`(em)保留:滑条与 r12d V09 仍量它;这里新加 `--prose-w`(px 等价,rem),
+ * 因为 em 会随标题自身字号变大(34em@30px 标题 = 1020px),那样标题会破出正文列。
+ * ===================================================================== */
+.markdown-body > p,
+.markdown-body > ul,
+.markdown-body > ol,
+.markdown-body > dl,
+.markdown-body > blockquote,
+.markdown-body > h1,
+.markdown-body > h2,
+.markdown-body > h3,
+.markdown-body > h4,
+.markdown-body > h5,
+.markdown-body > h6,
+.markdown-body > hr,
+.markdown-body > details,
+.markdown-body > .footnotes,
+.markdown-body > .md-math-block,
+.markdown-body > .md-embed {
+  max-width: var(--prose-w, 34rem);
+  margin-left: auto;
+  margin-right: auto;
+}
+/* 表格槽:吃满阅读区;表体 = 「自然宽,但不小于正文行宽,不大于槽宽」。
+ * 于是窄表不会缩成一条、宽表不再被裁(只有真的超过槽宽才在自己槽里横滚)。 */
+.md-table-wrap { width: 100%; max-width: 100%; margin: 1.2em 0; }
+.md-table-wrap > table { margin: 0 auto; width: max-content; min-width: min(100%, var(--prose-w, 34rem)); max-width: none; }
+.md-table-wrap th, .md-table-wrap td { white-space: normal; overflow-wrap: anywhere; }
+.md-table-wrap code { white-space: nowrap; overflow-wrap: normal; }
+
+/* —— 代码行号改成 CSS 计数器:行号不再是 DOM 文本 ——
+ * 旧实现把数字写进 `.ln` 的 textContent,于是 `pre code.textContent` 是 "1alpha\n2beta",
+ * 屏幕阅读器逐行念数字、浏览器原生 Ctrl+F 命中行号、整页复制/打印都带行号。 */
+.markdown-body pre code { counter-reset: code-ln; }
+.code-line { display: block; counter-increment: code-ln; }
+.code-line .ln {
+  display: inline-block; width: 2.2em; margin-right: 12px; text-align: right;
+  color: var(--fg-faint); user-select: none; -webkit-user-select: none;
+}
+.code-line::before {
+  content: counter(code-ln);
+  display: inline-block; width: 2.2em; margin-right: 12px; text-align: right;
+  color: var(--fg-faint); user-select: none; -webkit-user-select: none;
+  font-variant-numeric: tabular-nums;
+}
+body.no-code-ln .code-line::before { display: none; }
+/* 复制按钮:键盘可达(旧版只在 :hover 显形,且无 aria-label) */
+.code-copy:focus-visible { opacity: 1; outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* —— 打印:应用窗口内 Ctrl+P 也必须白纸深字(旧版 app.css 完全没有 @media print) —— */
+@media print {
+  @page { margin: 18mm; }
+  html, body { background: #fff !important; color: #111 !important; }
+  .topbar, .side, .side-resizer, .findbar, .toast, .settings-panel, .drawer,
+  .ctxmenu, .code-copy, .update-pop, .immersive-hint { display: none !important; }
+  .markdown-body { animation: none !important; }
+  body, .markdown-body, .markdown-body * { color: #111 !important; text-shadow: none !important; }
+  .markdown-body > * { opacity: 1 !important; }
+  .markdown-body pre, .markdown-body code, .markdown-body .hljs { background: #f4f4f2 !important; }
+  .markdown-body a { color: #0645ad !important; text-decoration: underline; }
+  .markdown-body img, .markdown-body pre, .markdown-body blockquote,
+  .md-table-wrap, .code-wrap { break-inside: avoid; }
+  .markdown-body h1, .markdown-body h2, .markdown-body h3 { break-after: avoid; }
+}
+
+/* —— v1.9.3 配套:公式块 / 锚点跳转高亮 / 查找开关 —— */
+.md-math-block { margin: 1.2em 0; text-align: center; overflow-x: auto; overflow-y: hidden; }
+.md-math-block .katex-display { margin: .6em 0; }
+/* 跳转目标闪一下:站内锚点、TOC、脚注回链都走这条(不再依赖 :target —— 我们已经不走 hash 导航) */
+.anchor-flash { animation: sr-anchor-flash 1.2s var(--ease-out) 1; }
+@keyframes sr-anchor-flash {
+  0% { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  100% { background: transparent; }
+}
+.findbar .find-opt {
+  min-width: 30px; padding: 0 6px; font-size: 12px; line-height: 1;
+  font-family: var(--mono); color: var(--fg-dim);
+}
+.findbar .find-opt.active { color: var(--accent); border-color: var(--accent); }
+
+/* v1.9.3:超长 URL / 长串在正文里必须能折,否则整段被撑宽或溢出(表格内已单独处理) */
+.markdown-body p, .markdown-body li, .markdown-body blockquote, .markdown-body dd { overflow-wrap: anywhere; }

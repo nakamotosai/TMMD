@@ -302,9 +302,11 @@ await T('V01', 'v1.7 预览页可开(代码块+脚注样本)', async () => {
 // 脚注:零依赖前置处理产 sup 角标 + 文末脚注区
 await T('V02', '脚注 渲染角标+脚注区', async () => (await val(`(() => { const sup = document.querySelector('.markdown-body sup.fn-ref'); const sec = document.querySelector('.markdown-body section.footnotes[data-footnotes="1"]'); return !!sup && !!sec && sec.textContent.includes('a note'); })()`)) === true);
 // 代码块:复制按钮 + 行号列(两行代码 → 两个 .code-line)
-await T('V03', '代码块 复制按钮+行号', async () => (await val(`(() => { const wrap = document.querySelector('.markdown-body .code-wrap'); const btn = wrap && wrap.querySelector('.code-copy'); const ln = document.querySelectorAll('.markdown-body .code-line .ln').length; return !!btn && ln >= 2; })()`)) === true);
-// 行号可关(S.codeLn=false → body.no-code-ln → 行号 display:none)
-await T('V04', '代码块 行号可关(no-code-ln)', async () => (await val(`(() => { S.codeLn = false; applyEnhance(); const ln = document.querySelector('.markdown-body .code-line .ln'); const hidden = !ln || getComputedStyle(ln).display === 'none'; S.codeLn = true; applyEnhance(); return hidden; })()`)) === true);
+// v1.9.3:行号不再是 DOM 文本(旧版 `.code-line .ln` 写了数字,导致 screen reader 逐行念数字、
+// 复制/打印带行号),现在由 CSS 计数器画。所以这里量 `.code-line` 个数 + textContent 里没有数字前缀。
+await T('V03', '代码块 复制按钮+行号', async () => (await val(`(() => { const wrap = document.querySelector('.markdown-body .code-wrap'); const btn = wrap && wrap.querySelector('.code-copy'); const lines = document.querySelectorAll('.markdown-body .code-line').length; const txt = (wrap && wrap.querySelector('code').textContent) || ''; return !!btn && lines >= 2 && !/^\\s*\\d/.test(txt) && !txt.includes('1const'); })()`)) === true);
+// 行号可关(S.codeLn=false → body.no-code-ln → .code-line::before display:none)
+await T('V04', '代码块 行号可关(no-code-ln)', async () => (await val(`(() => { S.codeLn = false; applyEnhance(); const ln = document.querySelector('.markdown-body .code-line'); const cs = ln && getComputedStyle(ln, '::before'); const hidden = !ln || (cs && cs.display === 'none'); S.codeLn = true; applyEnhance(); return hidden; })()`)) === true);
 // 文内查找:开→命中计数→高亮→关闭清场
 await T('V05', '文内查找 打开+命中计数', async () => (await val(`(() => { openFind(); const inp = document.getElementById('findInput'); inp.value = 'hello'; runFind('hello'); return !document.getElementById('findBar').hidden && S.find.hits.length >= 2 && /^1\\/\\d+$/.test(document.getElementById('findCount').textContent); })()`)) === true);
 await T('V06', '文内查找 当前命中加 now 标记', async () => (await val(`(() => { findStep(1); return document.querySelectorAll('mark.srh-hit.now').length <= 1 && S.find.idx === 1; })()`)) === true);

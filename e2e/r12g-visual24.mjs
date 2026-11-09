@@ -214,9 +214,11 @@ await val(`(async () => { try { leaveEdit(); } catch (e) {} await invoke('open_p
   ok('16', '圆角收敛到 ≤4 档(+胶囊/圆形)', odd.length === 0 && tiers.length <= 4, { keys, odd, tiers, shape });
 }
 
-/* 17 中文 32–38 字行宽 */
+/* 17 中文 32–38 字行宽(量的是正文块,不是槽) */
+/* v1.9.3:槽不再封顶(最大化后宽表不再被裁),行宽上限改压正文块。这里改量第一段 <p>
+ * 的真实宽度 ÷ 正文字号,设计口径 32–38 字不变。 */
 {
-  const r = await val(`(() => { const el = document.querySelector('.markdown-body') || document.getElementById('readerInner'); const cs = getComputedStyle(el); const fs = parseFloat(cs.fontSize); const mw = parseFloat(getComputedStyle(document.getElementById('readerInner')).maxWidth); const n = mw / fs; return { fs, maxW: mw, cjkChars: Math.round(n * 10) / 10 }; })()`);
+  const r = await val(`(() => { const p = document.querySelector('.markdown-body > p'); const cs = getComputedStyle(document.querySelector('.markdown-body')); const fs = parseFloat(cs.fontSize); const pw = p ? p.getBoundingClientRect().width : NaN; const n = pw / fs; return { fs, pW: Math.round(pw), cjkChars: Math.round(n * 10) / 10 }; })()`);
   ok('17', '中文行宽 32–38 字', r && r.cjkChars >= 32 && r.cjkChars <= 38, r);
 }
 

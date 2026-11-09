@@ -1,5 +1,49 @@
 # Changelog · TMMD
 
+## v1.9.3 · 2026-11-09(宽度模型换血 + 9 个 P0 + 7 跑道全绿)
+
+用户:「我最大化之后正文区域依旧宽度被限制,无法完全显示出来。」(v1.9.2 只把裁改成槽内滚,没拿掉槽的 544px 封顶 —— 用户要的是用满窗口。)
+
+### 宽度模型换血
+
+| 病灶 | 旧行为 | 新行为 |
+|---|---|---|
+| `.reader-inner{max-width:var(--measure)}` 把槽封顶 544px | 最大化后窗口两侧各空 379px;超出的表格只能在 544px 槽里横滚,看不全(1568×843 实测:table 757px vs wrap 544px,213px 被裁) | 槽吃满阅读区; 行宽上限改压「正文块」(`--prose-w`, 默认 34rem, 居中, 和旧版像素一致); 表格/代码/图吃满槽宽 |
+| `--measure` 随标题字号变大 | 34em 摊到 30px 标题上 = 1020px,会破出正文列 | `--prose-w` 用 rem(根字号基准),所有正文块同宽 |
+| 无全宽选项 | 滑条最大 52em,正文永远有上限 | 设置 → 行宽 → 「全宽」按钮,`--prose-w:100%`,再点回 34em |
+
+### P0(9 条,全部实测)
+
+| # | 修法 |
+|---|---|
+| 外链就地导航 | `#readerInner` 唯一点击委托: 站内锚点走 `jumpToAnchor`; http/https/mailto 走 `open_any`; `.md` 相对链开新标签; 其余协议吞掉 |
+| 净化黑名单 | GFM tagfilter: 9 类危险标签转可见文本(`script` 直接删,`form` 脱壳);`href/src/poster/srcset` 协议白名单 |
+| 更新链注入 | `update_install` 只认内存里 `UPDATE_DOWNLOADED` 记录的包; PS 脚本改 `param([string]$Target)` 传参; `asset` 只取 basename; 执行前重算 SHA |
+| 标题 id 随机 | 确定性 slug + 去重计数; `buildToc` 提前到 `renderMath` 之前; h5/h6 也进大纲 |
+| BOM | 渲染前无条件剥; 读出剥、写回按原状态补(APK: 存一次不再多一个 BOM) |
+| 编码 | BOM → 严格 UTF-8 → GB18030(系统 `MultiByteToWideChar`,不加 crate) → lossy; 保存按原编码回写 |
+| 块公式/货币 | 自研切分(避开代码区): 块级 `$$…$$` 可跨行; 行内 `$…$` 内侧非空、收尾后不跟数字 |
+| 冲突基线 | `save_guarded` 无基线先读盘建基线, 建不出就报 `CONFLICT` 不直写; `create_file`/`save_path` 首存也建 |
+| 囚笼 | `cage_join` 逐段拒重解析点; 不存在路径先 canonicalize 父目录; `open_any` 协议白名单 + `ShellExecuteW`; `update_url_trusted` 按 scheme/host/path 比; `is_newer` 按 SemVer; `export_pdf` 验 `%PDF-` |
+
+### 前端 P1(用户可感知)
+
+- 脚注重写: 引用实例唯一 id; 定义走 `marked.parse`; 缩进续行; 只输出被引用过的定义
+- 查找: 按块拼文本再搜(跨 `<strong>` 也能中); 大小写 / 正则 / 全字三个开关; 关栏还原滚动
+- 行号: CSS 计数器画,不再进 `textContent`(屏幕阅读器/复制/打印都不带数字)
+- 脏标: 四入口共用 `recomputeDirty()`
+- 打印: `@media print` 白纸深字; 导出物清 `focus-mode` 类、`loading=lazy`, 跟 `--prose-w`
+- `set_lang`: ACL 登记 `allow-set-lang` + 前端 `.catch`(旧版异步拒绝吞掉,托盘文案不同步)
+- CSP: `app.security.csp` 从 `null` 改成白名单(`object-src 'none'` / `frame-src 'none'` / `base-uri 'none'`); 单实例插件在 `TMMD_TEST_NOACTIVATE` 验证缝下不注册,验证实例不再被用户的正式版吃掉
+
+### 验证
+
+- 新跑道 `e2e/r12j-v193-fixes.mjs`: **21/21**(真 Tauri: ACL / GBK / UTF-16 / BOM 不双写 / 外部改动冲突 / 宽度 / 渲染管线 / 打印 / 外链)
+- 静态探针(无头 Chromium,131 例取证的回归集): **32/32**
+- 回归: r12d **81/81** · r12e **25/25** · r12f **70/70** · r12g **27/27** · r12h **21/21** · r12i **16/16**
+- 断言更新: r12d V03/V04(行号改计数器)、r12g #17(量正文块而非槽); `vendor/auto-render.min.js` 移出(改自研切分)
+
+
 ## v1.9.2 · 2026-11-08(窄窗正文不再被裁:宽表也撑得下)
 
 用户:「我都最大化了,正文依旧无法完整显示,被强行折叠了。折叠过程应该是自适应的。」

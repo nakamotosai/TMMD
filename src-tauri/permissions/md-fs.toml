@@ -137,3 +137,8 @@ commands.allow = ["update_note"]
 identifier = "allow-open-any"
 description = "Allow open_any (ShellExecute 打开任意文件/目录,不限扩展名)"
 commands.allow = ["open_any"]
+
+[[permission]]
+identifier = "allow-set-lang"
+description = "Allow set_lang (前端把当前语言推给原生壳:托盘/对话框文案同步)"
+commands.allow = ["set_lang"]
